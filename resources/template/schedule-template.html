@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>群友在上什么课？</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .header .subtitle {
+            margin-top: 10px;
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .members-list {
+            padding: 20px;
+        }
+
+        .member-card {
+            display: flex;
+            align-items: center;
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            border-left: 5px solid #667eea;
+        }
+
+        .member-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin-right: 20px;
+            border: 3px solid #fff;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .member-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .member-info {
+            flex: 1;
+        }
+
+        .member-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .member-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .status-进行中 {
+            background: #4caf50;
+            color: white;
+        }
+
+        .status-翘课中 {
+            background: #f44336;
+            color: white;
+        }
+
+        .status-未开始 {
+            background: #2196f3;
+            color: white;
+        }
+
+        .status-已结束 {
+            background: #9e9e9e;
+            color: white;
+        }
+
+        .status-无课程 {
+            background: #ff9800;
+            color: white;
+        }
+
+        .course-info {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .course-time {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .remaining-time {
+            font-size: 13px;
+            color: #e91e63;
+            font-weight: bold;
+        }
+
+        .skip-tag {
+            display: inline-block;
+            background: #ff5252;
+            color: white;
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            color: #666;
+            font-size: 14px;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 群友在上什么课？</h1>
+            <div class="subtitle">
+                星期{{weekday}} | 当前时间: {{currentTime}}
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value">{{totalMembers}}</div>
+                <div class="stat-label">有课表成员</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{studyingCount}}</div>
+                <div class="stat-label">上课中</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{skippingCount}}</div>
+                <div class="stat-label">翘课中</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{skipModeCount}}</div>
+                <div class="stat-label">开启翘课</div>
+            </div>
+        </div>
+
+        <div class="members-list">
+            {{each members member}}
+            <div class="member-card">
+                <div class="member-avatar">
+                    <img src="{{member.avatar}}" alt="{{member.nickname}}">
+                </div>
+                <div class="member-info">
+                    <div class="member-name">
+                        {{member.nickname}}
+                        {{if member.skipStatus}}
+                        <span class="skip-tag">翘课模式</span>
+                        {{/if}}
+                    </div>
+                    <div class="member-week">
+                        第{{member.currentWeek}}周{{if !member.hasSemesterStart}} (使用默认学期){{/if}}
+                    </div>
+                    <div class="member-status status-{{member.status}}">
+                        {{member.status}}
+                    </div>
+                    <!-- 新增：显示签名（当状态为"无课程"或"已结束"时） -->
+                    {{if (member.status === '无课程' || member.status === '已结束') && member.signature}}
+                    <div class="member-signature">
+                        💭 {{member.signature}}
+                    </div>
+                    {{/if}}
+                    {{if member.currentCourse}}
+                    <div class="course-info">
+                        📖 {{member.currentCourse.name}}
+                    </div>
+                    <div class="course-time">
+                        ⏰ {{member.currentCourse.startTime}} - {{member.currentCourse.endTime}}
+                        {{if member.currentCourse.location}}
+                        | 📍 {{member.currentCourse.location}}
+                        {{/if}}
+                    </div>
+                    {{if member.remainingTime}}
+                    <div class="remaining-time">
+                        {{if member.status === '进行中'}}
+                        ⏳ 剩余时间: {{member.remainingTime}}
+                        {{else if member.status === '未开始'}}
+                        ⏳ 距离上课: {{member.remainingTime}}
+                        {{/if}}
+                    </div>
+                    {{/if}}
+                    {{else}}
+                    <div class="course-info">
+                        今日暂无课程安排
+                    </div>
+                    {{/if}}
+                </div>
+            </div>
+            {{/each}}
+        </div>
+
+        <div class="footer">
+            <div>使用 #翘课 或 #取消翘课 切换翘课状态</div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4caf50;"></div>
+                    上课中
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f44336;"></div>
+                    翘课中
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #2196f3;"></div>
+                    未开始
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #9e9e9e;"></div>
+                    已结束
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff9800;"></div>
+                    无课程
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px;">
+                更新时间: {{updateTime}}
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
