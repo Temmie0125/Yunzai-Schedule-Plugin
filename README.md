@@ -7,7 +7,10 @@
 
 ## 安装说明
 
-将本插件复制到`Yunzai/plugins`文件夹，然后重启bot即可使用。
+将本插件复制到`Yunzai/plugins`文件夹
+或者使用以下命令以克隆仓库：
+`git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./plugins/schedule`
+安装完成后重启bot即可使用。
 输入`#课表帮助`来查看详细命令说明
 
 ## 命令说明
