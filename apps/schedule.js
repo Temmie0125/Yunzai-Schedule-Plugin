@@ -72,8 +72,8 @@ export class SchedulePlugin extends plugin {
   }
 
   /**
-   * 设置课表
-   */
+ * 设置课表（修改版本，保留原有昵称和签名）
+ */
   async setSchedule() {
     const userId = this.e.user_id
     const message = this.e.msg
@@ -108,29 +108,54 @@ export class SchedulePlugin extends plugin {
         return false
       }
 
-      // 尝试获取昵称
-      let nickname = await this.getUserNickname(userId, this.e)
+      // 获取用户原有数据（如果存在）
+      const oldData = this.loadScheduleData(userId)
 
-      // 如果无法获取昵称，提示用户设置
-      if (!nickname) {
-        nickname = userId.toString()
-        const replyMsg = `课程表设置成功！\n` +
-          `课表名称：${scheduleData.tableName}\n` +
-          `学期开始：${scheduleData.semesterStart}\n` +
-          `共 ${scheduleData.courses.length} 门课程\n\n` +
-          `⚠️ 未获取到您的昵称，可使用 #课表设置昵称 命令设置昵称，以便在群内显示`
+      let nickname = null
+      let signature = null
 
-        await this.reply(replyMsg)
-      } else {
-        await this.reply(`课程表设置成功！\n` +
-          `课表名称：${scheduleData.tableName}\n` +
-          `学期开始：${scheduleData.semesterStart}\n` +
-          `共 ${scheduleData.courses.length} 门课程\n` +
-          `昵称：${nickname}`)
+      if (oldData) {
+        // 保留原有的昵称
+        nickname = oldData.nickname || null
+
+        // 保留原有的签名
+        signature = oldData.signature || null
+
+        logger.info(`用户 ${userId} 原有昵称: ${nickname}, 签名: ${signature}`)
       }
 
-      // 保存数据（包含昵称）
-      this.saveScheduleData(userId, scheduleData, nickname)
+      // 如果原有数据中没有昵称，尝试获取昵称
+      if (!nickname) {
+        nickname = await this.getUserNickname(userId, this.e)
+
+        // 如果无法获取昵称，使用用户ID
+        if (!nickname) {
+          nickname = userId.toString()
+          logger.info(`用户 ${userId} 未设置昵称，使用用户ID作为昵称`)
+        }
+      }
+
+      // 保存数据（保留原有的昵称和签名）
+      this.saveScheduleData(userId, scheduleData, nickname, signature)
+
+      // 构建回复消息
+      let replyMsg = `课程表设置成功！\n` +
+        `课表名称：${scheduleData.tableName}\n` +
+        `学期开始：${scheduleData.semesterStart}\n` +
+        `共 ${scheduleData.courses.length} 门课程\n` +
+        `昵称：${nickname}\n`
+
+      // 如果保留了签名，在回复中显示
+      if (signature) {
+        replyMsg += `签名：${signature}\n`
+      }
+
+      // 如果昵称是用户ID，提示用户可以设置昵称
+      if (nickname === userId.toString()) {
+        replyMsg += `\n⚠️ 建议使用 #课表设置昵称 命令设置一个昵称，以便在群内更好显示`
+      }
+
+      await this.reply(replyMsg)
 
     } catch (error) {
       logger.error(`设置课表失败: ${error}`)
@@ -142,7 +167,7 @@ export class SchedulePlugin extends plugin {
   }
 
   /**
-   * 等待用户发送口令（上下文模式）
+   * 等待用户发送口令（上下文模式，修改版本）
    */
   async waitingForCode() {
     const userId = this.e.user_id
@@ -168,29 +193,54 @@ export class SchedulePlugin extends plugin {
         return false
       }
 
-      // 尝试获取昵称
-      let nickname = await this.getUserNickname(userId, this.e)
+      // 获取用户原有数据（如果存在）
+      const oldData = this.loadScheduleData(userId)
 
-      // 如果无法获取昵称，提示用户设置
-      if (!nickname) {
-        nickname = userId.toString()
-        const replyMsg = `课程表设置成功！\n` +
-          `课表名称：${scheduleData.tableName}\n` +
-          `学期开始：${scheduleData.semesterStart}\n` +
-          `共 ${scheduleData.courses.length} 门课程\n\n` +
-          `⚠️ 未获取到您的昵称，可使用 #课表设置昵称 命令设置昵称，以便在群内显示`
+      let nickname = null
+      let signature = null
 
-        await this.reply(replyMsg)
-      } else {
-        await this.reply(`课程表设置成功！\n` +
-          `课表名称：${scheduleData.tableName}\n` +
-          `学期开始：${scheduleData.semesterStart}\n` +
-          `共 ${scheduleData.courses.length} 门课程\n` +
-          `昵称：${nickname}`)
+      if (oldData) {
+        // 保留原有的昵称
+        nickname = oldData.nickname || null
+
+        // 保留原有的签名
+        signature = oldData.signature || null
+
+        logger.info(`用户 ${userId} 原有昵称: ${nickname}, 签名: ${signature}`)
       }
 
-      // 保存数据（包含昵称）
-      this.saveScheduleData(userId, scheduleData, nickname)
+      // 如果原有数据中没有昵称，尝试获取昵称
+      if (!nickname) {
+        nickname = await this.getUserNickname(userId, this.e)
+
+        // 如果无法获取昵称，使用用户ID
+        if (!nickname) {
+          nickname = userId.toString()
+          logger.info(`用户 ${userId} 未设置昵称，使用用户ID作为昵称`)
+        }
+      }
+
+      // 保存数据（保留原有的昵称和签名）
+      this.saveScheduleData(userId, scheduleData, nickname, signature)
+
+      // 构建回复消息
+      let replyMsg = `课程表设置成功！\n` +
+        `课表名称：${scheduleData.tableName}\n` +
+        `学期开始：${scheduleData.semesterStart}\n` +
+        `共 ${scheduleData.courses.length} 门课程\n` +
+        `昵称：${nickname}\n`
+
+      // 如果保留了签名，在回复中显示
+      if (signature) {
+        replyMsg += `签名：${signature}\n`
+      }
+
+      // 如果昵称是用户ID，提示用户可以设置昵称
+      if (nickname === userId.toString()) {
+        replyMsg += `\n⚠️ 建议使用 #课表设置昵称 命令设置一个昵称，以便在群内更好显示`
+      }
+
+      await this.reply(replyMsg)
 
     } catch (error) {
       logger.error(`设置课表失败: ${error}`)
@@ -474,23 +524,41 @@ export class SchedulePlugin extends plugin {
   }
 
   /**
-   * 保存课程表数据（包含昵称）
-   */
-  saveScheduleData(userId, scheduleData, nickname = null) {
+ * 保存课程表数据（增强版，支持签名参数）
+ */
+  saveScheduleData(userId, scheduleData, nickname = null, signature = null) {
     const filePath = path.join(this.dataPath, `${userId}.json`)
 
-    // 构建完整的数据对象
+    // 读取现有数据（如果存在）
+    let existingData = {}
+    if (fs.existsSync(filePath)) {
+      try {
+        existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+        logger.info(`读取用户 ${userId} 原有数据成功`)
+      } catch (error) {
+        logger.warn(`读取用户 ${userId} 原有数据失败: ${error}`)
+      }
+    }
+
+    // 构建完整的数据对象，优先使用传入的参数，如果没有则使用原有数据
     const fullData = {
       tableName: scheduleData.tableName,
       semesterStart: scheduleData.semesterStart,
       updateTime: new Date().toISOString(),
-      nickname: nickname || userId.toString(),
+      nickname: nickname || existingData.nickname || userId.toString(),
+      signature: signature !== null ? signature : (existingData.signature || ''),
       courses: scheduleData.courses
     }
 
+    // 确保签名字段存在（即使为空字符串）
+    if (fullData.signature === undefined) {
+      fullData.signature = ''
+    }
+
     fs.writeFileSync(filePath, JSON.stringify(fullData, null, 2), 'utf8')
-    logger.info(`用户 ${userId} (${nickname || '未设置昵称'}) 的课程表已保存`)
+    logger.info(`用户 ${userId} (${fullData.nickname}) 的课程表已保存，签名: ${fullData.signature || '未设置'}`)
   }
+
 
   /**
    * 清除课表
