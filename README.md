@@ -1,3 +1,11 @@
+<!--
+ * @Author: Temmie0125 1179755948@qq.com
+ * @Date: 2026-01-04 18:12:00
+ * @LastEditors: Temmie0125 1179755948@qq.com
+ * @LastEditTime: 2026-03-06 15:45:11
+ * @FilePath: \实验与作业e:\bot\plugins\schedule\README.md
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+-->
 # Schedule课程表插件
 
 ## 插件说明
@@ -53,3 +61,10 @@ git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./p
 `群友在上什么课`查看本群群友上课状态
 
 `#翘课|取消翘课`开关翘课状态
+
+## TODO
+
+- [ ] 查看所有人上课状态（主人命令）
+- [ ] 视奸特定用户
+- [ ] 排行榜功能
+- [ ] 允许自由指定要展示课表的群聊
