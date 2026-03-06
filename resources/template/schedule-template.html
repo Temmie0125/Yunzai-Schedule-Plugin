@@ -141,6 +141,12 @@
             color: white;
         }
 
+        .status-学期结束 {
+            background: #6c757d;
+            /* 灰色 */
+            color: white;
+        }
+
         .course-info {
             font-size: 14px;
             color: #666;
@@ -251,17 +257,34 @@
                 <div class="member-info">
                     <div class="member-name">
                         {{member.nickname}}
-                        {{if member.skipStatus}}
+                        {{if member.skipStatus && member.status !== '学期结束'}}
                         <span class="skip-tag">翘课模式</span>
                         {{/if}}
                     </div>
+                    {{if member.status !== '学期结束'}}
                     <div class="member-week">
                         第{{member.currentWeek}}周{{if !member.hasSemesterStart}} (使用默认学期){{/if}}
                     </div>
+                    {{/if}}
+                
+                    {{if member.status === '学期结束'}}
+                    <!-- 学期结束特殊显示 -->
+                    <div class="member-status status-学期结束">
+                        学期结束
+                    </div>
+                    <div class="course-info" style="color: #999;">
+                        📅 本学期课程已结束，请使用 #设置课表 更新
+                    </div>
+                    {{if member.signature}}
+                    <div class="member-signature">
+                        💭 {{member.signature}}
+                    </div>
+                    {{/if}}
+                    {{else}}
+                    <!-- 正常状态显示（原有逻辑） -->
                     <div class="member-status status-{{member.status}}">
                         {{member.status}}
                     </div>
-                    <!-- 新增：显示签名（当状态为"无课程"或"已结束"时） -->
                     {{if (member.status === '无课程' || member.status === '已结束') && member.signature}}
                     <div class="member-signature">
                         💭 {{member.signature}}
@@ -290,6 +313,7 @@
                     <div class="course-info">
                         今日暂无课程安排
                     </div>
+                    {{/if}}
                     {{/if}}
                 </div>
             </div>
