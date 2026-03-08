@@ -1,4 +1,4 @@
-import { plugin } from '../../../lib/plugins/plugin.js'
+//import { plugin } from '../../../lib/plugins/plugin.js'
 import { Restart } from '../../other/restart.js'
 import { exec } from 'child_process'
 import fs from 'fs'
