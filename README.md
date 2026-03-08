@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-01-04 18:12:00
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-06 15:45:11
+ * @LastEditTime: 2026-03-09 01:22:22
  * @FilePath: \实验与作业e:\bot\plugins\schedule\README.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -16,21 +16,26 @@
 
 ## 更新日志
 
-1. 3.6更新：代码重构，并修复跨学期问题
+- 3.6更新：代码重构，并修复跨学期问题
+- 3.9更新：
+    1. 支持直接通过口令导入课表；
+    2. 进一步优化代码结构；
+    3. 支持通过日期查询课表
 
 ## 功能特性
 
-1. 支持WakeUP口令一次性导入
-2. 无需每个群单独绑定，支持跨群
-3. 支持一键翘课
-4. 智能判断学期结束
-5. 支持一键清除课表
+- 支持WakeUP口令一次性导入
+- 无需每个群单独绑定，支持跨群
+- 支持一键翘课
+- 智能判断学期结束
+- 支持一键清除课表
+- **免配置，开箱即用**
 
 ## 安装说明
 
 将本插件复制到`Yunzai/plugins`文件夹
 
-或者使用以下命令以克隆仓库：
+或者在**Yunzai根目录**下使用以下命令以克隆仓库：
 
 ```bash
 git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./plugins/schedule
@@ -52,7 +57,7 @@ git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./p
 
 `#今日课表|明日课表`查看自己今日/明日课表
 
-`#课表查询 周数 星期`查看自己某日的课表
+`#课表查询 <日期> 或 #课表查询 <周数 星期>`查看自己某日的课表
 
 `#我的课表`查看自己的相关信息
 

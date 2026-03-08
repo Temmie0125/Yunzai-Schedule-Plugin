@@ -1,9 +1,18 @@
+/*
+ * @Author: Temmie0125 1179755948@qq.com
+ * @Date: 2025-12-26 17:11:34
+ * @LastEditors: Temmie0125 1179755948@qq.com
+ * @LastEditTime: 2026-03-09 01:15:34
+ * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 //import fs from 'node:fs'
 //import path from 'node:path'
 //import https from 'node:https'
 import { DataManager } from '../components/DataManager.js'
-import { fetchScheduleFromAPI } from '../services/wakeupApi.js'
-import { calculateCurrentWeek } from '../utils/timeUtils.js'
+//import { fetchScheduleFromAPI } from '../services/wakeupApi.js'
+import { importScheduleFromCode } from '../services/scheduleImporter.js'  // 新增导入
+import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput } from '../utils/timeUtils.js';
 
 export class SchedulePlugin extends plugin {
   constructor() {
@@ -38,7 +47,7 @@ export class SchedulePlugin extends plugin {
           fnc: "showTomorrowSchedule"
         },
         {
-          reg: "^#(课表查询|schedule query)(?:\\s+(\\d+)\\s+(\\d+))?$",
+          reg: "^#(课表查询|schedule query)\\s*(.*)$",
           fnc: "querySchedule"
         },
         {
@@ -48,6 +57,11 @@ export class SchedulePlugin extends plugin {
         {
           reg: "^#(课表帮助|schedule help)$",
           fnc: "showHelp"
+        },
+        // ===== 新增规则：直接识别包含「口令」的消息 =====
+        {
+          reg: ".*「[0-9a-zA-Z\\-_]+」.*",
+          fnc: "handleDirectCode"
         }
       ]
     })
@@ -75,95 +89,63 @@ export class SchedulePlugin extends plugin {
   }
 
   /**
- * 设置课表（修改版本，保留原有昵称和签名）
- */
+     * 处理 #设置课表 命令
+     */
   async setSchedule() {
-    const userId = this.e.user_id
-    const message = this.e.msg
-    // 提取口令
-    let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1]
+    const userId = this.e.user_id;
+    const message = this.e.msg;
+
+    let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1];
     if (!code) {
-      // 如果没有参数，进入交互模式
-      this.setContext("waitingForCode")
-      await this.reply("请发送你的WakeUp课程表分享口令（可以从WakeUp应用分享获取）", false, { at: true })
-      return true
+      this.setContext("waitingForCode");
+      await this.reply("请发送你的WakeUp课程表分享口令", false, { at: true });
+      return true;
     }
 
-    // 处理口令
-    code = code.trim()
-
-    // 如果是分享格式，提取其中的口令
-    const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u)
+    code = code.trim();
+    const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
     if (match) {
-      code = match[1]
-    } else if (!/^[0-9a-zA-Z\-_]+$/u.test(code)) {
-      await this.reply("口令格式不正确，请确保是WakeUp课程表的正确分享口令")
-      return true
+      code = match[1];
     }
 
-    // 获取课程表数据
-    try {
-      const scheduleData = await fetchScheduleFromAPI(code)
-      if (!scheduleData) return this.reply('获取课表失败，请检查口令')
-      const oldData = DataManager.loadSchedule(userId)
-      let nickname = oldData?.nickname
-      let signature = oldData?.signature
-      if (!nickname) {
-        nickname = (await DataManager.getUserNickname(userId, this.e)) || userId.toString()
-      }
-      DataManager.saveSchedule(userId, scheduleData, nickname, signature)
-      let reply = `课程表设置成功！\n课表名称：${scheduleData.tableName}\n学期开始：${scheduleData.semesterStart}\n共 ${scheduleData.courses.length} 门课程\n昵称：${nickname}`
-      if (signature) reply += `\n签名：${signature}`
-      if (nickname === userId.toString()) {
-        reply += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`
-      }
-      await this.reply(reply)
-    } catch (err) {
-      logger.error(`设置课表失败: ${err}`)
-      await this.reply('设置课表失败，请稍后重试')
-    }
-    return true
+    // 调用服务
+    const result = await importScheduleFromCode(userId, code, this.e);
+    await this.reply(result.message);
+    return true;
   }
 
-
   /**
-   * 等待用户发送口令（上下文模式，修改版本）
+   * 上下文等待口令
    */
   async waitingForCode() {
-    const userId = this.e.user_id
-    let code = this.e.msg.trim()
-    // 结束上下文
-    this.finish("waitingForCode")
-    // 处理口令
-    const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u)
+    const userId = this.e.user_id;
+    let code = this.e.msg.trim();
+    this.finish("waitingForCode");
+
+    const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
     if (match) {
-      code = match[1]
-    } else if (!/^[0-9a-zA-Z\-_]+$/u.test(code)) {
-      await this.reply("口令格式不正确，请确保是WakeUp课程表的正确分享口令")
-      return true
+      code = match[1];
     }
-    // 获取课程表数据
-    try {
-      const scheduleData = await fetchScheduleFromAPI(code)
-      if (!scheduleData) return this.reply('获取课表失败，请检查口令')
-      const oldData = DataManager.loadSchedule(userId)
-      let nickname = oldData?.nickname
-      let signature = oldData?.signature
-      if (!nickname) {
-        nickname = (await DataManager.getUserNickname(userId, this.e)) || userId.toString()
-      }
-      DataManager.saveSchedule(userId, scheduleData, nickname, signature)
-      let reply = `课程表设置成功！\n课表名称：${scheduleData.tableName}\n学期开始：${scheduleData.semesterStart}\n共 ${scheduleData.courses.length} 门课程\n昵称：${nickname}`
-      if (signature) reply += `\n签名：${signature}`
-      if (nickname === userId.toString()) {
-        reply += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`
-      }
-      await this.reply(reply)
-    } catch (err) {
-      logger.error(`设置课表失败: ${err}`)
-      await this.reply('设置课表失败，请稍后重试')
-    }
-    return true
+
+    const result = await importScheduleFromCode(userId, code, this.e);
+    await this.reply(result.message);
+    return true;
+  }
+
+  /**
+   * 直接处理包含「口令」的消息
+   */
+  async handleDirectCode() {
+    const userId = this.e.user_id;
+    const message = this.e.msg;
+
+    const match = message.match(/「([0-9a-zA-Z\-_]+?)」/u);
+    if (!match) return false;  // 没有口令，不处理
+
+    const code = match[1];
+    const result = await importScheduleFromCode(userId, code, this.e);
+    await this.reply(result.message);
+    return true;
   }
 
   /**
@@ -365,162 +347,165 @@ export class SchedulePlugin extends plugin {
    * 显示今日课表（使用昵称）
    */
   async showTodaySchedule() {
-    const userId = this.e.user_id
-    const schedule = DataManager.loadSchedule(userId)
-
-    if (!schedule) {
-      await this.reply("请先使用 #设置课表 命令导入你的课程表")
-      return false
-    }
-
-    // 获取今天是星期几 (0=周日, 1=周一, ..., 6=周六)
-    const today = new Date().getDay()
-    // 转换为课表格式 (1=周一, ..., 7=周日)
-    const day = today === 0 ? 7 : today
-
-    // 计算当前周数
-    const currentWeek = calculateCurrentWeek(schedule.semesterStart);
-    const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
-    if (maxWeek > 0 && currentWeek > maxWeek) {
-      await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
+    const userId = this.e.user_id;
+    const today = new Date();
+    const result = await this.getCoursesForDate(userId, today);
+    if (result.error) {
+      await this.reply(result.error);
       return true;
     }
-
-    // 筛选今日课程
-    const todayCourses = schedule.courses.filter(course =>
-      course.day === day.toString() && course.weeks.includes(currentWeek)
-    )
-    // 使用昵称显示
-    const displayName = schedule.nickname || `用户${userId}`
-
-    if (todayCourses.length === 0) {
-      await this.reply(`${displayName} 的第${currentWeek}周 星期${day}没有课程`)
-      return true
-    }
-
-    // 按时间排序
-    todayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime))
-
-    // 生成回复
-    let reply = `${displayName} 的第${currentWeek}周 星期${day} 课程安排\n`
-    reply += "=".repeat(25) + "\n"
-
-    todayCourses.forEach((course, index) => {
-      reply += `${index + 1}. ${course.name}\n`
-      reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`
-      reply += `   🕐 ${course.startTime} - ${course.endTime}\n`
-      reply += `   📍 ${course.location || '未知地点'}\n`
-      if (index < todayCourses.length - 1) reply += "\n"
-    })
-
-    await this.reply(reply)
-    return true
+    const replyMsg = this.formatCourses(result.courses, result.week, result.day, result.displayName);
+    await this.reply(replyMsg);
+    return true;
   }
 
   /**
-   * 显示明日课表（使用昵称）
+   * 明日课表
+   * @returns 
    */
   async showTomorrowSchedule() {
-    const userId = this.e.user_id
-    const schedule = DataManager.loadSchedule(userId)
-    if (!schedule) {
-      await this.reply("请先使用 #设置课表 命令导入你的课程表")
-      return false
-    }
-    // 获取明天是星期几
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const day = tomorrow.getDay() === 0 ? 7 : tomorrow.getDay()
-    // 计算当前周数
-    const currentWeek = calculateCurrentWeek(schedule.semesterStart);
-    const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
-    if (maxWeek > 0 && currentWeek > maxWeek) {
-      await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
+    const userId = this.e.user_id;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const result = await this.getCoursesForDate(userId, tomorrow);
+    if (result.error) {
+      await this.reply(result.error);
       return true;
     }
-    // 筛选明日课程
-    const tomorrowCourses = schedule.courses.filter(course =>
-      course.day === day.toString() && course.weeks.includes(currentWeek)
-    )
-    // 使用昵称显示
-    const displayName = schedule.nickname || `用户${userId}`
-    if (tomorrowCourses.length === 0) {
-      await this.reply(`${displayName} 的第${currentWeek}周 星期${day}没有课程`)
-      return true
-    }
-    // 按时间排序
-    tomorrowCourses.sort((a, b) => a.startTime.localeCompare(b.startTime))
-    // 生成回复
-    let reply = `${displayName} 的明日（第${currentWeek}周 星期${day}）课程安排\n`
-    reply += "=".repeat(25) + "\n"
-    tomorrowCourses.forEach((course, index) => {
-      reply += `${index + 1}. ${course.name}\n`
-      reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`
-      reply += `   🕐 ${course.startTime} - ${course.endTime}\n`
-      reply += `   📍 ${course.location || '未知地点'}\n`
-      if (index < tomorrowCourses.length - 1) reply += "\n"
-    })
-
-    await this.reply(reply)
-    return true
+    const replyMsg = this.formatCourses(result.courses, result.week, result.day, result.displayName);
+    await this.reply(replyMsg);
+    return true;
   }
 
   /**
    * 查询特定日期课程
    */
   async querySchedule() {
-    const userId = this.e.user_id
-    const schedule = DataManager.loadSchedule(userId)
+    const userId = this.e.user_id;
+    const schedule = DataManager.loadSchedule(userId);
     if (!schedule) {
-      await this.reply("请先使用 #设置课表 命令导入你的课程表")
-      return false
+      await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+      return false;
     }
-    const matches = this.e.msg.match(/^#(?:课表查询|schedule query)(?:\s+(\d+)\s+(\d+))?$/)
-    let week, day
-    const currentWeek = calculateCurrentWeek(schedule.semesterStart);
-    const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
-    if (maxWeek > 0 && currentWeek > maxWeek) {
-      await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
+
+    // 获取命令后的参数部分（已去除命令前缀）
+    const msg = this.e.msg;
+    const match = msg.match(/^#(?:课表查询|schedule query)\s*(.*)$/);
+    const param = match ? match[1].trim() : '';
+
+    // 如果没有参数，显示提示
+    if (!param) {
+      const currentWeek = calculateCurrentWeek(schedule.semesterStart);
+      await this.reply(
+        `请指定查询条件：\n` +
+        `1. 周数 + 星期（如 #课表查询 ${currentWeek} 1）\n` +
+        `2. 日期（如 #课表查询 10-1，自动识别学期年份）`
+      );
       return true;
     }
-    if (matches && matches[1] && matches[2]) {
-      // 用户指定了周数和星期
-      week = parseInt(matches[1])
-      day = parseInt(matches[2])
+    // 1. 尝试匹配原有格式：周数 + 星期
+    const weekDayMatch = msg.match(/^#(?:课表查询|schedule query)\s+(\d+)\s+(\d+)$/);
+    if (weekDayMatch) {
+      const week = parseInt(weekDayMatch[1]);
+      const day = parseInt(weekDayMatch[2]);
       if (day < 1 || day > 7) {
-        await this.reply("星期数应在1-7之间（1=周一，7=周日）")
-        return false
+        await this.reply("星期数应在1-7之间（1=周一，7=周日）");
+        return false;
       }
-    } else {
-      // 显示当前周数，提示用户输入
-      //const currentWeek = calculateCurrentWeek(schedule.semesterStart)
-      await this.reply(`当前是第${currentWeek}周\n请使用命令格式：#课表查询 [周数] [星期]\n例如：#课表查询 ${currentWeek} 1`)
-      return true
+      const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
+      if (maxWeek > 0 && week > maxWeek) {
+        await this.reply(`第${week}周已超出本学期课程周数，请确认周数是否正确`);
+        return true;
+      }
+      const courses = schedule.courses.filter(course =>
+        course.day === day.toString() && course.weeks.includes(week)
+      );
+      const displayName = schedule.nickname || `用户${userId}`;
+      const replyMsg = this.formatCourses(courses, week, day, displayName);
+      await this.reply(replyMsg);
+      return true;
     }
-    // 筛选课程
-    const targetCourses = schedule.courses.filter(course =>
+
+    // 2. 尝试匹配日期格式
+    const dateInput = msg.replace(/^#(?:课表查询|schedule query)\s*/, '');
+    const date = parseDateInput(dateInput, schedule.semesterStart);
+    if (date) {
+      const result = await this.getCoursesForDate(userId, date);
+      if (result.error) {
+        await this.reply(result.error);
+        return true;
+      }
+      const replyMsg = this.formatCourses(result.courses, result.week, result.day, result.displayName);
+      await this.reply(replyMsg);
+      return true;
+    }
+
+    // 3. 无法解析，给出提示
+    const currentWeek = calculateCurrentWeek(schedule.semesterStart);
+    await this.reply(
+      `无法识别的查询格式。\n请使用以下格式：\n` +
+      `1. #课表查询 周数 星期（如 #课表查询 ${currentWeek} 1）\n` +
+      `2. #课表查询 月-日（如 #课表查询 10-1，将自动识别学期年份）`
+    );
+    return true;
+  }
+  /**
+ * 获取指定日期的课程（内部使用）
+ * @param {number} userId 用户QQ
+ * @param {Date} date 查询日期
+ * @returns {Promise<Object>} 包含 courses, week, day, displayName 或 error
+ */
+  async getCoursesForDate(userId, date) {
+    const schedule = DataManager.loadSchedule(userId);
+    if (!schedule) {
+      return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
+    }
+
+    const week = calculateWeekFromDate(schedule.semesterStart, date);
+    if (week === null) {
+      return { error: "查询日期早于学期开始日期，无法计算周数" };
+    }
+
+    const day = date.getDay() === 0 ? 7 : date.getDay(); // 1=周一 ... 7=周日
+
+    const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
+    if (maxWeek > 0 && week > maxWeek) {
+      return { error: `第 ${week} 周已超出本学期课程周数，请确认日期是否正确` };
+    }
+
+    const courses = schedule.courses.filter(course =>
       course.day === day.toString() && course.weeks.includes(week)
-    )
-    // 使用昵称显示
-    const displayName = schedule.nickname || `用户${userId}`
-    if (targetCourses.length === 0) {
-      await this.reply(`${displayName} 的第${week}周 星期${day}没有课程`)
-      return true
+    );
+
+    const displayName = schedule.nickname || `用户${userId}`;
+    return { courses, week, day, displayName };
+  }
+  /**
+ * 将课程列表格式化为回复文本
+ * @param {Array} courses 课程数组
+ * @param {number} week 周数
+ * @param {number} day 星期（1-7）
+ * @param {string} displayName 显示名称
+ * @returns {string} 格式化后的消息
+ */
+  formatCourses(courses, week, day, displayName) {
+    if (courses.length === 0) {
+      return `${displayName} 的第${week}周 星期${day}没有课程`;
     }
+
     // 按时间排序
-    targetCourses.sort((a, b) => a.startTime.localeCompare(b.startTime))
-    // 生成回复
-    let reply = `${displayName} 的第${week}周 星期${day} 课程安排\n`
-    reply += "=".repeat(25) + "\n"
-    targetCourses.forEach((course, index) => {
-      reply += `${index + 1}. ${course.name}\n`
-      reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`
-      reply += `   🕐 ${course.startTime} - ${course.endTime}\n`
-      reply += `   📍 ${course.location || '未知地点'}\n`
-      if (index < targetCourses.length - 1) reply += "\n"
-    })
-    await this.reply(reply)
-    return true
+    courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    let reply = `${displayName} 的第${week}周 星期${day} 课程安排\n`;
+    reply += "=".repeat(25) + "\n";
+    courses.forEach((course, index) => {
+      reply += `${index + 1}. ${course.name}\n`;
+      reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
+      reply += `   🕐 ${course.startTime} - ${course.endTime}\n`;
+      reply += `   📍 ${course.location || '未知地点'}\n`;
+      if (index < courses.length - 1) reply += "\n";
+    });
+    return reply;
   }
 }
 export default SchedulePlugin
