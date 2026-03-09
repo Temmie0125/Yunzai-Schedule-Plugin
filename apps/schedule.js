@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 21:58:35
+ * @LastEditTime: 2026-03-09 22:08:41
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -109,7 +109,8 @@ export class SchedulePlugin extends plugin {
       `【#课表查询 周数 星期】查看自己某日的课表\n` +
       `【#我的课表】查看自己的相关信息\n` +
       `【#课程表|群课表】查看（视奸）群友的上课状态\n` +
-      `【#翘课|取消翘课】开关翘课状态`
+      `【#翘课|取消翘课】开关翘课状态\n` +
+      `【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）`
     return e.reply(replyMsg);
   }
 
@@ -526,7 +527,11 @@ export class SchedulePlugin extends plugin {
 
     // 保存订阅状态
     await DataManager.setReminderStatus(userId, true);
-    await e.reply("✅ 已开启课表订阅，每天20:00将为你推送明日课表（需保持好友关系）");
+    const config = ConfigManager.getConfig()
+    const parts = config.pushCron.split(' '); 
+    const hour = parts[1];
+    const minute = parts[2];
+    await e.reply(`✅ 已开启课表订阅，每天 ${hour}:${minute} 将为你推送明日课表（需保持好友关系）`);
     return true;
   }
   /**
