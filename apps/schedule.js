@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 21:37:27
+ * @LastEditTime: 2026-03-09 21:58:35
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -10,12 +10,15 @@
 //import path from 'node:path'
 //import https from 'node:https'
 import { DataManager } from '../components/DataManager.js'
-//import { fetchScheduleFromAPI } from '../services/wakeupApi.js'
+import { ConfigManager } from '../components/ConfigManager.js'
 import { importScheduleFromCode } from '../services/scheduleImporter.js'  // 新增导入
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput } from '../utils/timeUtils.js';
 
 export class SchedulePlugin extends plugin {
   constructor() {
+    // 在 constructor 中读取配置
+    const config = ConfigManager.getConfig()
+    this.pushCron = config.pushCron  // 存储 cron 供 task 使用
     super({
       name: "课程表插件",
       dsc: "WakeUp课程表导入与查询功能",
@@ -78,10 +81,11 @@ export class SchedulePlugin extends plugin {
         }
         */
       ],
+
       task: [
         {
           name: "推送明日课表",
-          cron: "0 20 * * *",   // 每天20:00执行，可按需修改
+          cron: this.pushCron,
           fnc: "pushTomorrowSchedule"
         }
       ]
@@ -513,6 +517,11 @@ export class SchedulePlugin extends plugin {
         `❌ 订阅失败！请先添加机器人为好友，才能开启课表订阅哦~\n`
       );
       return false;
+    }
+    // 检查是否有课表，无课表无法订阅
+    const schedule = DataManager.loadSchedule(userId);
+    if (!schedule) {
+      return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
     }
 
     // 保存订阅状态

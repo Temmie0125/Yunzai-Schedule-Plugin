@@ -1,6 +1,6 @@
 # 用户数据目录（不纳入 git 管理）
 data/
-config/
+config/config/
 
 # 其他可选忽略
 node_modules/
