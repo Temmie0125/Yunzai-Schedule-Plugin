@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-01-04 18:12:00
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 01:22:22
+ * @LastEditTime: 2026-03-09 01:49:08
  * @FilePath: \实验与作业e:\bot\plugins\schedule\README.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -18,9 +18,10 @@
 
 - 3.6更新：代码重构，并修复跨学期问题
 - 3.9更新：
-    1. 支持直接通过口令导入课表；
-    2. 进一步优化代码结构；
-    3. 支持通过日期查询课表
+  - 支持直接通过口令导入课表；
+  - 进一步优化代码结构；
+  - 支持通过日期查询课表；
+  - 新增#课表更新命令（主人权限）
 
 ## 功能特性
 
@@ -66,6 +67,8 @@ git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./p
 `群友在上什么课`查看本群群友上课状态
 
 `#翘课|取消翘课`开关翘课状态
+
+`#课表(强制)?更新`更新插件（需主人权限）
 
 ## TODO
 

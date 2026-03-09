@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 01:15:34
+ * @LastEditTime: 2026-03-09 21:37:27
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -62,6 +62,27 @@ export class SchedulePlugin extends plugin {
         {
           reg: ".*「[0-9a-zA-Z\\-_]+」.*",
           fnc: "handleDirectCode"
+        },
+        {
+          reg: "^#(开启|打开)课表(订阅|提醒)$",
+          fnc: "enableReminder"
+        },
+        {
+          reg: "^#(关闭|取消)课表(订阅|提醒)$",
+          fnc: "disableReminder"
+        },
+        /*
+        {
+          reg: "^#测试明日推送$",
+          fnc: "testPushTomorrow"
+        }
+        */
+      ],
+      task: [
+        {
+          name: "推送明日课表",
+          cron: "0 20 * * *",   // 每天20:00执行，可按需修改
+          fnc: "pushTomorrowSchedule"
         }
       ]
     })
@@ -481,6 +502,34 @@ export class SchedulePlugin extends plugin {
     return { courses, week, day, displayName };
   }
   /**
+ * 开启课表订阅
+ */
+  async enableReminder(e) {
+    const userId = e.user_id;
+
+    // 检查是否已经是好友
+    if (!Bot.fl || !Bot.fl.has(Number(userId))) {
+      await e.reply(
+        `❌ 订阅失败！请先添加机器人为好友，才能开启课表订阅哦~\n`
+      );
+      return false;
+    }
+
+    // 保存订阅状态
+    await DataManager.setReminderStatus(userId, true);
+    await e.reply("✅ 已开启课表订阅，每天20:00将为你推送明日课表（需保持好友关系）");
+    return true;
+  }
+  /**
+ * 关闭课表订阅
+ */
+  async disableReminder(e) {
+    const userId = e.user_id;
+    await DataManager.setReminderStatus(userId, false);
+    await e.reply("✅ 已关闭课表订阅");
+    return true;
+  }
+  /**
  * 将课程列表格式化为回复文本
  * @param {Array} courses 课程数组
  * @param {number} week 周数
@@ -490,7 +539,7 @@ export class SchedulePlugin extends plugin {
  */
   formatCourses(courses, week, day, displayName) {
     if (courses.length === 0) {
-      return `${displayName} 的第${week}周 星期${day}没有课程`;
+      return `${displayName} 的第${week}周 星期${day}没有课程哦~`;
     }
 
     // 按时间排序
@@ -507,5 +556,84 @@ export class SchedulePlugin extends plugin {
     });
     return reply;
   }
+  /**
+ * 推送明日课表（定时任务）
+ */
+  async pushTomorrowSchedule() {
+    logger.info("[课表订阅] 开始推送明日课表");
+
+    // 获取所有订阅用户
+    const users = await DataManager.getAllReminderUsers();
+    if (!users.length) {
+      logger.info("[课表订阅] 无订阅用户，任务结束");
+      return;
+    }
+
+    // 计算明天日期
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // 遍历推送
+    for (const userId of users) {
+      try {
+        // 1. 检查用户是否有课表
+        const schedule = DataManager.loadSchedule(userId);
+        if (!schedule) {
+          logger.debug(`[课表订阅] 用户 ${userId} 未设置课表，跳过`);
+          continue;
+        }
+
+        // 2. 获取明日课程（复用现有方法）
+        const result = await this.getCoursesForDate(userId, tomorrow);
+        if (result.error) {
+          logger.debug(`[课表订阅] 用户 ${userId} 获取课程失败: ${result.error}`);
+          continue;
+        }
+
+        // 3. 格式化消息
+        const replyMsg = this.formatCourses(
+          result.courses,
+          result.week,
+          result.day,
+          result.displayName
+        );
+        replyMsg = `======明日课程提醒======\n` + replyMsg;
+
+        // 4. 检查是否为好友
+        if (!Bot.fl || !Bot.fl.has(Number(userId))) {
+          logger.debug(`[课表订阅] 用户 ${userId} 不是机器人好友，无法私信`);
+          continue;
+        }
+
+        // 5. 发送私信
+        await Bot.pickFriend(userId).sendMsg(replyMsg);
+        logger.info(`[课表订阅] 成功推送明日课表给用户 ${userId}`);
+
+        // 6. 等待3秒，避免风控
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+      } catch (err) {
+        logger.error(`[课表订阅] 推送用户 ${userId} 时发生错误: ${err}`);
+      }
+    }
+
+    logger.info("[课表订阅] 推送完成");
+  }
+
+  /**
+ * 测试推送明日课表（手动触发）
+ */
+  /*
+    async testPushTomorrow(e) {
+      // 仅允许主人使用，避免误触
+      if (!e.isMaster) {
+        await e.reply("❌ 仅限主人测试使用");
+        return false;
+      }
+      await this.pushTomorrowSchedule();
+      await e.reply("✅ 推送任务已执行，请查看日志");
+      return true;
+    }
+    */
 }
 export default SchedulePlugin

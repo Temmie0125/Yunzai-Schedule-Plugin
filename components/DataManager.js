@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-03-06 13:43:00
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-06 14:48:01
+ * @LastEditTime: 2026-03-09 21:18:28
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\components\DataManager.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -12,6 +12,7 @@ import path from 'node:path'
 
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
+const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
 
 export class DataManager {
     /**
@@ -215,5 +216,53 @@ export class DataManager {
             return event.sender.card || event.sender.nickname || null
         }
         return null
+    }
+
+
+    /**
+     * 加载所有订阅状态
+     * @returns {Promise<Object>} 键为用户ID，值为 true
+     */
+    static async loadReminderStatus() {
+        if (!fs.existsSync(REMINDER_STATUS_PATH)) return {};
+        try {
+            return JSON.parse(fs.readFileSync(REMINDER_STATUS_PATH, 'utf8'));
+        } catch {
+            return {};
+        }
+    }
+
+    /**
+     * 保存订阅状态
+     * @param {Object} status 
+     */
+    static async saveReminderStatus(status) {
+        const dir = path.dirname(REMINDER_STATUS_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(REMINDER_STATUS_PATH, JSON.stringify(status, null, 2), 'utf8');
+    }
+
+    /**
+     * 设置单个用户的订阅状态
+     * @param {string|number} userId 
+     * @param {boolean} enabled 
+     */
+    static async setReminderStatus(userId, enabled) {
+        const status = await this.loadReminderStatus();
+        if (enabled) {
+            status[userId] = true;
+        } else {
+            delete status[userId];
+        }
+        await this.saveReminderStatus(status);
+    }
+
+    /**
+     * 获取所有开启订阅的用户ID列表
+     * @returns {Promise<string[]>}
+     */
+    static async getAllReminderUsers() {
+        const status = await this.loadReminderStatus();
+        return Object.keys(status);
     }
 }
