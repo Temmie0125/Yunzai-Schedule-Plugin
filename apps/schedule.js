@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 22:08:41
+ * @LastEditTime: 2026-03-09 23:42:47
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -529,7 +529,8 @@ export class SchedulePlugin extends plugin {
     await DataManager.setReminderStatus(userId, true);
     const parts = pushCron.split(' '); 
     const hour = parts[1];
-    const minute = parts[2];
+    const minute = parts[0];
+    if(minute === "*") minute = "00"
     await e.reply(`✅ 已开启课表订阅，每天 ${hour}:${minute} 将为你推送明日课表（需保持好友关系）`);
     return true;
   }
