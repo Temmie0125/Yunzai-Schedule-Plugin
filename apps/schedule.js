@@ -13,12 +13,12 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { importScheduleFromCode } from '../services/scheduleImporter.js'  // 新增导入
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput } from '../utils/timeUtils.js';
-
+const config = ConfigManager.getConfig()
+const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
   constructor() {
     // 在 constructor 中读取配置
-    const config = ConfigManager.getConfig()
-    this.pushCron = config.pushCron  // 存储 cron 供 task 使用
+    
     super({
       name: "课程表插件",
       dsc: "WakeUp课程表导入与查询功能",
@@ -85,7 +85,7 @@ export class SchedulePlugin extends plugin {
       task: [
         {
           name: "推送明日课表",
-          cron: this.pushCron,
+          cron: pushCron,
           fnc: "pushTomorrowSchedule"
         }
       ]
@@ -527,8 +527,7 @@ export class SchedulePlugin extends plugin {
 
     // 保存订阅状态
     await DataManager.setReminderStatus(userId, true);
-    const config = ConfigManager.getConfig()
-    const parts = config.pushCron.split(' '); 
+    const parts = pushCron.split(' '); 
     const hour = parts[1];
     const minute = parts[2];
     await e.reply(`✅ 已开启课表订阅，每天 ${hour}:${minute} 将为你推送明日课表（需保持好友关系）`);
