@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 23:45:49
+ * @LastEditTime: 2026-03-10 00:48:18
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -527,13 +527,21 @@ export class SchedulePlugin extends plugin {
 
     // 保存订阅状态
     await DataManager.setReminderStatus(userId, true);
-    const parts = pushCron.split(' '); 
-    const hour = parts[1];
-    const minute = parts[0];
-    if(minute === "*") minute = "0"
-    
-    await e.reply(`✅ 已开启课表订阅，每天${hour}点${minute}分将为你推送明日课表（需保持好友关系）`);
-    return true;
+    const parts = pushCron.split(' ');
+    const minuteStr = parts[0];
+    const hourStr = parts[1];
+
+    const minuteInt = parseInt(minuteStr, 10);
+    let timeDesc;
+
+    if (minuteInt === 0) {
+        timeDesc = `${hourStr}点整`;
+    } else {
+        const minuteFormatted = minuteInt.toString().padStart(2, '0');
+        timeDesc = `${hourStr}点${minuteFormatted}分`;
+    }
+
+    await e.reply(`✅ 已开启课表订阅，每天${timeDesc}将为你推送明日课表（需保持好友关系）`);
   }
   /**
  * 关闭课表订阅
