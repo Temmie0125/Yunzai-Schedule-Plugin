@@ -17,5 +17,6 @@ export default {
     isV2: false,
     version: "1.0.0",
     icon: "boxicons:alarm-alt",
+    showInMenu: 'auto',
     depends: []
 }
