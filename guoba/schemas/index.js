@@ -14,5 +14,21 @@ export const schemas = [
         required: true,
         placeholder: "例如：0 20 * * * 表示每天20:00",
         bottomHelpMessage: "请填写标准的cron表达式，支持Linux crontab格式。修改后需要重启 Bot 才能生效"
+    },
+    // 新增：是否显示课表名称
+    {
+        field: "showTableName",
+        label: "群聊显示课表名称",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "关闭后，在群内设置课表将不显示课表名称，保护隐私"
+    },
+    // 新增：是否自动撤回口令
+    {
+        field: "autoRecallCode",
+        label: "自动撤回课表口令",
+        component: "Switch",
+        defaultValue: false,
+        bottomHelpMessage: "开启后，在群内且Bot有管理员权限时，将自动撤回用户发送的口令消息"
     }
 ]

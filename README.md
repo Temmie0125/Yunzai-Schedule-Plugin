@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-01-04 18:12:00
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 01:49:08
+ * @LastEditTime: 2026-03-10 12:05:45
  * @FilePath: \实验与作业e:\bot\plugins\schedule\README.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -24,6 +24,8 @@
   - 新增#课表更新命令（主人权限）
 - 3.9更新：
   - 课表订阅功能，可以定时推送第二天课表（需要加好友）
+  - 可配置课表名称显示开关（对群聊生效）
+  - 可配置是否尝试自动撤回口令
 
 ## 功能特性
 
@@ -32,11 +34,18 @@
 - 支持一键翘课
 - 智能判断学期结束
 - 支持一键清除课表
-- **免配置，开箱即用**
+- **几乎免配置，开箱即用**
+
+## 配置说明
+
+默认配置在`config/default_config/`，勿动
+用户配置会自动创建在`config/config`。
+本插件已适配Guoba，建议直接通过Guoba进行配置，而不是手动修改配置文件。
+课表推送时间修改需要重启Bot生效，其他配置更改无需重启。
 
 ## 安装说明
 
-将本插件复制到`Yunzai/plugins`文件夹
+将本插件复制到`Yunzai/plugins`文件夹（不推荐，推荐使用git clone，方便后续更新）
 
 或者在**Yunzai根目录**下使用以下命令以克隆仓库：
 
