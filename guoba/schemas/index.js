@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-03-09 22:00:29
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 22:36:47
+ * @LastEditTime: 2026-03-10 18:48:29
  * @FilePath: \实验与作业e:\bot\plugins\schedule\guoba\schemas\index.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -30,5 +30,20 @@ export const schemas = [
         component: "Switch",
         defaultValue: false,
         bottomHelpMessage: "开启后，在群内且Bot有管理员权限时，将自动撤回用户发送的口令消息"
+    },
+    // 新增：渲染精度
+    {
+        field: "renderScale",
+        label: "图片渲染精度",
+        component: "InputNumber",
+        required: true,
+        componentProps: {
+            min: 0.8,
+            max: 2,
+            step: 0.1,
+            placeholder: '请输入渲染精度'
+        },
+        defaultValue: 1.0, 
+        bottomHelpMessage: "控制生成图片的大小。更高的精度图片更清晰，但渲染时间更长。建议1.0即可。"
     }
 ]

@@ -1,16 +1,5 @@
-/*
- * @Author: Temmie0125 1179755948@qq.com
- * @Date: 2026-03-06 13:48:02
- * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-06 13:48:28
- * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\components\Renderer.js
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 // components/Renderer.js
-// import fs from 'node:fs'
-// import path from 'node:path'
-
-// 动态导入 puppeteer（避免启动时加载）
+import { ConfigManager } from '../components/ConfigManager.js'
 let puppeteer
 async function getPuppeteer() {
     if (!puppeteer) {
@@ -20,44 +9,75 @@ async function getPuppeteer() {
 }
 
 /**
- * 生成群课表图片
- * @param {Array} members - 成员数据
- * @param {number} currentWeek - 当前周（系统周）
- * @param {number} currentDay - 当前星期（1-7）
+ * 通用渲染函数
+ * @param {string} templateName - 模板文件名（不含路径，如 'schedule-template'）
+ * @param {object} data - 模板数据
+ * @param {object} options - 额外选项，如 { e, scale }
  * @returns {Promise<Buffer|null>}
  */
-export async function generateScheduleImage(members, currentWeek, currentDay) {
+async function renderTemplate(templateName, data, options = {}) {
     try {
         const puppeteer = await getPuppeteer()
-        const now = new Date()
-        const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
-
-        const templateData = {
-            weekday: weekdayMap[currentDay],
-            currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-            updateTime: now.toLocaleString('zh-CN'),
-            totalMembers: members.length,
-            studyingCount: members.filter(m => m.status === '进行中').length,
-            skippingCount: members.filter(m => m.status === '翘课中').length,
-            skipModeCount: members.filter(m => m.skipStatus).length,
-            members: members.map(m => ({
-                ...m,
-                avatar: m.avatar || `https://q1.qlogo.cn/g?b=qq&nk=${m.userId}&s=640`,
-                signature: m.signature || ''
-            }))
+        const tplFile = `./plugins/schedule/resources/template/${templateName}.html`
+        const renderData = {
+            ...data,
+            _res_path: `./plugins/schedule/resources/`
         }
-
-        return await puppeteer.screenshot('群课表状态', {
-            tplFile: './plugins/schedule/resources/template/schedule-template.html',
-            filePath: './plugins/schedule/resources/',
-            ...templateData
-        })
+        // 调用 puppeteer.render，第三个参数可传入 e、scale 等
+        return await puppeteer.render(templateName, {
+            tplFile,
+            ...renderData
+        }, options)
     } catch (err) {
-        logger.error(`生成课表图片失败: ${err}`)
+        logger.error(`渲染模板 ${templateName} 失败: ${err}`)
         return null
     }
 }
 
+/**
+ * 生成群课表图片
+ */
+export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
+    const config = ConfigManager.getConfig()
+    const scale = config.renderScale ?? 1.0
+    const mergedOptions = { ...options, scale }
+
+    const now = new Date()
+    const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
+
+    const templateData = {
+        weekday: weekdayMap[currentDay],
+        currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+        updateTime: now.toLocaleString('zh-CN'),
+        totalMembers: members.length,
+        studyingCount: members.filter(m => m.status === '进行中').length,
+        skippingCount: members.filter(m => m.status === '翘课中').length,
+        skipModeCount: members.filter(m => m.skipStatus).length,
+        members: members.map(m => ({
+            ...m,
+            avatar: m.avatar || `https://q1.qlogo.cn/g?b=qq&nk=${m.userId}&s=640`,
+            signature: m.signature || ''
+        }))
+    }
+
+    return await renderTemplate('schedule-template', templateData, mergedOptions)
+}
+
+/**
+ * 生成帮助图片
+ */
+export async function generateHelpImage(helpData, options = {}) {
+    const config = ConfigManager.getConfig()
+    const scale = config.renderScale ?? 1.0
+    const mergedOptions = { ...options, scale }
+
+    const now = new Date()
+    const templateData = {
+        ...helpData,
+        updateTime: now.toLocaleString('zh-CN')
+    }
+    return await renderTemplate('help-template', templateData, mergedOptions)
+}
 /**
  * 生成文本格式课表（备用）
  * @param {Array} members - 成员数据

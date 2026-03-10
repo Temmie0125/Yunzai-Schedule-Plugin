@@ -2,23 +2,23 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-10 00:48:18
+ * @LastEditTime: 2026-03-10 18:44:01
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-//import fs from 'node:fs'
-//import path from 'node:path'
-//import https from 'node:https'
+import fs from 'node:fs'
+import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { importScheduleFromCode } from '../services/scheduleImporter.js'  // 新增导入
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput } from '../utils/timeUtils.js';
+import { generateHelpImage } from '../components/Renderer.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
   constructor() {
     // 在 constructor 中读取配置
-    
+
     super({
       name: "课程表插件",
       dsc: "WakeUp课程表导入与查询功能",
@@ -95,23 +95,83 @@ export class SchedulePlugin extends plugin {
     //this.dataPath = 'plugins/schedule/data/'
   }
 
-  /**
-   * 帮助
-   */
   async showHelp(e) {
-    const replyMsg = `课程表帮助\n` +
-      `==========\n` +
-      `【#设置课表 WakeUP分享口令】设置课程表\n` +
-      `【#清除课表】清除自己的课表\n` +
-      `【#课表设置昵称 昵称】修改昵称\n` +
-      `【#课表设置签名 签名】设置个性签名(最多30字)\n` +  // 新增
-      `【#今日课表|明日课表】查看自己今日/明日课表\n` +
-      `【#课表查询 周数 星期】查看自己某日的课表\n` +
-      `【#我的课表】查看自己的相关信息\n` +
-      `【#课程表|群课表】查看（视奸）群友的上课状态\n` +
-      `【#翘课|取消翘课】开关翘课状态\n` +
-      `【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）`
-    return e.reply(replyMsg);
+    const helpData = await this.getHelpData()
+    const img = await generateHelpImage(helpData, { e: e })
+    if (img) {
+      await e.reply(segment.image(img))
+    } else {
+      // 降级为文本帮助
+      await e.reply(this.getDefaultHelpText())
+    }
+    return true
+  }
+
+  // 添加辅助方法：读取帮助配置文件
+  async getHelpData() {
+    const configPath = path.join(process.cwd(), 'plugins/schedule/config/help.json')
+    let helpData = {}
+    try {
+      helpData = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    } catch (err) {
+      logger.error('[课程表插件] 读取帮助配置失败，使用默认数据', err)
+      helpData = this.getDefaultHelpData()
+    }
+    return helpData
+  }
+
+
+  // 默认帮助数据（当配置文件不存在时使用）
+  getDefaultHelpData() {
+    return {
+      title: "课程表帮助",
+      subTitle: "Yunzai-Bot & 课程表插件",
+      bg: "",
+      groups: [
+        {
+          group: "基础功能",
+          list: [
+            { icon: 1, title: "#设置课表", desc: "导入WakeUP分享口令" },
+            { icon: 2, title: "#清除课表", desc: "清除自己的课程表" },
+            { icon: 3, title: "#课表设置昵称", desc: "修改显示昵称" },
+            { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" }
+          ]
+        },
+        {
+          group: "查询功能",
+          list: [
+            { icon: 5, title: "#今日课表", desc: "查看今日课程" },
+            { icon: 6, title: "#明日课表", desc: "查看明日课程" },
+            { icon: 7, title: "#课表查询", desc: "查询指定日期课程" },
+            { icon: 8, title: "#我的课表", desc: "查看自己的课表信息" }
+          ]
+        },
+        {
+          group: "群互动",
+          list: [
+            { icon: 9, title: "#群课表", desc: "查看群友上课状态" },
+            { icon: 10, title: "#翘课", desc: "开启/关闭翘课模式" },
+            { icon: 11, title: "#开启课表订阅", desc: "开启明日课表推送(需加好友)" }
+          ]
+        }
+      ]
+    }
+  }
+
+  // 保留原有文本帮助作为降级
+  getDefaultHelpText() {
+    return `课程表帮助
+==========
+【#设置课表 WakeUP分享口令】设置课程表
+【#清除课表】清除自己的课表
+【#课表设置昵称 昵称】修改昵称
+【#课表设置签名 签名】设置个性签名(最多30字)
+【#今日课表|明日课表】查看自己今日/明日课表
+【#课表查询 周数 星期】查看自己某日的课表
+【#我的课表】查看自己的相关信息
+【#课程表|群课表】查看（视奸）群友的上课状态
+【#翘课|取消翘课】开关翘课状态
+【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）`
   }
 
   /**
@@ -535,10 +595,10 @@ export class SchedulePlugin extends plugin {
     let timeDesc;
 
     if (minuteInt === 0) {
-        timeDesc = `${hourStr}点整`;
+      timeDesc = `${hourStr}点整`;
     } else {
-        const minuteFormatted = minuteInt.toString().padStart(2, '0');
-        timeDesc = `${hourStr}点${minuteFormatted}分`;
+      const minuteFormatted = minuteInt.toString().padStart(2, '0');
+      timeDesc = `${hourStr}点${minuteFormatted}分`;
     }
 
     await e.reply(`✅ 已开启课表订阅，每天${timeDesc}将为你推送明日课表（需保持好友关系）`);

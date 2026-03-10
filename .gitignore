@@ -2,6 +2,9 @@
 data/
 config/config/
 
+# 自定义帮助图片
+/resources/help/imgs/
+
 # 其他可选忽略
 node_modules/
 *.log

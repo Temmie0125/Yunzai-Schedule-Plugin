@@ -164,9 +164,9 @@ export class GroupSchedulePlugin extends plugin {
   async sendScheduleMessage(members, currentWeek, currentDay) {
     try {
       // 生成图片
-      const image = await generateScheduleImage(members, currentWeek, currentDay);
+      const image = await generateScheduleImage(members, currentWeek, currentDay, { e: this.e });
       if (image) {
-        await this.reply(image);
+        await this.reply(segment.image(image));
         return true;
       } else {
         // 降级为文本消息
