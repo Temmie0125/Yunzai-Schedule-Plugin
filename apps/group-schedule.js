@@ -1,5 +1,5 @@
-import fs from 'node:fs'
-import path from 'node:path'
+//import fs from 'node:fs'
+//import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil } from '../utils/timeUtils.js'
@@ -20,6 +20,10 @@ export class GroupSchedulePlugin extends plugin {
           fnc: "showGroupSchedule"
         },
         {
+          reg: "^#?\\s*(?:@|\\d+)?.*在上什么课\\??$",
+          fnc: "queryUserSchedule"
+        },
+        {
           reg: "^#(翘课|取消翘课)$",
           fnc: "toggleSkipClass"
         }
@@ -28,6 +32,83 @@ export class GroupSchedulePlugin extends plugin {
 
     this.dataPath = 'plugins/schedule/data/'
     this.skipStatusPath = 'plugins/schedule/skip-status.json'
+  }
+  async getMemberScheduleData(userId, memberInfo, currentDay, currentTime) {
+    const scheduleData = DataManager.loadSchedule(userId);
+    if (!scheduleData) return null;
+
+    const skipStatus = await DataManager.loadSkipStatus(userId);
+    const signature = scheduleData.signature || "此人很懒，还没有设置个性签名~";
+    const semesterStart = scheduleData.semesterStart;
+    const userCurrentWeek = calculateCurrentWeek(semesterStart);
+    let maxWeek = 0;
+    if (scheduleData.courses && scheduleData.courses.length > 0) {
+      maxWeek = Math.max(...scheduleData.courses.flatMap(course => course.weeks));
+    }
+    const semesterEnded = maxWeek > 0 && userCurrentWeek > maxWeek;
+
+    // 学期结束处理
+    if (semesterEnded) {
+      return {
+        userId,
+        nickname: scheduleData.nickname || memberInfo.nickname || `用户${userId}`,
+        avatar: await this.getAvatarUrl(userId),
+        semesterEnded: true,
+        status: '学期结束',
+        signature,
+        currentWeek: userCurrentWeek,
+        hasSemesterStart: !!semesterStart
+      };
+    }
+
+    // 今日课程筛选
+    const todayCourses = scheduleData.courses.filter(course =>
+      parseInt(course.day) === currentDay &&
+      course.weeks.includes(userCurrentWeek)
+    );
+    todayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    let currentCourse = null;
+    let status = '无课程';
+    let remainingTime = null;
+
+    if (todayCourses.length > 0) {
+      const ongoingCourse = todayCourses.find(course =>
+        currentTime >= course.startTime && currentTime <= course.endTime
+      );
+      if (ongoingCourse) {
+        currentCourse = ongoingCourse;
+        if (skipStatus) {
+          status = '翘课中';
+        } else {
+          status = '进行中';
+          remainingTime = calculateRemainingTime(currentTime, ongoingCourse.endTime);
+        }
+      } else {
+        const nextCourse = todayCourses.find(course => currentTime < course.startTime);
+        if (nextCourse) {
+          currentCourse = nextCourse;
+          status = '未开始';
+          remainingTime = calculateTimeUntil(currentTime, nextCourse.startTime);
+        } else {
+          currentCourse = todayCourses[todayCourses.length - 1];
+          status = '已结束';
+        }
+      }
+    }
+
+    return {
+      userId,
+      nickname: scheduleData.nickname || memberInfo.nickname || `用户${userId}`,
+      avatar: await this.getAvatarUrl(userId),
+      currentCourse,
+      status,
+      remainingTime,
+      skipStatus,
+      signature,
+      currentWeek: userCurrentWeek,
+      hasSemesterStart: !!semesterStart
+    };
   }
 
   /**
@@ -53,98 +134,11 @@ export class GroupSchedulePlugin extends plugin {
     // 收集有课表的成员信息
     const membersWithSchedule = []
 
+    // 在原循环位置
     for (const member of groupMembers) {
-      const userId = member.user_id
-      const scheduleData = DataManager.loadSchedule(userId)
-
-      if (scheduleData) {
-        // 获取用户翘课状态
-        const skipStatus = await DataManager.loadSkipStatus(userId)
-        // 获取用户个性签名
-        const signature = scheduleData.signature || "此人很懒，还没有设置个性签名~"
-
-        // 获取学期开始日期并计算当前周数
-        const semesterStart = scheduleData.semesterStart
-        const userCurrentWeek = calculateCurrentWeek(semesterStart)
-        // 计算该用户所有课程的最大周数
-        let maxWeek = 0;
-        if (scheduleData.courses && scheduleData.courses.length > 0) {
-          maxWeek = Math.max(...scheduleData.courses.flatMap(course => course.weeks));
-        }
-        const semesterEnded = maxWeek > 0 && userCurrentWeek > maxWeek;
-
-        if (semesterEnded) {
-          // 学期结束的成员，只保留基本信息，不处理课程筛选
-          membersWithSchedule.push({
-            userId,
-            nickname: scheduleData.nickname || member.nickname || `用户${userId}`,
-            avatar: await this.getAvatarUrl(userId),
-            semesterEnded: true,
-            status: '学期结束',
-            signature: scheduleData.signature || "",
-            currentWeek: userCurrentWeek,
-            hasSemesterStart: !!semesterStart
-          });
-          continue; // 跳过后续课程处理
-        }
-
-        // 获取今日课程和当前状态
-        const todayCourses = scheduleData.courses.filter(course =>
-          parseInt(course.day) === currentDay &&
-          course.weeks.includes(userCurrentWeek)
-        )
-
-        // 按时间排序
-        todayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime))
-
-        // 查找当前课程或最近课程
-        let currentCourse = null
-        let status = '无课程'
-        let remainingTime = null
-
-        if (todayCourses.length > 0) {
-          // 查找正在进行的课程
-          const ongoingCourse = todayCourses.find(course =>
-            currentTime >= course.startTime && currentTime <= course.endTime
-          )
-
-          if (ongoingCourse) {
-            currentCourse = ongoingCourse
-            if (skipStatus) {
-              status = '翘课中'
-            } else {
-              status = '进行中'
-              // 计算剩余时间
-              remainingTime = calculateRemainingTime(currentTime, ongoingCourse.endTime)
-            }
-          } else {
-            // 查找下一个课程
-            const nextCourse = todayCourses.find(course => currentTime < course.startTime)
-            if (nextCourse) {
-              currentCourse = nextCourse
-              status = '未开始'
-              // 计算距离开始时间
-              remainingTime = calculateTimeUntil(currentTime, nextCourse.startTime)
-            } else {
-              // 所有课程都已结束
-              currentCourse = todayCourses[todayCourses.length - 1]
-              status = '已结束'
-            }
-          }
-        }
-
-        membersWithSchedule.push({
-          userId,
-          nickname: scheduleData.nickname || member.nickname || `用户${userId}`,
-          avatar: await this.getAvatarUrl(userId),
-          currentCourse,
-          status,
-          remainingTime,
-          skipStatus,
-          signature,  // 新增：个性签名
-          currentWeek: userCurrentWeek, // 添加个人周数
-          hasSemesterStart: !!semesterStart // 标记是否有学期开始日期
-        })
+      const data = await this.getMemberScheduleData(member.user_id, member, currentDay, currentTime);
+      if (data) {
+        membersWithSchedule.push(data);
       }
     }
 
@@ -180,6 +174,55 @@ export class GroupSchedulePlugin extends plugin {
       return false;
     }
   }
+  async queryUserSchedule() {
+    const groupId = this.e.group_id;
+    if (!groupId) {
+      await this.reply("请在群聊中使用此命令");
+      return true;
+    }
+  
+    // 解析目标用户 ID：优先使用 @，否则从消息中提取第一个数字
+    let targetId = null;
+    if (this.e.at) {
+      targetId = this.e.at;
+    } else {
+      const msg = this.e.msg;
+      const match = msg.match(/(\d+)/);
+      if (match) {
+        targetId = parseInt(match[1]);
+      }
+    }
+  
+    if (!targetId) {
+      await this.reply("请@某人或提供QQ号");
+      return true;
+    }
+    targetId = Number(targetId);
+  
+    // 获取群成员列表，验证目标成员是否在群内
+    const groupMembers = await this.getGroupMembers(groupId);
+    const targetMember = groupMembers.find(m => m.user_id === targetId);
+    if (!targetMember) {
+      await this.reply(`未找到成员 ${targetId}，可能不在本群`);
+      return true;
+    }
+  
+    // 当前时间信息
+    const now = new Date();
+    const currentDay = now.getDay() === 0 ? 7 : now.getDay();
+    const currentTime = now.toTimeString().slice(0, 5);
+  
+    // 获取该成员的上课状态数据
+    const memberData = await this.getMemberScheduleData(targetId, targetMember, currentDay, currentTime);
+    if (!memberData) {
+      await this.reply(`用户 ${targetMember.nickname || targetId} 还未设置课程表`);
+      return true;
+    }
+  
+    // 发送图片（仅包含该成员）
+    await this.sendScheduleMessage([memberData], calculateCurrentWeek(), currentDay);
+    return true;
+  }
 
   /**
    * 切换翘课状态
@@ -191,8 +234,8 @@ export class GroupSchedulePlugin extends plugin {
     // 检查是否有课程表
     const scheduleData = DataManager.loadSchedule(userId)
     if (!scheduleData) {
-        await this.reply("请先使用 #设置课表 命令导入课程表")
-        return true
+      await this.reply("请先使用 #设置课表 命令导入课程表")
+      return true
     }
 
     // 加载当前翘课状态
@@ -200,15 +243,15 @@ export class GroupSchedulePlugin extends plugin {
     let newStatus
 
     if (message.includes("取消")) {
-        if (!currentStatus) {
-            return this.reply("你还未处于翘课模式，无需取消")
-        }
-        newStatus = false
+      if (!currentStatus) {
+        return this.reply("你还未处于翘课模式，无需取消")
+      }
+      newStatus = false
     } else {
-        if (currentStatus) {
-            return this.reply("你已经处于翘课模式，无需再次开启")
-        }
-        newStatus = true
+      if (currentStatus) {
+        return this.reply("你已经处于翘课模式，无需再次开启")
+      }
+      newStatus = true
     }
 
     // 更新状态
@@ -218,7 +261,7 @@ export class GroupSchedulePlugin extends plugin {
     const nickname = scheduleData.nickname || `用户${userId}`
     await this.reply(`${nickname} ${newStatus ? '已开启翘课模式' : '已取消翘课模式'}`)
     return true
-}
+  }
 
   /**
    * 获取群成员列表
