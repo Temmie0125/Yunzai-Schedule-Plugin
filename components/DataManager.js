@@ -218,6 +218,98 @@ export class DataManager {
         return null
     }
 
+    /**
+    * 将课程列表格式化为回复文本
+    * @param {Array} courses 课程数组
+    * @param {number} week 周数
+    * @param {number} day 星期（1-7）
+    * @param {string} displayName 显示名称
+    * @returns {string} 格式化后的消息
+    */
+    static formatCourses(courses, week, day, displayName) {
+        if (courses.length === 0) {
+            return `${displayName} 的第${week}周 星期${day}没有课程哦~`;
+        }
+
+        // 按时间排序
+        courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+        let reply = `${displayName} 的第${week}周 星期${day} 课程安排\n`;
+        reply += "=".repeat(25) + "\n";
+        courses.forEach((course, index) => {
+            reply += `${index + 1}. ${course.name}\n`;
+            reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
+            reply += `   🕐 ${course.startTime} - ${course.endTime}\n`;
+            reply += `   📍 ${course.location || '未知地点'}\n`;
+            if (index < courses.length - 1) reply += "\n";
+        });
+        return reply;
+    }
+
+    // 添加辅助方法：读取帮助配置文件
+    static async getHelpData() {
+        const configPath = path.join(process.cwd(), 'plugins/schedule/config/help.json')
+        let helpData = {}
+        try {
+            helpData = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+        } catch (err) {
+            logger.error('[课程表插件] 读取帮助配置失败，使用默认数据', err)
+            helpData = this.getDefaultHelpData()
+        }
+        return helpData
+    }
+    // 默认帮助数据（当配置文件不存在时使用）
+    static getDefaultHelpData() {
+        return {
+            title: "课程表帮助",
+            subTitle: "Yunzai-Bot & 课程表插件",
+            bg: "",
+            groups: [
+                {
+                    group: "基础功能",
+                    list: [
+                        { icon: 1, title: "#设置课表", desc: "导入WakeUP分享口令" },
+                        { icon: 2, title: "#清除课表", desc: "清除自己的课程表" },
+                        { icon: 3, title: "#课表设置昵称", desc: "修改显示昵称" },
+                        { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" }
+                    ]
+                },
+                {
+                    group: "查询功能",
+                    list: [
+                        { icon: 5, title: "#今日课表", desc: "查看今日课程" },
+                        { icon: 6, title: "#明日课表", desc: "查看明日课程" },
+                        { icon: 7, title: "#课表查询", desc: "查询指定日期课程" },
+                        { icon: 8, title: "#我的课表", desc: "查看自己的课表信息" }
+                    ]
+                },
+                {
+                    group: "群互动",
+                    list: [
+                        { icon: 9, title: "#群课表", desc: "查看群友上课状态" },
+                        { icon: 10, title: "#翘课", desc: "开启/关闭翘课模式" },
+                        { icon: 11, title: "#开启课表订阅", desc: "开启明日课表推送(需加好友)" }
+                    ]
+                }
+            ]
+        }
+    }
+
+    // 保留原有文本帮助作为降级
+    static getDefaultHelpText() {
+        return `课程表帮助
+==========
+【#设置课表 WakeUP分享口令】设置课程表
+【#清除课表】清除自己的课表
+【#课表设置昵称 昵称】修改昵称
+【#课表设置签名 签名】设置个性签名(最多30字)
+【#今日课表|明日课表】查看自己今日/明日课表
+【#课表查询 周数 星期】查看自己某日的课表
+【#我的课表】查看自己的相关信息
+【#课程表|群课表】查看（视奸）群友的上课状态
+【#翘课|取消翘课】开关翘课状态
+【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）`
+    }
 
     /**
      * 加载所有订阅状态

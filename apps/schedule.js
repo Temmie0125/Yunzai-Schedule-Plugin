@@ -64,22 +64,8 @@ export class SchedulePlugin extends plugin {
         {
           reg: "^#(关闭|取消)课表(订阅|提醒)$",
           fnc: "disableReminder"
-        },
-        /*
-        {
-          reg: "^#测试明日推送$",
-          fnc: "testPushTomorrow"
         }
-        */
       ],
-
-      //task: [
-      //  {
-      //    name: "推送明日课表",
-      //    cron: pushCron,
-      //    fnc: this.pushTomorrowSchedule.bind(this)
-      //  }
-      //]
     })
     // 现在可以安全地使用 this 了
     this.task = [
@@ -93,87 +79,17 @@ export class SchedulePlugin extends plugin {
     // 数据存储路径
     //this.dataPath = 'plugins/schedule/data/'
   }
-
-
   async showHelp(e) {
-    const helpData = await this.getHelpData()
+    const helpData = await DataManager.getHelpData()
     const img = await generateHelpImage(helpData, { e: e })
     if (img) {
       await e.reply(segment.image(img))
     } else {
       // 降级为文本帮助
-      await e.reply(this.getDefaultHelpText())
+      await e.reply(DataManager.getDefaultHelpText())
     }
     return true
   }
-
-  // 添加辅助方法：读取帮助配置文件
-  async getHelpData() {
-    const configPath = path.join(process.cwd(), 'plugins/schedule/config/help.json')
-    let helpData = {}
-    try {
-      helpData = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-    } catch (err) {
-      logger.error('[课程表插件] 读取帮助配置失败，使用默认数据', err)
-      helpData = this.getDefaultHelpData()
-    }
-    return helpData
-  }
-
-
-  // 默认帮助数据（当配置文件不存在时使用）
-  getDefaultHelpData() {
-    return {
-      title: "课程表帮助",
-      subTitle: "Yunzai-Bot & 课程表插件",
-      bg: "",
-      groups: [
-        {
-          group: "基础功能",
-          list: [
-            { icon: 1, title: "#设置课表", desc: "导入WakeUP分享口令" },
-            { icon: 2, title: "#清除课表", desc: "清除自己的课程表" },
-            { icon: 3, title: "#课表设置昵称", desc: "修改显示昵称" },
-            { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" }
-          ]
-        },
-        {
-          group: "查询功能",
-          list: [
-            { icon: 5, title: "#今日课表", desc: "查看今日课程" },
-            { icon: 6, title: "#明日课表", desc: "查看明日课程" },
-            { icon: 7, title: "#课表查询", desc: "查询指定日期课程" },
-            { icon: 8, title: "#我的课表", desc: "查看自己的课表信息" }
-          ]
-        },
-        {
-          group: "群互动",
-          list: [
-            { icon: 9, title: "#群课表", desc: "查看群友上课状态" },
-            { icon: 10, title: "#翘课", desc: "开启/关闭翘课模式" },
-            { icon: 11, title: "#开启课表订阅", desc: "开启明日课表推送(需加好友)" }
-          ]
-        }
-      ]
-    }
-  }
-
-  // 保留原有文本帮助作为降级
-  getDefaultHelpText() {
-    return `课程表帮助
-==========
-【#设置课表 WakeUP分享口令】设置课程表
-【#清除课表】清除自己的课表
-【#课表设置昵称 昵称】修改昵称
-【#课表设置签名 签名】设置个性签名(最多30字)
-【#今日课表|明日课表】查看自己今日/明日课表
-【#课表查询 周数 星期】查看自己某日的课表
-【#我的课表】查看自己的相关信息
-【#课程表|群课表】查看（视奸）群友的上课状态
-【#翘课|取消翘课】开关翘课状态
-【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）`
-  }
-
   /**
      * 处理 #设置课表 命令
      */
@@ -255,17 +171,14 @@ export class SchedulePlugin extends plugin {
       await this.reply("昵称太长了，请控制在20个字符以内")
       return false
     }
-
     // 保存昵称
     const success = await DataManager.saveUserNickname(userId, nickname)
-
     if (success) {
       await this.reply(`昵称设置成功：${nickname}`)
       logger.info(`用户 ${userId} 设置昵称为：${nickname}`)
     } else {
       await this.reply("昵称设置失败，请重试")
     }
-
     return true
   }
 
@@ -275,26 +188,21 @@ export class SchedulePlugin extends plugin {
   async waitingForNickname() {
     const userId = this.e.user_id
     const nickname = this.e.msg.trim()
-
     // 结束上下文
     this.finish("waitingForNickname")
-
     // 昵称长度检查
     if (nickname.length > 20) {
       await this.reply("昵称太长了，请控制在20个字符以内")
       return false
     }
-
     // 保存昵称
     const success = await DataManager.saveUserNickname(userId, nickname)
-
     if (success) {
       await this.reply(`昵称设置成功：${nickname}`)
       logger.info(`用户 ${userId} 设置昵称为：${nickname}`)
     } else {
       await this.reply("昵称设置失败，请重试")
     }
-
     return true
   }
   /**
@@ -303,7 +211,6 @@ export class SchedulePlugin extends plugin {
   async setSignature() {
     const userId = this.e.user_id
     const message = this.e.msg
-
     // 提取签名
     const match = message.match(/^#(?:课表设置签名|schedule setsign)\s+(.+)$/)
     if (!match) {
@@ -311,25 +218,20 @@ export class SchedulePlugin extends plugin {
       await this.reply("请发送你想要设置的个性签名（最多30字）", false, { at: true })
       return true
     }
-
     let signature = match[1].trim()
-
     // 签名长度检查
     if (signature.length > 30) {
       await this.reply("签名太长了，请控制在30字以内")
       return false
     }
-
     // 保存签名
     const success = await DataManager.saveUserSignature(userId, signature)
-
     if (success) {
       await this.reply(`个性签名设置成功：${signature}`)
       logger.info(`用户 ${userId} 设置个性签名：${signature}`)
     } else {
       await this.reply("签名设置失败，请重试")
     }
-
     return true
   }
   /**
@@ -338,29 +240,23 @@ export class SchedulePlugin extends plugin {
   async waitingForSignature() {
     const userId = this.e.user_id
     let signature = this.e.msg.trim()
-
     // 结束上下文
     this.finish("waitingForSignature")
-
     // 签名长度检查
     if (signature.length > 30) {
       await this.reply("签名太长了，请控制在30字以内")
       return false
     }
-
     // 保存签名
     const success = await DataManager.saveUserSignature(userId, signature)
-
     if (success) {
       await this.reply(`个性签名设置成功：${signature}`)
       logger.info(`用户 ${userId} 设置个性签名：${signature}`)
     } else {
       await this.reply("签名设置失败，请重试")
     }
-
     return true
   }
-
 
   /**
    * 显示用户课表信息
@@ -368,12 +264,10 @@ export class SchedulePlugin extends plugin {
   async showUserInfo() {
     const userId = this.e.user_id
     const scheduleData = DataManager.loadSchedule(userId)
-
     if (!scheduleData) {
       await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表")
       return false
     }
-
     // 获取当前周数
     const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
     const maxWeek = Math.max(...scheduleData.courses.flatMap(c => c.weeks), 0);
@@ -381,13 +275,11 @@ export class SchedulePlugin extends plugin {
       await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
       return true;
     }
-
     // 统计课程数量
     const totalCourses = scheduleData.courses.length
     const thisWeekCourses = scheduleData.courses.filter(course =>
       course.weeks.includes(currentWeek)
     ).length
-
     let reply = `📊 你的课表信息\n`
     reply += "=".repeat(20) + "\n"
     reply += `👤 昵称：${scheduleData.nickname || userId}\n`
@@ -407,7 +299,6 @@ export class SchedulePlugin extends plugin {
     reply += `#明日课表 - 查看明日课程\n`
     reply += `#课表查询 [周数] [星期] - 查询特定日期课程\n`
     reply += `#课表设置昵称 [昵称] - 修改昵称`
-
     await this.reply(reply)
     return true
   }
@@ -440,7 +331,7 @@ export class SchedulePlugin extends plugin {
       await this.reply(result.error);
       return true;
     }
-    const replyMsg = this.formatCourses(result.courses, result.week, result.day, result.displayName);
+    const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
     await this.reply(replyMsg);
     return true;
   }
@@ -458,7 +349,7 @@ export class SchedulePlugin extends plugin {
       await this.reply(result.error);
       return true;
     }
-    const replyMsg = this.formatCourses(result.courses, result.week, result.day, result.displayName);
+    const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
     await this.reply(replyMsg);
     return true;
   }
@@ -507,7 +398,7 @@ export class SchedulePlugin extends plugin {
         course.day === day.toString() && course.weeks.includes(week)
       );
       const displayName = schedule.nickname || `用户${userId}`;
-      const replyMsg = this.formatCourses(courses, week, day, displayName);
+      const replyMsg = DataManager.formatCourses(courses, week, day, displayName);
       await this.reply(replyMsg);
       return true;
     }
@@ -521,7 +412,7 @@ export class SchedulePlugin extends plugin {
         await this.reply(result.error);
         return true;
       }
-      const replyMsg = this.formatCourses(result.courses, result.week, result.day, result.displayName);
+      const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
       await this.reply(replyMsg);
       return true;
     }
@@ -613,33 +504,6 @@ export class SchedulePlugin extends plugin {
     return true;
   }
   /**
- * 将课程列表格式化为回复文本
- * @param {Array} courses 课程数组
- * @param {number} week 周数
- * @param {number} day 星期（1-7）
- * @param {string} displayName 显示名称
- * @returns {string} 格式化后的消息
- */
-  formatCourses(courses, week, day, displayName) {
-    if (courses.length === 0) {
-      return `${displayName} 的第${week}周 星期${day}没有课程哦~`;
-    }
-
-    // 按时间排序
-    courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-    let reply = `${displayName} 的第${week}周 星期${day} 课程安排\n`;
-    reply += "=".repeat(25) + "\n";
-    courses.forEach((course, index) => {
-      reply += `${index + 1}. ${course.name}\n`;
-      reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
-      reply += `   🕐 ${course.startTime} - ${course.endTime}\n`;
-      reply += `   📍 ${course.location || '未知地点'}\n`;
-      if (index < courses.length - 1) reply += "\n";
-    });
-    return reply;
-  }
-  /**
  * 推送明日课表（定时任务）
  */
   async pushTomorrowSchedule() {
@@ -674,7 +538,7 @@ export class SchedulePlugin extends plugin {
         }
 
         // 3. 格式化消息
-        let replyMsg = this.formatCourses(
+        let replyMsg = DataManager.formatCourses(
           result.courses,
           result.week,
           result.day,
@@ -702,21 +566,5 @@ export class SchedulePlugin extends plugin {
 
     logger.info("[课表订阅] 推送完成");
   }
-
-  /**
- * 测试推送明日课表（手动触发）
- */
-  /*
-    async testPushTomorrow(e) {
-      // 仅允许主人使用，避免误触
-      if (!e.isMaster) {
-        await e.reply("❌ 仅限主人测试使用");
-        return false;
-      }
-      await this.pushTomorrowSchedule();
-      await e.reply("✅ 推送任务已执行，请查看日志");
-      return true;
-    }
-    */
 }
 export default SchedulePlugin

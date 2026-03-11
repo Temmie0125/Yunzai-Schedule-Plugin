@@ -15,7 +15,7 @@ export default {
     link: 'https://github.com/Temmie0125/Yunzai-Schedule-Plugin',
     isV3: true,
     isV2: false,
-    version: "1.0.0",
+    version: "1.0.2",
     icon: "boxicons:alarm-alt",
     showInMenu: true,
 }
