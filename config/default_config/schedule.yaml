@@ -2,3 +2,4 @@
 pushCron: "0 20 * * *"
 showTableName: true
 autoRecallCode: false
+renderScale: 1.0
