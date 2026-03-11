@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2025-12-26 17:11:34
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-10 18:44:01
+ * @LastEditTime: 2026-03-12 01:02:35
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\schedule.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -18,7 +18,6 @@ const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
   constructor() {
     // 在 constructor 中读取配置
-
     super({
       name: "课程表插件",
       dsc: "WakeUp课程表导入与查询功能",
@@ -82,18 +81,27 @@ export class SchedulePlugin extends plugin {
         */
       ],
 
-      task: [
-        {
-          name: "推送明日课表",
-          cron: pushCron,
-          fnc: "pushTomorrowSchedule"
-        }
-      ]
+      //task: [
+      //  {
+      //    name: "推送明日课表",
+      //    cron: pushCron,
+      //    fnc: this.pushTomorrowSchedule.bind(this)
+      //  }
+      //]
     })
-
+    // 现在可以安全地使用 this 了
+    this.task = [
+      {
+        name: "推送明日课表",
+        cron: pushCron,                       // 从配置读取的 cron 表达式
+        fnc: () => this.pushTomorrowSchedule(), // 使用箭头函数确保 this 正确
+        log: true                               // 可选，开启日志
+      }
+    ]
     // 数据存储路径
     //this.dataPath = 'plugins/schedule/data/'
   }
+
 
   async showHelp(e) {
     const helpData = await this.getHelpData()
@@ -674,7 +682,7 @@ export class SchedulePlugin extends plugin {
         }
 
         // 3. 格式化消息
-        const replyMsg = this.formatCourses(
+        let replyMsg = this.formatCourses(
           result.courses,
           result.week,
           result.day,
