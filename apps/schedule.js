@@ -1,15 +1,14 @@
-import fs from 'node:fs'
-import path from 'node:path'
+// import fs from 'node:fs'
+// import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { importScheduleFromCode } from '../services/scheduleImporter.js'  // 新增导入
+import { importScheduleFromCode } from '../services/scheduleImporter.js'
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput } from '../utils/timeUtils.js';
 import { generateHelpImage } from '../components/Renderer.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
   constructor() {
-    // 在 constructor 中读取配置
     super({
       name: "课程表插件",
       dsc: "WakeUp课程表导入与查询功能",
@@ -67,17 +66,14 @@ export class SchedulePlugin extends plugin {
         }
       ],
     })
-    // 现在可以安全地使用 this 了
     this.task = [
       {
         name: "推送明日课表",
-        cron: pushCron,                       // 从配置读取的 cron 表达式
+        cron: pushCron,                         // 从配置读取的 cron 表达式
         fnc: () => this.pushTomorrowSchedule(), // 使用箭头函数确保 this 正确
         log: true                               // 可选，开启日志
       }
     ]
-    // 数据存储路径
-    //this.dataPath = 'plugins/schedule/data/'
   }
   async showHelp(e) {
     const helpData = await DataManager.getHelpData()
@@ -96,26 +92,22 @@ export class SchedulePlugin extends plugin {
   async setSchedule() {
     const userId = this.e.user_id;
     const message = this.e.msg;
-
     let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1];
     if (!code) {
       this.setContext("waitingForCode");
       await this.reply("请发送你的WakeUp课程表分享口令", false, { at: true });
       return true;
     }
-
     code = code.trim();
     const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
     if (match) {
       code = match[1];
     }
-
     // 调用服务
     const result = await importScheduleFromCode(userId, code, this.e);
     await this.reply(result.message);
     return true;
   }
-
   /**
    * 上下文等待口令
    */
@@ -123,33 +115,27 @@ export class SchedulePlugin extends plugin {
     const userId = this.e.user_id;
     let code = this.e.msg.trim();
     this.finish("waitingForCode");
-
     const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
     if (match) {
       code = match[1];
     }
-
     const result = await importScheduleFromCode(userId, code, this.e);
     await this.reply(result.message);
     return true;
   }
-
   /**
    * 直接处理包含「口令」的消息
    */
   async handleDirectCode() {
     const userId = this.e.user_id;
     const message = this.e.msg;
-
     const match = message.match(/「([0-9a-zA-Z\-_]+?)」/u);
     if (!match) return false;  // 没有口令，不处理
-
     const code = match[1];
     const result = await importScheduleFromCode(userId, code, this.e);
     await this.reply(result.message);
     return true;
   }
-
   /**
    * 课表昵称
    */
@@ -163,9 +149,7 @@ export class SchedulePlugin extends plugin {
       await this.reply("请发送你想要设置的昵称", false, { at: true })
       return true
     }
-
     const nickname = match[1].trim()
-
     // 昵称长度检查
     if (nickname.length > 20) {
       await this.reply("昵称太长了，请控制在20个字符以内")
@@ -181,7 +165,6 @@ export class SchedulePlugin extends plugin {
     }
     return true
   }
-
   /**
    * 等待用户发送昵称（上下文模式）
    */
@@ -257,7 +240,6 @@ export class SchedulePlugin extends plugin {
     }
     return true
   }
-
   /**
    * 显示用户课表信息
    */
@@ -302,7 +284,6 @@ export class SchedulePlugin extends plugin {
     await this.reply(reply)
     return true
   }
-
   /**
    * 清除课表
    */
@@ -335,7 +316,6 @@ export class SchedulePlugin extends plugin {
     await this.reply(replyMsg);
     return true;
   }
-
   /**
    * 明日课表
    * @returns 
@@ -353,7 +333,6 @@ export class SchedulePlugin extends plugin {
     await this.reply(replyMsg);
     return true;
   }
-
   /**
    * 查询特定日期课程
    */
@@ -364,12 +343,10 @@ export class SchedulePlugin extends plugin {
       await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
       return false;
     }
-
     // 获取命令后的参数部分（已去除命令前缀）
     const msg = this.e.msg;
     const match = msg.match(/^#(?:课表查询|schedule query)\s*(.*)$/);
     const param = match ? match[1].trim() : '';
-
     // 如果没有参数，显示提示
     if (!param) {
       const currentWeek = calculateCurrentWeek(schedule.semesterStart);
@@ -402,7 +379,6 @@ export class SchedulePlugin extends plugin {
       await this.reply(replyMsg);
       return true;
     }
-
     // 2. 尝试匹配日期格式
     const dateInput = msg.replace(/^#(?:课表查询|schedule query)\s*/, '');
     const date = parseDateInput(dateInput, schedule.semesterStart);
@@ -416,7 +392,6 @@ export class SchedulePlugin extends plugin {
       await this.reply(replyMsg);
       return true;
     }
-
     // 3. 无法解析，给出提示
     const currentWeek = calculateCurrentWeek(schedule.semesterStart);
     await this.reply(
@@ -437,23 +412,18 @@ export class SchedulePlugin extends plugin {
     if (!schedule) {
       return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
     }
-
     const week = calculateWeekFromDate(schedule.semesterStart, date);
     if (week === null) {
       return { error: "查询日期早于学期开始日期，无法计算周数" };
     }
-
     const day = date.getDay() === 0 ? 7 : date.getDay(); // 1=周一 ... 7=周日
-
     const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
     if (maxWeek > 0 && week > maxWeek) {
       return { error: `第 ${week} 周已超出本学期课程周数，请确认日期是否正确` };
     }
-
     const courses = schedule.courses.filter(course =>
       course.day === day.toString() && course.weeks.includes(week)
     );
-
     const displayName = schedule.nickname || `用户${userId}`;
     return { courses, week, day, displayName };
   }
@@ -462,7 +432,6 @@ export class SchedulePlugin extends plugin {
  */
   async enableReminder(e) {
     const userId = e.user_id;
-
     // 检查是否已经是好友
     if (!Bot.fl || !Bot.fl.has(Number(userId))) {
       await e.reply(
@@ -475,23 +444,19 @@ export class SchedulePlugin extends plugin {
     if (!schedule) {
       return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
     }
-
     // 保存订阅状态
     await DataManager.setReminderStatus(userId, true);
     const parts = pushCron.split(' ');
     const minuteStr = parts[0];
     const hourStr = parts[1];
-
     const minuteInt = parseInt(minuteStr, 10);
     let timeDesc;
-
     if (minuteInt === 0) {
       timeDesc = `${hourStr}点整`;
     } else {
       const minuteFormatted = minuteInt.toString().padStart(2, '0');
       timeDesc = `${hourStr}点${minuteFormatted}分`;
     }
-
     await e.reply(`✅ 已开启课表订阅，每天${timeDesc}将为你推送明日课表（需保持好友关系）`);
   }
   /**
@@ -508,18 +473,15 @@ export class SchedulePlugin extends plugin {
  */
   async pushTomorrowSchedule() {
     logger.info("[课表订阅] 开始推送明日课表");
-
     // 获取所有订阅用户
     const users = await DataManager.getAllReminderUsers();
     if (!users.length) {
       logger.info("[课表订阅] 无订阅用户，任务结束");
       return;
     }
-
     // 计算明天日期
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-
     // 遍历推送
     for (const userId of users) {
       try {
@@ -529,14 +491,12 @@ export class SchedulePlugin extends plugin {
           logger.debug(`[课表订阅] 用户 ${userId} 未设置课表，跳过`);
           continue;
         }
-
-        // 2. 获取明日课程（复用现有方法）
+        // 2. 获取明日课程
         const result = await this.getCoursesForDate(userId, tomorrow);
         if (result.error) {
           logger.debug(`[课表订阅] 用户 ${userId} 获取课程失败: ${result.error}`);
           continue;
         }
-
         // 3. 格式化消息
         let replyMsg = DataManager.formatCourses(
           result.courses,
@@ -545,25 +505,20 @@ export class SchedulePlugin extends plugin {
           result.displayName
         );
         replyMsg = `======明日课程提醒======\n` + replyMsg;
-
         // 4. 检查是否为好友
         if (!Bot.fl || !Bot.fl.has(Number(userId))) {
           logger.debug(`[课表订阅] 用户 ${userId} 不是机器人好友，无法私信`);
           continue;
         }
-
         // 5. 发送私信
         await Bot.pickFriend(userId).sendMsg(replyMsg);
         logger.info(`[课表订阅] 成功推送明日课表给用户 ${userId}`);
-
         // 6. 等待3秒，避免风控
         await new Promise(resolve => setTimeout(resolve, 3000));
-
       } catch (err) {
         logger.error(`[课表订阅] 推送用户 ${userId} 时发生错误: ${err}`);
       }
     }
-
     logger.info("[课表订阅] 推送完成");
   }
 }
