@@ -3,8 +3,8 @@
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { importScheduleFromCode } from '../services/scheduleImporter.js'
-import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput } from '../utils/timeUtils.js';
-import { generateHelpImage } from '../components/Renderer.js'
+import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput, calculateDateFromWeekAndDay } from '../utils/timeUtils.js';
+import { generateHelpImage, generateUserScheduleImage } from '../components/Renderer.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
@@ -133,7 +133,7 @@ export class SchedulePlugin extends plugin {
     if (!match) return false;  // 没有口令，不处理
     const code = match[1];
     // 一般分享口令为32位，为避免误触发，小于20位的不处理
-    if(code.length < 20) {
+    if (code.length < 20) {
       logger.warn("[课表导入] 非标准分享口令，请检查是否有误")
       return false;
     }
@@ -317,8 +317,23 @@ export class SchedulePlugin extends plugin {
       await this.reply(result.error);
       return true;
     }
-    const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-    await this.reply(replyMsg);
+    // 尝试生成图片
+    const schedule = DataManager.loadSchedule(userId);
+    const userData = {
+      nickname: result.displayName,
+      week: result.week,
+      day: result.day,
+      signature: schedule?.signature || '',
+      courses: result.courses
+    };
+    const img = await generateUserScheduleImage(userData, today, { e: this.e });
+    if (img) {
+      await this.reply(segment.image(img));
+    } else {
+      // 降级为文本
+      const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+      await this.reply(replyMsg);
+    }
     return true;
   }
   /**
@@ -334,8 +349,23 @@ export class SchedulePlugin extends plugin {
       await this.reply(result.error);
       return true;
     }
-    const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-    await this.reply(replyMsg);
+    // 尝试生成图片
+    const schedule = DataManager.loadSchedule(userId);
+    const userData = {
+      nickname: result.displayName,
+      week: result.week,
+      day: result.day,
+      signature: schedule?.signature || '',
+      courses: result.courses
+    };
+    const img = await generateUserScheduleImage(userData, tomorrow, { e: this.e });
+    if (img) {
+      await this.reply(segment.image(img));
+    } else {
+      // 降级为文本
+      const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+      await this.reply(replyMsg);
+    }
     return true;
   }
   /**
@@ -376,12 +406,39 @@ export class SchedulePlugin extends plugin {
         await this.reply(`第${week}周已超出本学期课程周数，请确认周数是否正确`);
         return true;
       }
-      const courses = schedule.courses.filter(course =>
-        course.day === day.toString() && course.weeks.includes(week)
-      );
-      const displayName = schedule.nickname || `用户${userId}`;
-      const replyMsg = DataManager.formatCourses(courses, week, day, displayName);
-      await this.reply(replyMsg);
+      // 计算具体日期
+      const targetDate = calculateDateFromWeekAndDay(schedule.semesterStart, week, day);
+      if (!targetDate) {
+        await this.reply(`无法根据学期开始日期计算第${week}周星期${day}的日期，请检查输入`);
+        return true;
+      }
+
+      // 可选：验证计算出的周数是否与输入一致（防止因学期起始偏移导致的无效组合）
+      const calculatedWeek = calculateWeekFromDate(schedule.semesterStart, targetDate);
+      if (calculatedWeek !== week) {
+        const startDay = new Date(schedule.semesterStart).getDay() === 0 ? 7 : new Date(schedule.semesterStart).getDay();
+        await this.reply(`第${week}周星期${day}不存在于本学期（学期开始于星期${startDay}），请重新输入`);
+        return true;
+      }
+      const result = await this.getCoursesForDate(userId, targetDate);
+      if (result.error) {
+        await this.reply(result.error);
+        return true;
+      }
+      const userData = {
+        nickname: result.displayName,
+        week: result.week,
+        day: result.day,
+        signature: schedule?.signature || '',
+        courses: result.courses
+      };
+      const img = await generateUserScheduleImage(userData, targetDate, { e: this.e });
+      if (img) {
+        await this.reply(segment.image(img));
+      } else {
+        const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+        await this.reply(replyMsg);
+      }
       return true;
     }
     // 2. 尝试匹配日期格式
@@ -393,8 +450,20 @@ export class SchedulePlugin extends plugin {
         await this.reply(result.error);
         return true;
       }
-      const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-      await this.reply(replyMsg);
+      const userData = {
+        nickname: result.displayName,
+        week: result.week,
+        day: result.day,
+        signature: schedule?.signature || '',
+        courses: result.courses
+      };
+      const img = await generateUserScheduleImage(userData, date, { e: this.e });
+      if (img) {
+        await this.reply(segment.image(img));
+      } else {
+        const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+        await this.reply(replyMsg);
+      }
       return true;
     }
     // 3. 无法解析，给出提示
@@ -426,9 +495,11 @@ export class SchedulePlugin extends plugin {
     if (maxWeek > 0 && week > maxWeek) {
       return { error: `第 ${week} 周已超出本学期课程周数，请确认日期是否正确` };
     }
-    const courses = schedule.courses.filter(course =>
+    let courses = schedule.courses.filter(course =>
       course.day === day.toString() && course.weeks.includes(week)
     );
+    // 按开始时间排序（升序）
+    courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
     const displayName = schedule.nickname || `用户${userId}`;
     return { courses, week, day, displayName };
   }
@@ -502,23 +573,28 @@ export class SchedulePlugin extends plugin {
           logger.debug(`[课表订阅] 用户 ${userId} 获取课程失败: ${result.error}`);
           continue;
         }
-        // 3. 格式化消息
-        let replyMsg = DataManager.formatCourses(
-          result.courses,
-          result.week,
-          result.day,
-          result.displayName
-        );
-        replyMsg = `======明日课程提醒======\n` + replyMsg;
-        // 4. 检查是否为好友
+        // 准备用户数据
+        const userData = {
+          nickname: result.displayName,
+          week: result.week,
+          day: result.day,
+          signature: schedule.signature || '',
+          courses: result.courses
+        };
+        let replyMsg;
+        const img = await generateUserScheduleImage(userData, tomorrow); // 无 e 对象
+        if (img) {
+          replyMsg = segment.image(img);
+        } else {
+          replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+          replyMsg = `======明日课程提醒======\n` + replyMsg;
+        }
         if (!Bot.fl || !Bot.fl.has(Number(userId))) {
           logger.debug(`[课表订阅] 用户 ${userId} 不是机器人好友，无法私信`);
           continue;
         }
-        // 5. 发送私信
         await Bot.pickFriend(userId).sendMsg(replyMsg);
         logger.info(`[课表订阅] 成功推送明日课表给用户 ${userId}`);
-        // 6. 等待3秒，避免风控
         await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (err) {
         logger.error(`[课表订阅] 推送用户 ${userId} 时发生错误: ${err}`);

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的课表</title>
+    <style>
+        @font-face {
+            font-family: 'Unifont';
+            src: url('../fonts/unifont.otf') format('opentype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Unifont', 'Microsoft YaHei', sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 32px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .header {
+            padding: 40px 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 48px;
+            font-weight: normal;
+            color: #333;
+            display: inline-block;
+            background: rgba(0, 137, 123, 0.35);
+            padding: 10px 40px;
+            border-radius: 60px;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            font-size: 20px;
+            color: #666;
+            margin-top: 10px;
+        }
+        .subtitle span {
+            background: #00897B;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            margin: 0 4px;
+        }
+
+        .user-signature {
+            margin: 10px 30px 20px;
+            font-size: 18px;
+            color: #718096;
+            background: #f7fafc;
+            padding: 10px 20px;
+            border-radius: 40px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+
+        .courses-list {
+            padding: 0 30px 30px;
+        }
+
+        .course-item {
+            background: white;
+            border-radius: 20px;
+            margin-bottom: 16px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            border: 1px solid #edf2f7;
+            position: relative;
+            transition: transform 0.2s;
+        }
+        .course-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        .course-name {
+            font-size: 28px;
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        .course-name::before {
+            content: "📘";
+            margin-right: 8px;
+            color: #00897B;
+        }
+
+        .course-detail {
+            font-size: 18px;
+            color: #4a5568;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px 25px;
+            align-items: center;
+        }
+        .course-detail span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .no-course {
+            text-align: center;
+            font-size: 24px;
+            color: #a0aec0;
+            padding: 50px 20px;
+            background: #f7fafc;
+            border-radius: 30px;
+        }
+
+        .footer {
+            padding: 20px 30px 30px;
+            background: #f8fafc;
+            border-top: 1px solid #e9edf2;
+            text-align: center;
+            position: relative;
+        }
+        .footer .update-time {
+            font-size: 16px;
+            color: #718096;
+            margin-bottom: 10px;
+        }
+        .footer .tips {
+            font-size: 18px;
+            color: #2d3748;
+        }
+
+        /* 右下角装饰 */
+        .footer::after {
+            content: "";
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 40px;
+            height: 40px;
+            background: #00897B;
+            opacity: 0.2;
+            clip-path: polygon(0 0, 0% 100%, 100% 100%);
+        }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 36px; }
+            .course-name { font-size: 24px; }
+            .course-detail { font-size: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{nickname}} 的课表</h1>
+            <div class="subtitle">
+                第<span>{{week}}</span>周 · 星期<span>{{weekday}}</span> {{if date}} · {{date}}{{/if}}
+            </div>
+        </div>
+
+        {{if signature}}
+        <div class="user-signature">💭 {{signature}}</div>
+        {{/if}}
+
+        <div class="courses-list">
+            {{each courses course}}
+            <div class="course-item">
+                <div class="course-name">{{course.name}}</div>
+                <div class="course-detail">
+                    <span>👨‍🏫 {{course.teacher}}</span>
+                    <span>🕐 {{course.startTime}} - {{course.endTime}}</span>
+                    <span>📍 {{course.location}}</span>
+                </div>
+            </div>
+            {{/each}}
+            {{if courses.length === 0}}
+            <div class="no-course">✨ 今天没有课程，好好休息吧 ~</div>
+            {{/if}}
+        </div>
+
+        <div class="footer">
+            <div class="update-time">更新时间: {{updateTime}}</div>
+            <div class="tips">使用 #课表查询 可以查看更多日期</div>
+        </div>
+    </div>
+</body>
+</html>

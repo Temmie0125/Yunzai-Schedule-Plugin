@@ -131,3 +131,44 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
 
     return text;
 }
+/**
+ * 生成个人课表图片（用于今日、明日、查询）
+ * @param {Object} userData - 包含以下字段：
+ *   - nickname {string} 显示昵称
+ *   - week {number} 周数
+ *   - day {number} 星期 (1-7)
+ *   - signature {string} 个性签名
+ *   - courses {Array} 课程列表，每项含 name, teacher, startTime, endTime, location
+ * @param {Object} options - 额外选项，如 { e, scale }
+ * @returns {Promise<Buffer|null>}
+ */
+export async function generateUserScheduleImage(userData, targetDate = null, options = {}) {
+    const config = ConfigManager.getConfig()
+    const scale = config.renderScale ?? 1.0
+    const mergedOptions = { ...options, scale }
+
+    // 根据 targetDate 生成日期字符串
+    let dateStr = '';
+    if (targetDate) {
+        dateStr = targetDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+    }
+
+    const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
+    const templateData = {
+        nickname: userData.nickname,
+        week: userData.week,
+        weekday: weekdayMap[userData.day],
+        date: dateStr,                     // 动态日期
+        signature: userData.signature || '',
+        courses: userData.courses.map(c => ({
+            name: c.name,
+            teacher: c.teacher || '未知教师',
+            startTime: c.startTime,
+            endTime: c.endTime,
+            location: c.location || '未知地点'
+        })),
+        updateTime: new Date().toLocaleString('zh-CN')
+    };
+
+    return await renderTemplate('user-schedule-template', templateData, mergedOptions);
+}

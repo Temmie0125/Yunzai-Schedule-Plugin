@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-03-06 13:42:11
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 01:17:32
+ * @LastEditTime: 2026-03-12 21:44:06
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\utils\timeUtils.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -117,4 +117,28 @@ export function calculateTimeUntil(currentTime, startTime) {
         return `${Math.floor(until / 60)}小时${until % 60}分钟`
     }
     return `${until}分钟`
+}
+/**
+ * 根据学期开始日期、周数和星期，计算出对应的具体日期
+ * @param {string} semesterStart 学期开始日期 YYYY-MM-DD
+ * @param {number} week 周数（>=1）
+ * @param {number} day 星期（1=周一，7=周日）
+ * @returns {Date|null} 如果计算出的日期有效（在学期开始之后），返回 Date 对象；否则返回 null
+ */
+export function calculateDateFromWeekAndDay(semesterStart, week, day) {
+    const start = new Date(semesterStart);
+    if (isNaN(start)) return null;
+    start.setHours(0, 0, 0, 0);
+
+    // 获取学期开始日的星期几（1-7）
+    const startDay = start.getDay() === 0 ? 7 : start.getDay(); // 转换周日=7
+
+    // 计算目标日期相对于开始日期的偏移天数
+    const offsetDays = (week - 1) * 7 + (day - startDay);
+    // 如果偏移为负，说明目标日期在学期开始之前，返回null
+    if (offsetDays < 0) return null;
+
+    const target = new Date(start);
+    target.setDate(start.getDate() + offsetDays);
+    return target;
 }
