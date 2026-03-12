@@ -4,7 +4,7 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { importScheduleFromCode } from '../services/scheduleImporter.js'
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput, calculateDateFromWeekAndDay } from '../utils/timeUtils.js';
-import { generateHelpImage, generateUserScheduleImage } from '../components/Renderer.js'
+import { generateHelpImage, generateUserScheduleImage, generateUserInfoImage } from '../components/Renderer.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
@@ -249,46 +249,62 @@ export class SchedulePlugin extends plugin {
    * 显示用户课表信息
    */
   async showUserInfo() {
-    const userId = this.e.user_id
-    const scheduleData = DataManager.loadSchedule(userId)
+    const userId = this.e.user_id;
+    const scheduleData = DataManager.loadSchedule(userId);
     if (!scheduleData) {
-      await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表")
-      return false
+        await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+        return false;
     }
-    // 获取当前周数
     const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
     const maxWeek = Math.max(...scheduleData.courses.flatMap(c => c.weeks), 0);
     if (maxWeek > 0 && currentWeek > maxWeek) {
-      await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
-      return true;
+        await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
+        return true;
     }
-    // 统计课程数量
-    const totalCourses = scheduleData.courses.length
+    const totalCourses = scheduleData.courses.length;
     const thisWeekCourses = scheduleData.courses.filter(course =>
-      course.weeks.includes(currentWeek)
-    ).length
-    let reply = `📊 你的课表信息\n`
-    reply += "=".repeat(20) + "\n"
-    reply += `👤 昵称：${scheduleData.nickname || userId}\n`
-    // 新增：显示签名
-    if (scheduleData.signature) {
-      reply += `💭 签名：${scheduleData.signature}\n`
+        course.weeks.includes(currentWeek)
+    ).length;
+
+    // 准备图片数据
+    const userInfoData = {
+        nickname: scheduleData.nickname,
+        signature: scheduleData.signature,
+        tableName: scheduleData.tableName,
+        semesterStart: scheduleData.semesterStart,
+        currentWeek,
+        totalCourses,
+        thisWeekCourses,
+        updateTime: scheduleData.updateTime
+    };
+    // 尝试生成图片
+    const img = await generateUserInfoImage(userId, userInfoData, { e: this.e });
+    if (img) {
+        await this.reply(segment.image(img));
+    } else {
+        // 降级为文本（原有逻辑）
+        let reply = `📊 你的课表信息\n`;
+        reply += "=".repeat(20) + "\n";
+        reply += `👤 昵称：${scheduleData.nickname || userId}\n`;
+        if (scheduleData.signature) {
+            reply += `💭 签名：${scheduleData.signature}\n`;
+        }
+        reply += `📚 课表：${scheduleData.tableName}\n`;
+        reply += `📅 学期：${scheduleData.semesterStart}\n`;
+        reply += `🔄 当前周数：第${currentWeek}周\n`;
+        reply += `📈 课程统计：\n`;
+        reply += `   总课程数：${totalCourses} 门\n`;
+        reply += `   本周课程：${thisWeekCourses} 门\n`;
+        reply += `⏰ 最后更新：${new Date(scheduleData.updateTime).toLocaleString()}\n\n`;
+        reply += `使用命令：\n`;
+        reply += `#今日课表 - 查看今日课程\n`;
+        reply += `#明日课表 - 查看明日课程\n`;
+        reply += `#课表查询 [周数] [星期] - 查询特定日期课程\n`;
+        reply += `#课表设置昵称 [昵称] - 修改昵称`;
+        await this.reply(reply);
     }
-    reply += `📚 课表：${scheduleData.tableName}\n`
-    reply += `📅 学期：${scheduleData.semesterStart}\n`
-    reply += `🔄 当前周数：第${currentWeek}周\n`
-    reply += `📈 课程统计：\n`
-    reply += `   总课程数：${totalCourses} 门\n`
-    reply += `   本周课程：${thisWeekCourses} 门\n`
-    reply += `⏰ 最后更新：${new Date(scheduleData.updateTime).toLocaleString()}\n\n`
-    reply += `使用命令：\n`
-    reply += `#今日课表 - 查看今日课程\n`
-    reply += `#明日课表 - 查看明日课程\n`
-    reply += `#课表查询 [周数] [星期] - 查询特定日期课程\n`
-    reply += `#课表设置昵称 [昵称] - 修改昵称`
-    await this.reply(reply)
-    return true
-  }
+    return true;
+}
   /**
    * 清除课表
    */

@@ -172,3 +172,45 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
 
     return await renderTemplate('user-schedule-template', templateData, mergedOptions);
 }
+
+/**
+ * 生成个人课表信息卡片（用于 #我的课表）
+ * @param {number|string} userId - 用户QQ号（用于获取头像）
+ * @param {Object} userInfoData - 包含以下字段：
+ *   - nickname {string} 用户昵称
+ *   - signature {string} 个性签名
+ *   - tableName {string} 课表名称
+ *   - semesterStart {string} 学期开始日期
+ *   - currentWeek {number} 当前周数
+ *   - totalCourses {number} 总课程数
+ *   - thisWeekCourses {number} 本周课程数
+ *   - updateTime {string|number} 更新时间戳
+ * @param {Object} options - 额外选项，如 { e, scale }
+ * @returns {Promise<Buffer|null>}
+ */
+export async function generateUserInfoImage(userId, userInfoData, options = {}) {
+    const config = ConfigManager.getConfig();
+    const scale = config.renderScale ?? 1.0;
+    const mergedOptions = { ...options, scale };
+
+    // 头像地址（QQ头像，可根据需要替换为其他来源）
+    const avatar = `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`;
+    const now = new Date();
+    const currentTime = now.toLocaleString('zh-CN');
+
+    const templateData = {
+        avatar,
+        nickname: userInfoData.nickname || `用户${userId}`,
+        signature: userInfoData.signature || '',
+        tableName: userInfoData.tableName,
+        semesterStart: userInfoData.semesterStart,
+        currentWeek: userInfoData.currentWeek,
+        totalCourses: userInfoData.totalCourses,
+        thisWeekCourses: userInfoData.thisWeekCourses,
+        updateTime: new Date(userInfoData.updateTime).toLocaleString('zh-CN'),
+        currentTime,
+        tips: '使用 #今日课表 等命令查看每日课程'  // 左下角提示
+    };
+
+    return await renderTemplate('user-info-template', templateData, mergedOptions);
+}

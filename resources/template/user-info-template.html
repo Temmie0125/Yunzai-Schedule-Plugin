@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的课表信息</title>
+    <style>
+        @font-face {
+            font-family: 'Unifont';
+            src: url('../fonts/unifont.otf') format('opentype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Unifont', 'Microsoft YaHei', sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            
+            margin: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 32px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+            padding: 30px;
+        }
+
+        .profile-main {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .profile-left {
+            flex: 0 0 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .avatar {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 4px solid white;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .nickname {
+            font-size: 32px;
+            color: #1a202c;
+            margin-bottom: 8px;
+        }
+        .nickname::before {
+            content: "‣";
+            margin-right: 8px;
+            color: #00897B;
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .signature {
+            font-size: 18px;
+            color: #718096;
+            background: #f7fafc;
+            padding: 6px 12px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+            max-width: 100%;
+        }
+
+        .left-tips {
+            font-size: 16px;
+            color: #a0aec0;
+            margin-top: auto;
+            padding: 10px;
+            border-top: 1px dashed #cbd5e0;
+            width: 100%;
+        }
+
+        .profile-right {
+            flex: 1;
+            min-width: 250px;
+            background: #f8fafc;
+            border-radius: 24px;
+            padding: 25px;
+            border: 1px solid #edf2f7;
+        }
+
+        .info-item {
+            font-size: 20px;
+            color: #2d3748;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .info-item span.label {
+            width: 150px;
+            color: #718096;
+        }
+        .info-item span.value {
+            font-weight: 500;
+            color: #1a202c;
+        }
+
+        .command-hint {
+            margin-top: 25px;
+            background: #e6fffa;
+            border-radius: 40px;
+            padding: 12px 20px;
+            color: #234e52;
+            font-size: 18px;
+            text-align: center;
+            border: 1px solid #b2f5ea;
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9edf2;
+            text-align: center;
+            font-size: 16px;
+            color: #718096;
+            position: relative;
+        }
+        .footer::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 60px;
+            height: 60px;
+            background: #00897B;
+            opacity: 0.3;
+            clip-path: polygon(0 0, 0% 100%, 100% 100%);
+        }
+        .footer::before {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            right: 60px;
+            width: 60px;
+            height: 60px;
+            background: #00897B;
+            opacity: 0.2;
+            clip-path: polygon(0 0, 0% 100%, 100% 100%);
+        }
+
+        @media (max-width: 600px) {
+            .profile-main { flex-direction: column; }
+            .profile-left { flex: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="profile-main">
+            <div class="profile-left">
+                <div class="avatar">
+                    <img src="{{avatar}}" alt="avatar">
+                </div>
+                <div class="nickname">{{nickname}}</div>
+                {{if signature}}
+                <div class="signature">{{signature}}</div>
+                {{/if}}
+                <div class="left-tips">{{tips}}</div>
+            </div>
+            <div class="profile-right">
+                <div class="info-item">
+                    <span class="label">📚 课表</span>
+                    <span class="value">{{tableName}}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">📅 学期开始</span>
+                    <span class="value">{{semesterStart}}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">🔄 当前周数</span>
+                    <span class="value">第{{currentWeek}}周</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">📊 课程统计</span>
+                    <span class="value">总{{totalCourses}}门 · 本周{{thisWeekCourses}}门</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">⏰ 最后更新</span>
+                    <span class="value">{{updateTime}}</span>
+                </div>
+                <div class="command-hint">
+                    #今日课表 · #明日课表 · #课表查询
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            <div>Generated By @Temmie Schedule-Plugin</div>
+            <div>{{currentTime}}</div>
+        </div>
+    </div>
+</body>
+</html>
