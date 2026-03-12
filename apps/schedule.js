@@ -132,6 +132,11 @@ export class SchedulePlugin extends plugin {
     const match = message.match(/「([0-9a-zA-Z\-_]+?)」/u);
     if (!match) return false;  // 没有口令，不处理
     const code = match[1];
+    // 一般分享口令为32位，为避免误触发，小于20位的不处理
+    if(code.length < 20) {
+      logger.warn("[课表导入] 非标准分享口令，请检查是否有误")
+      return false;
+    }
     const result = await importScheduleFromCode(userId, code, this.e);
     await this.reply(result.message);
     return true;
