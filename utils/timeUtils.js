@@ -2,29 +2,43 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-03-06 13:42:11
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-12 21:44:06
+ * @LastEditTime: 2026-03-16 15:46:28
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\utils\timeUtils.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 // utils/timeUtils.js
-
+// 获取给定日期所在周的周一（周一为一周开始，周日为7）
+function getMondayOfSameWeek(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDay(); // 0=周日, 1=周一, ..., 6=周六
+    // 计算到本周一的偏移：如果day=0（周日），偏移6天；否则偏移 day-1 天
+    const offset = day === 0 ? 6 : day - 1;
+    d.setDate(d.getDate() - offset);
+    return d;
+}
 /**
  * 计算当前周数
  * @param {string} semesterStart - 学期开始日期 YYYY-MM-DD
  * @returns {number}
  */
 export function calculateCurrentWeek(semesterStart) {
+    // 处理未设置学期开始的情况（使用默认日期）
     if (!semesterStart) {
-        const defaultStart = new Date('2024-02-26')
-        const now = new Date()
-        const timeDiff = now.getTime() - defaultStart.getTime()
-        const dayDiff = Math.floor(timeDiff / (1000 * 3600 * 24))
-        return Math.max(1, Math.ceil(dayDiff / 7))
+        const defaultStart = new Date('2024-02-26'); // 假设默认是周一
+        const now = new Date();
+        const startMonday = getMondayOfSameWeek(defaultStart);
+        const dayDiff = Math.floor((now - startMonday) / (1000 * 3600 * 24));
+        return Math.max(1, Math.floor(dayDiff / 7) + 1);
     }
-    const startDate = new Date(semesterStart)
-    const now = new Date()
-    const dayDiff = Math.floor((now - startDate) / (1000 * 3600 * 24))
-    return Math.max(1, Math.ceil(dayDiff / 7))
+
+    const startDate = new Date(semesterStart);
+    // 获取学期开始日所在周的周一
+    const startMonday = getMondayOfSameWeek(startDate);
+    const now = new Date();
+    const dayDiff = Math.floor((now - startMonday) / (1000 * 3600 * 24));
+    // 周数 = 从该周一算起的天数 / 7 向下取整 + 1
+    return Math.max(1, Math.floor(dayDiff / 7) + 1);
 }
 /**
  * 计算目标日期所在的周数（相对于学期开始日期）
@@ -36,16 +50,18 @@ export function calculateWeekFromDate(semesterStart, targetDate) {
     const start = new Date(semesterStart);
     if (isNaN(start)) return null;
 
+    // 获取学期开始日所在周的周一
+    const startMonday = getMondayOfSameWeek(start);
     const target = new Date(targetDate);
     target.setHours(0, 0, 0, 0);
-    start.setHours(0, 0, 0, 0);
+    startMonday.setHours(0, 0, 0, 0);
 
-    const diffDays = Math.floor((target - start) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return null; // 目标日期在学期开始之前
+    const diffDays = Math.floor((target - startMonday) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return null; // 目标日期在学期开始所在周的周一之前
 
-    const week = Math.floor(diffDays / 7) + 1; // 第1周从学期开始日算起
-    return week;
+    return Math.floor(diffDays / 7) + 1;
 }
+
 /**
  * 解析用户输入的日期字符串（支持 MM-DD、MM.DD、MM/DD、YYYY-MM-DD 等格式）
  * @param {string} input 用户输入（已去除命令前缀）
@@ -128,17 +144,11 @@ export function calculateTimeUntil(currentTime, startTime) {
 export function calculateDateFromWeekAndDay(semesterStart, week, day) {
     const start = new Date(semesterStart);
     if (isNaN(start)) return null;
-    start.setHours(0, 0, 0, 0);
 
-    // 获取学期开始日的星期几（1-7）
-    const startDay = start.getDay() === 0 ? 7 : start.getDay(); // 转换周日=7
-
-    // 计算目标日期相对于开始日期的偏移天数
-    const offsetDays = (week - 1) * 7 + (day - startDay);
-    // 如果偏移为负，说明目标日期在学期开始之前，返回null
-    if (offsetDays < 0) return null;
-
-    const target = new Date(start);
-    target.setDate(start.getDate() + offsetDays);
+    const startMonday = getMondayOfSameWeek(start);
+    // 目标日期相对于 startMonday 的偏移天数
+    const offsetDays = (week - 1) * 7 + (day - 1); // day: 1=周一, 7=周日
+    const target = new Date(startMonday);
+    target.setDate(startMonday.getDate() + offsetDays);
     return target;
 }
