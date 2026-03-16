@@ -265,12 +265,22 @@ export class SchedulePlugin extends plugin {
     const thisWeekCourses = scheduleData.courses.filter(course =>
         course.weeks.includes(currentWeek)
     ).length;
-
+    // --- 新增：根据配置和聊天环境处理课表名称 ---
+    const config = ConfigManager.getConfig();
+    const showTableName = config.showTableName !== false; // 默认为 true
+    const isGroup = !!this.e.group_id; // 判断是否为群聊
+    let tableName = scheduleData.tableName;
+    if (isGroup && !showTableName) {
+        // 群聊且配置为隐藏时，使用昵称或“你”替换
+        const nickname = scheduleData.nickname || "你";
+        tableName = `${nickname}的课表`;
+    }
+    // --- 处理结束 ---
     // 准备图片数据
     const userInfoData = {
         nickname: scheduleData.nickname,
         signature: scheduleData.signature,
-        tableName: scheduleData.tableName,
+        tableName: tableName,
         semesterStart: scheduleData.semesterStart,
         currentWeek,
         totalCourses,
