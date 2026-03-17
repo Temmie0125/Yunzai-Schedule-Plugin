@@ -12,7 +12,7 @@ export class GroupSchedulePlugin extends plugin {
       priority: 1000,
       rule: [
         {
-          reg: "^#(群课表|课程表|群友课表|clstb)$",
+          reg: "^#(群课表|课程表|群友课表|cls(\\s)?tb|class(\\s)?table|schedule)$",
           fnc: "showGroupSchedule"
         },
         {

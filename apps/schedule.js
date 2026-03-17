@@ -48,7 +48,7 @@ export class SchedulePlugin extends plugin {
           fnc: "showUserInfo"
         },
         {
-          reg: "^#(课表帮助|schedule help)$",
+          reg: "^#(课(程)?表帮助|schedule(\\s)?help|cls(\\s)?help)$",
           fnc: "showHelp"
         },
         // ===== 新增规则：直接识别包含「口令」的消息 =====
