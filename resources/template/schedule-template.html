@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>群友在上什么课?</title>
     <style>
-        /* 自定义字体：unifont (与PHP版本一致) */
+        /* 字体与基础样式保持不变 */
         @font-face {
             font-family: 'Unifont';
             src: url('../fonts/unifont.otf') format('opentype');
@@ -25,16 +26,16 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            width: 1080px;
             margin: 20px;
         }
 
         .container {
-            max-width: 1000px;
+            max-width: 1080px;
             width: 100%;
             background: white;
             border-radius: 32px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             overflow: hidden;
             position: relative;
         }
@@ -42,25 +43,27 @@
         /* 标题区域 */
         .header {
             padding: 40px 30px 20px;
-            position: relative;
             text-align: center;
         }
+
         .header h1 {
             font-size: 48px;
             font-weight: normal;
             color: #333;
             display: inline-block;
-            background: rgba(0, 137, 123, 0.35); /* #00897B 透明度 59% ≈ 0.35 */
+            background: rgba(0, 137, 123, 0.35);
             padding: 10px 40px;
             border-radius: 60px;
             margin-bottom: 20px;
             letter-spacing: 2px;
         }
+
         .header .subtitle {
             font-size: 20px;
             color: #666;
             margin-top: 10px;
         }
+
         .header .subtitle span {
             background: #00897B;
             color: white;
@@ -79,52 +82,57 @@
             border-bottom: 1px solid #e9edf2;
             flex-wrap: wrap;
         }
+
         .stat-item {
             background: white;
             border-radius: 40px;
             padding: 8px 24px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.02);
             display: flex;
             align-items: center;
             gap: 8px;
             border: 1px solid #dee2e6;
         }
+
         .stat-value {
             font-size: 26px;
             font-weight: bold;
             color: #00897B;
             line-height: 1;
         }
+
         .stat-label {
             font-size: 16px;
             color: #495057;
         }
 
-        /* 成员列表 */
+        /* 成员列表 - 网格布局 */
         .members-list {
             padding: 20px 30px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
         }
 
-        /* 单个成员卡片 */
         .member-card {
-            display: flex;
-            align-items: flex-start;
-            gap: 20px;
-            padding: 25px 20px 25px 60px;  /* 左侧留出箭头空间 */
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto auto;
+            gap: 15px;
+            padding: 20px 15px 20px 50px;
             background: white;
             border-radius: 20px;
-            margin-bottom: 16px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
             position: relative;
             border: 1px solid #edf2f7;
         }
 
-        /* 左侧双箭头装饰 (状态颜色半透明) */
+        /* 左侧双箭头装饰 */
         .member-card::before,
         .member-card::after {
             content: "❯";
             position: absolute;
-            left: 15px;
+            left: 10px;
             font-size: 48px;
             line-height: 1;
             font-weight: bold;
@@ -132,50 +140,73 @@
             color: var(--status-color, #00897B);
             transform: scaleX(0.8);
         }
+
         .member-card::before {
             top: 30px;
         }
+
         .member-card::after {
             top: 60px;
             opacity: 0.2;
             font-size: 56px;
         }
 
-        /* 头像 */
+        /* 头像容器 - 用于放置翘课标签 */
         .member-avatar {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            overflow: hidden;
+            position: relative;
+            width: 90px;
+            height: 90px;
+            border-radius: 25%;
+            overflow: visible;
             flex-shrink: 0;
             background: #f0f0f0;
             border: 3px solid white;
-            box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+            grid-row: span 2;
         }
+
         .member-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            border-radius: 25%;
         }
 
-        /* 右侧信息 */
-        .member-info {
-            flex: 1;
-            min-width: 0;
+        /* 翘课标签 - 绝对定位在头像下方 */
+        .skip-tag {
+            position: absolute;
+            top: 75%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-top: 5px;
+            background: #ff5252c7;
+            color: white;
+            font-size: 16px;
+            padding: 4px 12px;
+            border-radius: 30px;
+            white-space: nowrap;
+            z-index: 2;
         }
 
-        /* 第一行：昵称 + 翘课标记 */
-        .member-name-row {
+        .member-info-right {
+            grid-column: 2;
+            grid-row: 1 / 2;
             display: flex;
-            align-items: baseline;
-            flex-wrap: wrap;
-            gap: 8px 15px;
-            margin-bottom: 8px;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-self: start;
         }
+
         .member-name {
-            font-size: 32px;
+            font-size: 28px;
             color: #1a202c;
+            display: block;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+
         .member-name::before {
             content: "‣";
             margin-right: 8px;
@@ -183,49 +214,50 @@
             font-size: 36px;
             font-weight: bold;
         }
-        .skip-tag {
-            background: #ff5252;
-            color: white;
-            font-size: 18px;
-            padding: 2px 12px;
-            border-radius: 30px;
-            animation: pulse 2s infinite;
+
+        .member-status-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
         }
+
+        .member-status {
+            display: inline-block;
+            padding: 4px 12px;
+            text-align: center;
+            border-radius: 8px;
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+            background-color: var(--status-color, #7F7F7F);
+            min-width: 70px;
+        }
+
         .member-week {
             font-size: 18px;
             color: #718096;
             margin-left: auto;
+            white-space: nowrap;
         }
 
-        /* 第二行：状态标签 + 课程名称 */
-        .status-course-row {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 10px;
-            flex-wrap: wrap;
+        /* 课程信息区域 - 跨越两列 */
+        .course-section {
+            grid-column: 1 / -1;
+            margin-top: 8px;
         }
-        .member-status {
-            display: inline-block;
-            width: 140px;
-            padding: 8px 0;
-            text-align: center;
-            border-radius: 8px;
-            font-size: 22px;
-            font-weight: bold;
-            color: white;
-            background-color: var(--status-color, #7F7F7F);
-            flex-shrink: 0;
+
+        .course-info-row {
+            margin-bottom: 6px;
         }
+
         .course-info {
-            font-size: 26px;
+            font-size: 24px;
             color: #2d3748;
             font-weight: 500;
             word-break: break-word;
-            flex: 1;
         }
 
-        /* 第三行：时间地点 + 剩余时间 */
         .course-detail {
             font-size: 20px;
             color: #4a5568;
@@ -235,17 +267,30 @@
             align-items: baseline;
             gap: 10px 20px;
         }
+
         .course-time {
             display: flex;
             align-items: center;
             gap: 5px;
         }
+
         .remaining-time {
             color: #e53e3e;
             font-weight: bold;
             background: #fff5f5;
             padding: 2px 12px;
             border-radius: 30px;
+        }
+
+        .course-remaining {
+            margin-top: 6px;
+            /* 与时间地点行的间距 */
+        }
+
+        .course-remaining .remaining-time {
+            display: inline-block;
+            /* 确保作为块级元素占据整行（但内联块不会换行，实际会换行因为容器是块级） */
+            /* 原有 .remaining-time 样式保持不变 */
         }
 
         /* 个性签名 */
@@ -272,11 +317,13 @@
             text-align: center;
             position: relative;
         }
+
         .footer .tips {
             font-size: 20px;
             color: #2d3748;
             margin-bottom: 20px;
         }
+
         .legend {
             display: flex;
             justify-content: center;
@@ -284,17 +331,20 @@
             gap: 16px 30px;
             margin: 20px 0;
         }
+
         .legend-item {
             display: flex;
             align-items: center;
             gap: 6px;
             font-size: 18px;
         }
+
         .legend-color {
             width: 24px;
             height: 24px;
             border-radius: 6px;
         }
+
         .update-time {
             font-size: 18px;
             color: #718096;
@@ -313,6 +363,7 @@
             opacity: 0.3;
             clip-path: polygon(0 0, 0% 100%, 100% 100%);
         }
+
         .footer::before {
             content: "";
             position: absolute;
@@ -325,31 +376,76 @@
             clip-path: polygon(0 0, 0% 100%, 100% 100%);
         }
 
-        /* 状态颜色映射 (与PHP一致) */
-        .status-进行中 { --status-color: #B13333; }      /* 1 红 */
-        .status-翘课中 { --status-color: #DB6F2D; }      /* 2 橙 */
-        .status-未开始 { --status-color: #3949AB; }      /* 3 蓝 (下一节) */
-        .status-已结束 { --status-color: #379151; }      /* 4 绿 */
-        .status-无课程 { --status-color: #7F7F7F; }      /* 5 灰 */
-        .status-分身中 { --status-color: #D81B60; }      /* 0 粉 (预留) */
-        .status-学期结束 { --status-color: #6c757d; }    /* 额外 */
+        /* 状态颜色映射 */
+        .status-进行中 {
+            --status-color: #B13333;
+        }
+
+        .status-翘课中 {
+            --status-color: #DB6F2D;
+        }
+
+        .status-未开始 {
+            --status-color: #3949AB;
+        }
+
+        .status-已结束 {
+            --status-color: #379151;
+        }
+
+        .status-无课程 {
+            --status-color: #7F7F7F;
+        }
+
+        .status-分身中 {
+            --status-color: #D81B60;
+        }
+
+        .status-学期结束 {
+            --status-color: #6c757d;
+        }
 
         @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.6; }
-            100% { opacity: 1; }
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+
+            100% {
+                opacity: 1;
+            }
         }
 
         /* 适配小屏 */
         @media (max-width: 700px) {
-            .member-card { flex-wrap: wrap; }
-            .member-avatar { width: 80px; height: 80px; }
-            .member-name { font-size: 28px; }
-            .status-course-row { flex-direction: column; align-items: flex-start; }
-            .member-status { width: 120px; font-size: 20px; }
+            .members-list {
+                grid-template-columns: 1fr;
+            }
+
+            .member-card {
+                padding: 25px 20px 25px 60px;
+            }
+
+            .member-card::before,
+            .member-card::after {
+                left: 15px;
+            }
+
+            .member-avatar {
+                width: 80px;
+                height: 80px;
+            }
+
+            .member-name {
+                font-size: 28px;
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -359,7 +455,7 @@
             </div>
         </div>
 
-        <!-- 统计徽章 (保留原功能) -->
+        <!-- 统计徽章 -->
         <div class="stats">
             <div class="stat-item">
                 <span class="stat-value">{{totalMembers}}</span>
@@ -390,33 +486,40 @@
                 member.status === '分身中' ? '#D81B60' : 
                 member.status === '学期结束' ? '#6c757d' : '#00897B' 
             }};">
+                <!-- 头像区域 -->
                 <div class="member-avatar">
                     <img src="{{member.avatar}}" alt="{{member.nickname}}">
+                    {{if member.skipStatus && member.status !== '学期结束'}}
+                    <span class="skip-tag">翘课模式</span>
+                    {{/if}}
                 </div>
-                <div class="member-info">
-                    <!-- 第一行：昵称 + 翘课标记 + 个人周数 -->
-                    <div class="member-name-row">
-                        <span class="member-name">{{member.nickname}}</span>
-                        {{if member.skipStatus && member.status !== '学期结束'}}
-                        <span class="skip-tag">翘课模式</span>
-                        {{/if}}
-                        {{if member.status !== '学期结束'}}
-                        <span class="member-week">第{{member.currentWeek}}周{{if !member.hasSemesterStart}}*{{/if}}</span>
-                        {{/if}}
-                    </div>
 
+                <!-- 右侧信息容器：昵称 + 状态行 -->
+                <div class="member-info-right">
+                    <div class="member-name">{{member.nickname}}</div>
+                    {{if member.status !== '学期结束'}}
+                    <div class="member-status-row">
+                        <div class="member-status status-{{member.status}}">{{member.status}}</div>
+                        <span class="member-week">第{{member.currentWeek}}周{{if !member.hasSemesterStart}}*{{/if}}</span>
+                    </div>
+                    {{else}}
+                    <div class="member-status-row">
+                        <div class="member-status status-学期结束">学期结束</div>
+                    </div>
+                    {{/if}}
+                </div>
+
+                <!-- 课程信息区域 -->
+                <div class="course-section">
                     {{if member.status === '学期结束'}}
                     <!-- 学期结束专用显示 -->
-                    <div class="member-status status-学期结束">学期结束</div>
                     <div class="course-info" style="color: #999;">📅 本学期课程已结束，请重新更新课表</div>
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
-
                     {{else}}
-                    <!-- 正常状态显示 -->
-                    <div class="status-course-row">
-                        <div class="member-status status-{{member.status}}">{{member.status}}</div>
+                    <!-- 正常状态显示：课程名称行 -->
+                    <div class="course-info-row">
                         {{if member.currentCourse}}
                         <div class="course-info">📖 {{member.currentCourse.name}}</div>
                         {{else}}
@@ -426,25 +529,31 @@
 
                     {{if member.currentCourse}}
                     <div class="course-detail">
-                        <span class="course-time">⏰ {{member.currentCourse.startTime}} - {{member.currentCourse.endTime}}</span>
+                        <span class="course-time">⏰ {{member.currentCourse.startTime}} -
+                            {{member.currentCourse.endTime}}</span>
                         {{if member.currentCourse.location}}
                         <span class="course-time">📍 {{member.currentCourse.location}}</span>
                         {{/if}}
-                        {{if member.remainingTime}}
+                    </div>
+
+                    {{if member.remainingTime}}
+                    <div class="course-remaining">
                         <span class="remaining-time">
                             {{if member.status === '进行中'}}⏳ 剩余: {{member.remainingTime}}
                             {{else if member.status === '未开始'}}⏳ 距离上课: {{member.remainingTime}}
                             {{/if}}
                         </span>
-                        {{/if}}
                     </div>
                     {{/if}}
+                    {{/if}}
 
-                    <!-- 无课程或已结束时的签名显示 -->
-                    {{if (member.status === '无课程' || member.status === '已结束') && member.signature}}
+                    <!-- 无课程或已结束时的签名显示（改用嵌套 if 避免复杂表达式） -->
+                    {{if member.status === '无课程' || member.status === '已结束'}}
+                    {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
                     {{/if}}
+                    {{/if}} <!-- 结束外层的 if member.status === '学期结束' 分支 -->
                 </div>
             </div>
             {{/each}}
@@ -463,7 +572,6 @@
             <div class="update-time">Generated By @Temmie Schedule-Plugin · 更新时间: {{updateTime}}</div>
         </div>
     </div>
-
-    <!-- 注：分身中状态需插件逻辑支持，此处仅做样式预留 -->
 </body>
+
 </html>
