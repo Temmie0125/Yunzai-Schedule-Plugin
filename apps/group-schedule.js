@@ -24,7 +24,7 @@ export class GroupSchedulePlugin extends plugin {
           fnc: "queryUserSchedule"
         },
         {
-          reg: "^#(翘课|取消翘课|cl(as)?s(\\s)?skip|cl(as)?s(\\s)?no(\\s)?skip|no(\\s)?cl(as)?s(\\s)?skip)$",
+          reg: "^#(翘课|取消翘课|cl(as)?s(\\s)?skip|cl(as)?s(\\s)?no(\\s)?skip|no(\\s)?cl(as)?s(\\s)?skip|cls(\\s)?unskip)$",
           fnc: "toggleSkipClass"
         }
       ]
@@ -225,7 +225,7 @@ export class GroupSchedulePlugin extends plugin {
     }
     const currentStatus = await DataManager.loadSkipStatus(userId)
     let newStatus
-    if (message.includes("取消") || message.includes("no")) {
+    if (message.includes("取消") || message.includes("no") || message.includes("un")) {
       if (!currentStatus) {
         return this.reply("你还未处于翘课模式，无需取消")
       }
