@@ -1,5 +1,31 @@
+<!--
+ * @Author: Temmie0125 1179755948@qq.com
+ * @Date: 2026-03-12 01:36:44
+ * @LastEditors: Temmie0125 1179755948@qq.com
+ * @LastEditTime: 2026-03-25 18:17:21
+ * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\CHANGELOG.md
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+-->
 
 # 更新日志
+
+## [1.0.5] - 2026-03-25
+
+### 新增：
+
+- 支持配置是否自动清理过期翘课状态
+- 部分功能增加了可用命令
+- 翘课状态将存储过期时间
+
+### 优化：
+
+- 定时推送课表的cron表达式修改后，支持热重载
+- 优化了检查翘课状态的逻辑
+
+### 修复：
+
+- 修复了订阅状态为“false”的用户依旧会收到课表订阅的bug
+- 修复了特定情况翘课状态未被正确自动清除的bug
 
 ## [1.0.3] - 2026-03-12
 

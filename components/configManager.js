@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-03-09 21:54:50
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-10 18:42:23
+ * @LastEditTime: 2026-03-25 17:21:43
  * @FilePath: \实验与作业e:\bot\plugins\schedule\components\configManager.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -11,10 +11,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import YAML from 'yaml'
 
-const PLUGIN_ROOT = path.join(process.cwd(), 'plugins/schedule')
-const DEFAULT_CONFIG_PATH = path.join(PLUGIN_ROOT, 'config/default_config')
-const CONFIG_PATH = path.join(PLUGIN_ROOT, 'config/config')
-const CONFIG_FILE = 'schedule.yaml'
+export const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/default_config');
+export const CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/config');
+export const CONFIG_FILE = 'schedule.yaml';
 
 export class ConfigManager {
     /**
@@ -43,12 +42,34 @@ export class ConfigManager {
             logger.error('[配置管理] 读取配置失败:', err)
             // 返回默认值兜底
             return {
-                pushCron: '0 20 * * *',
+                pushCron: '0 0 20 * * *',
                 showTableName: true,
                 autoRecallCode: false,
-                renderScale: 1.0
+                renderScale: 1.0,
+                autoCancelCheckEnabled: false,     
+                autoCancelCheckInterval: 60
             }
         }
+    }
+    /**
+     * 标准化cron表达式，适配node-schedule
+     * @param {string} cron 原始cron字符串
+     * @returns {string} 标准化后的cron
+     */
+    static normalizeCron(cron) {
+        if (!cron) return cron;
+        cron = cron.trim();
+        const parts = cron.split(/\s+/);
+        // 如果超过6个字段（如7字段含年），只保留前6个
+        if (parts.length > 6) {
+            parts.length = 6;
+            cron = parts.join(' ');
+        }
+        // 如果是5字段，补一个秒字段（默认0），使格式统一为6字段
+        if (parts.length === 5) {
+            cron = `0 ${cron}`;
+        }
+        return cron;
     }
 
     /**

@@ -3,3 +3,5 @@ pushCron: "0 20 * * *"
 showTableName: true
 autoRecallCode: false
 renderScale: 1.0
+autoCancelCheckEnabled: false    
+autoCancelCheckInterval: 60

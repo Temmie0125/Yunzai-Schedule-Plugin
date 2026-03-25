@@ -16,6 +16,6 @@ export default {
     },
     setConfigData(data, { Result }) {
         ConfigManager.setConfig(data)
-        return Result.ok({}, "配置已保存，如果更改推送时间需要重启 Bot 生效")
+        return Result.ok({}, "配置已保存")
     }
 }

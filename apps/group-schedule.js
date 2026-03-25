@@ -1,3 +1,11 @@
+/*
+ * @Author: Temmie0125 1179755948@qq.com
+ * @Date: 2026-03-09 01:39:22
+ * @LastEditors: Temmie0125 1179755948@qq.com
+ * @LastEditTime: 2026-03-25 17:04:43
+ * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\group-schedule.js
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 //import fs from 'node:fs'
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
@@ -74,7 +82,7 @@ export class GroupSchedulePlugin extends plugin {
       );
       if (ongoingCourse) {
         currentCourse = ongoingCourse;
-        if (skipStatus) {
+        if (skipStatus.enabled) {
           status = '翘课中';
         } else {
           status = '进行中';
@@ -99,7 +107,7 @@ export class GroupSchedulePlugin extends plugin {
       currentCourse,
       status,
       remainingTime,
-      skipStatus,
+      skipStatus: skipStatus.enabled,
       signature,
       currentWeek: userCurrentWeek,
       hasSemesterStart: !!semesterStart
@@ -219,62 +227,57 @@ export class GroupSchedulePlugin extends plugin {
     }
     // 先检查当前翘课状态是否过期 
     const quitSkip = await this.checkAndAutoExpireSkip(userId)
-    if (quitSkip){
+    if (quitSkip) {
       await this.reply("今日没有课程了，怎么翘啊~好好休息吧~");
       return true;
     }
     const currentStatus = await DataManager.loadSkipStatus(userId)
     let newStatus
     if (message.includes("取消") || message.includes("no") || message.includes("un")) {
-      if (!currentStatus) {
+      if (!currentStatus.enabled) {
         return this.reply("你还未处于翘课模式，无需取消")
       }
       newStatus = false
     } else {
-      if (currentStatus) {
+      if (currentStatus.enabled) {
         return this.reply("你已经处于翘课模式，无需再次开启")
       }
       newStatus = true
     }
     let autoCancelMsg = '';
-    if (newStatus) { // 开启翘课
-        const now = new Date();
-        const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
-        const currentDay = now.getDay() === 0 ? 7 : now.getDay();
-        const currentTime = now.toTimeString().slice(0, 5);
-        // 今日课程（在当前周内）
-        const todayCourses = scheduleData.courses.filter(course =>
-            parseInt(course.day) === currentDay && course.weeks.includes(currentWeek)
-        );
-        // 检查是否有尚未结束的课程（开启翘课的条件）
-        const hasOngoingOrFutureCourse = todayCourses.some(course => currentTime < course.endTime);
-        if (!hasOngoingOrFutureCourse) {
-            await this.reply("今日没有课程了，怎么翘啊~好好休息吧~");
-            return true;
-        }
-        // 确定目标课程（与自动过期逻辑一致）
-        todayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
-        let targetCourse = null;
-        for (const course of todayCourses) {
-            if (currentTime >= course.startTime && currentTime <= course.endTime) {
-                targetCourse = course; // 正在上的课
-                break;
-            } else if (currentTime < course.startTime) {
-                targetCourse = course; // 下一节课
-                break;
-            }
-        }
-
-        if (targetCourse) {
-            autoCancelMsg = `，将在『${targetCourse.name}』结束时（${targetCourse.endTime}）自动取消`;
-        }
+    // 在 toggleSkipClass 中，计算结束时间的代码块
+    let expireTime = null;
+    if (newStatus) {
+      const now = new Date();
+      const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
+      const currentDay = now.getDay() === 0 ? 7 : now.getDay();
+      const currentTime = now.toTimeString().slice(0, 5);
+      const todayCourses = scheduleData.courses.filter(course =>
+        parseInt(course.day) === currentDay && course.weeks.includes(currentWeek)
+      );
+      // 过滤出未结束的课程（结束时间 > 当前时间）
+      const futureCourses = todayCourses.filter(course => course.endTime > currentTime);
+      if (futureCourses.length === 0) {
+        await this.reply("今日没有未结束的课程，无法翘课~");
+        return true;
+      }
+      futureCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const targetCourse = futureCourses[0]; // 第一个未结束的课程
+      // 构造结束时间点：今日的 targetCourse.endTime 对应的 Date 对象
+      const [hour, minute] = targetCourse.endTime.split(':');
+      const expireDate = new Date(now);
+      expireDate.setHours(parseInt(hour), parseInt(minute), 0, 0);
+      expireTime = expireDate.toISOString();
+      autoCancelMsg = `，将在『${targetCourse.name}』结束时（${targetCourse.endTime}）自动取消`;
     }
+
+
     // 更新状态
-    await DataManager.saveSkipStatus(userId, newStatus);
+    await DataManager.saveSkipStatus(userId, newStatus, expireTime);
     const nickname = scheduleData.nickname || `用户${userId}`;
     let replyMsg = `『${nickname}』${newStatus ? '已开启翘课模式' : '已取消翘课模式'}`;
     if (newStatus && autoCancelMsg) {
-        replyMsg += autoCancelMsg;
+      replyMsg += autoCancelMsg;
     }
     await this.reply(replyMsg);
     return true;
@@ -300,52 +303,21 @@ export class GroupSchedulePlugin extends plugin {
     return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`
   }
   async checkAndAutoExpireSkip(userId) {
-    // 读取当前翘课状态
-    const skipStatus = await DataManager.loadSkipStatus(userId);
-    if (!skipStatus) return false; // 未翘课，无需处理
-    const scheduleData = DataManager.loadSchedule(userId);
-    if (!scheduleData) {
-      // 没有课表，翘课状态无意义，直接清除
+    const skipInfo = await DataManager.loadSkipStatus(userId);
+    if (!skipInfo.enabled) return false; // 未翘课
+    const { expireTime } = skipInfo;
+    if (!expireTime) {
+      // 旧数据无过期时间，为了兼容直接清除
       await DataManager.saveSkipStatus(userId, false);
       return true;
     }
     const now = new Date();
-    const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
-    const currentDay = now.getDay() === 0 ? 7 : now.getDay();
-    const currentTime = now.toTimeString().slice(0, 5);
-    // 今日课程（在当前周内）
-    const todayCourses = scheduleData.courses.filter(course =>
-      parseInt(course.day) === currentDay && course.weeks.includes(currentWeek)
-    );
-    // 今日无课 → 清除翘课
-    if (todayCourses.length === 0) {
+    if (now >= new Date(expireTime)) {
+      // 已过期，清除翘课状态
       await DataManager.saveSkipStatus(userId, false);
       return true;
     }
-    // 按开始时间排序
-    todayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
-    // 查找目标课程：正在进行的课，否则找下一节课
-    let targetCourse = null;
-    for (const course of todayCourses) {
-      if (currentTime >= course.startTime && currentTime <= course.endTime) {
-        targetCourse = course; // 正在上课
-        break;
-      } else if (currentTime < course.startTime) {
-        targetCourse = course; // 下一节课
-        break;
-      }
-    }
-    // 若没找到目标课程（说明当前时间在最后一节课之后）→ 清除翘课
-    if (!targetCourse) {
-      await DataManager.saveSkipStatus(userId, false);
-      return true;
-    }
-    // 如果当前时间已超过目标课程的结束时间 → 清除翘课
-    if (currentTime >= targetCourse.endTime) {
-      await DataManager.saveSkipStatus(userId, false);
-      return true;
-    }
-    return false; // 翘课状态仍有效
+    return false;
   }
 }
 export default GroupSchedulePlugin

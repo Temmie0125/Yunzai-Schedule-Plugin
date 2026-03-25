@@ -1,5 +1,6 @@
 // import fs from 'node:fs'
 // import path from 'node:path'
+import schedule from 'node-schedule'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { importScheduleFromCode } from '../services/scheduleImporter.js'
@@ -66,15 +67,63 @@ export class SchedulePlugin extends plugin {
         }
       ],
     })
-    this.task = [
-      {
-        name: "推送明日课表",
-        cron: pushCron,                         // 从配置读取的 cron 表达式
-        fnc: () => this.pushTomorrowSchedule(), // 使用箭头函数确保 this 正确
-        log: true                               // 可选，开启日志
-      }
-    ]
+    // this.task = [];               // 不使用框架自动任务
+    this.pushJob = null;          // 手动管理的推送任务
+    this.initPushTask();          // 根据当前配置启动
+    // 订阅全局配置变化事件
+    this.handleConfigChange = this.handleConfigChange.bind(this);
+    if (global.scheduleEvents) {
+        global.scheduleEvents.on(this.handleConfigChange);
+    }
   }
+  /**
+     * 处理配置变化事件
+     */
+  handleConfigChange() {
+    logger.info('[推送任务] 检测到配置变化，重载定时任务');
+    this.initPushTask();
+  }
+  /**
+   * 初始化/重载推送任务（根据最新配置）
+   */
+  initPushTask() {
+    const config = ConfigManager.getConfig();
+    const pushCron = config.pushCron;
+    if (!pushCron) {
+        // 未配置时清除可能存在的旧任务
+        if (global.__schedulePushJob) {
+            global.__schedulePushJob.cancel();
+            global.__schedulePushJob = null;
+            global.__schedulePushCron = null;
+        }
+        logger.warn('[课程表插件] 未配置cron表达式，跳过');
+        return;
+    }
+
+    // 如果当前全局任务存在且cron相同，则无需重建
+    if (global.__schedulePushJob && global.__schedulePushCron === pushCron) {
+        logger.debug(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
+        return;
+    }
+
+    // 取消旧任务（全局）
+    if (global.__schedulePushJob) {
+        global.__schedulePushJob.cancel();
+        global.__schedulePushJob = null;
+        global.__schedulePushCron = null;
+    }
+
+    try {
+        global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
+            // 调用静态方法，不依赖实例
+            SchedulePlugin.pushTomorrowSchedule();
+        });
+        global.__schedulePushCron = pushCron;
+        logger.info(`[课程表插件] 已启用课表推送，cron: ${pushCron}`);
+    } catch (err) {
+        logger.error(`[课程表插件] 调度失败: ${err}`);
+    }
+}
   async showHelp(e) {
     const helpData = await DataManager.getHelpData()
     const img = await generateHelpImage(helpData, { e: e })
@@ -252,18 +301,18 @@ export class SchedulePlugin extends plugin {
     const userId = this.e.user_id;
     const scheduleData = DataManager.loadSchedule(userId);
     if (!scheduleData) {
-        await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
-        return false;
+      await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+      return false;
     }
     const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
     const maxWeek = Math.max(...scheduleData.courses.flatMap(c => c.weeks), 0);
     if (maxWeek > 0 && currentWeek > maxWeek) {
-        await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
-        return true;
+      await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
+      return true;
     }
     const totalCourses = scheduleData.courses.length;
     const thisWeekCourses = scheduleData.courses.filter(course =>
-        course.weeks.includes(currentWeek)
+      course.weeks.includes(currentWeek)
     ).length;
     // --- 新增：根据配置和聊天环境处理课表名称 ---
     const config = ConfigManager.getConfig();
@@ -271,50 +320,50 @@ export class SchedulePlugin extends plugin {
     const isGroup = !!this.e.group_id; // 判断是否为群聊
     let tableName = scheduleData.tableName;
     if (isGroup && !showTableName) {
-        // 群聊且配置为隐藏时，使用昵称或“你”替换
-        const nickname = scheduleData.nickname || "你";
-        tableName = `${nickname}的课表`;
+      // 群聊且配置为隐藏时，使用昵称或“你”替换
+      const nickname = scheduleData.nickname || "你";
+      tableName = `${nickname}的课表`;
     }
     // --- 处理结束 ---
     // 准备图片数据
     const userInfoData = {
-        nickname: scheduleData.nickname,
-        signature: scheduleData.signature,
-        tableName: tableName,
-        semesterStart: scheduleData.semesterStart,
-        currentWeek,
-        totalCourses,
-        thisWeekCourses,
-        updateTime: scheduleData.updateTime
+      nickname: scheduleData.nickname,
+      signature: scheduleData.signature,
+      tableName: tableName,
+      semesterStart: scheduleData.semesterStart,
+      currentWeek,
+      totalCourses,
+      thisWeekCourses,
+      updateTime: scheduleData.updateTime
     };
     // 尝试生成图片
     const img = await generateUserInfoImage(userId, userInfoData, { e: this.e });
     if (img) {
-        await this.reply(segment.image(img));
+      await this.reply(segment.image(img));
     } else {
-        // 降级为文本（原有逻辑）
-        let reply = `📊 你的课表信息\n`;
-        reply += "=".repeat(20) + "\n";
-        reply += `👤 昵称：${scheduleData.nickname || userId}\n`;
-        if (scheduleData.signature) {
-            reply += `💭 签名：${scheduleData.signature}\n`;
-        }
-        reply += `📚 课表：${scheduleData.tableName}\n`;
-        reply += `📅 学期：${scheduleData.semesterStart}\n`;
-        reply += `🔄 当前周数：第${currentWeek}周\n`;
-        reply += `📈 课程统计：\n`;
-        reply += `   总课程数：${totalCourses} 门\n`;
-        reply += `   本周课程：${thisWeekCourses} 门\n`;
-        reply += `⏰ 最后更新：${new Date(scheduleData.updateTime).toLocaleString()}\n\n`;
-        reply += `使用命令：\n`;
-        reply += `#今日课表 - 查看今日课程\n`;
-        reply += `#明日课表 - 查看明日课程\n`;
-        reply += `#课表查询 [周数] [星期] - 查询特定日期课程\n`;
-        reply += `#课表设置昵称 [昵称] - 修改昵称`;
-        await this.reply(reply);
+      // 降级为文本（原有逻辑）
+      let reply = `📊 你的课表信息\n`;
+      reply += "=".repeat(20) + "\n";
+      reply += `👤 昵称：${scheduleData.nickname || userId}\n`;
+      if (scheduleData.signature) {
+        reply += `💭 签名：${scheduleData.signature}\n`;
+      }
+      reply += `📚 课表：${scheduleData.tableName}\n`;
+      reply += `📅 学期：${scheduleData.semesterStart}\n`;
+      reply += `🔄 当前周数：第${currentWeek}周\n`;
+      reply += `📈 课程统计：\n`;
+      reply += `   总课程数：${totalCourses} 门\n`;
+      reply += `   本周课程：${thisWeekCourses} 门\n`;
+      reply += `⏰ 最后更新：${new Date(scheduleData.updateTime).toLocaleString()}\n\n`;
+      reply += `使用命令：\n`;
+      reply += `#今日课表 - 查看今日课程\n`;
+      reply += `#明日课表 - 查看明日课程\n`;
+      reply += `#课表查询 [周数] [星期] - 查询特定日期课程\n`;
+      reply += `#课表设置昵称 [昵称] - 修改昵称`;
+      await this.reply(reply);
     }
     return true;
-}
+  }
   /**
    * 清除课表
    */
@@ -338,7 +387,7 @@ export class SchedulePlugin extends plugin {
   async showTodaySchedule() {
     const userId = this.e.user_id;
     const today = new Date();
-    const result = await this.getCoursesForDate(userId, today);
+    const result = await SchedulePlugin.getCoursesForDate(userId, today);
     if (result.error) {
       await this.reply(result.error);
       return true;
@@ -370,7 +419,7 @@ export class SchedulePlugin extends plugin {
     const userId = this.e.user_id;
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const result = await this.getCoursesForDate(userId, tomorrow);
+    const result = await SchedulePlugin.getCoursesForDate(userId, tomorrow);
     if (result.error) {
       await this.reply(result.error);
       return true;
@@ -446,7 +495,7 @@ export class SchedulePlugin extends plugin {
         await this.reply(`第${week}周星期${day}不存在于本学期（学期开始于星期${startDay}），请重新输入`);
         return true;
       }
-      const result = await this.getCoursesForDate(userId, targetDate);
+      const result = await SchedulePlugin.getCoursesForDate(userId, targetDate);
       if (result.error) {
         await this.reply(result.error);
         return true;
@@ -471,7 +520,7 @@ export class SchedulePlugin extends plugin {
     const dateInput = msg.replace(/^#(?:课表查询|schedule query)\s*/, '');
     const date = parseDateInput(dateInput, schedule.semesterStart);
     if (date) {
-      const result = await this.getCoursesForDate(userId, date);
+      const result = await SchedulePlugin.getCoursesForDate(userId, date);
       if (result.error) {
         await this.reply(result.error);
         return true;
@@ -507,7 +556,7 @@ export class SchedulePlugin extends plugin {
  * @param {Date} date 查询日期
  * @returns {Promise<Object>} 包含 courses, week, day, displayName 或 error
  */
-  async getCoursesForDate(userId, date) {
+  static async getCoursesForDate(userId, date) {
     const schedule = DataManager.loadSchedule(userId);
     if (!schedule) {
       return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
@@ -573,7 +622,7 @@ export class SchedulePlugin extends plugin {
   /**
  * 推送明日课表（定时任务）
  */
-  async pushTomorrowSchedule() {
+  static async pushTomorrowSchedule() {
     logger.info("[课表订阅] 开始推送明日课表");
     // 获取所有订阅用户
     const users = await DataManager.getAllReminderUsers();
@@ -594,7 +643,7 @@ export class SchedulePlugin extends plugin {
           continue;
         }
         // 2. 获取明日课程
-        const result = await this.getCoursesForDate(userId, tomorrow);
+        const result = await SchedulePlugin.getCoursesForDate(userId, tomorrow);
         if (result.error) {
           logger.debug(`[课表订阅] 用户 ${userId} 获取课程失败: ${result.error}`);
           continue;
@@ -628,5 +677,18 @@ export class SchedulePlugin extends plugin {
     }
     logger.info("[课表订阅] 推送完成");
   }
+  /**
+   * 插件卸载时清理（Yunzai 可能支持 disconnect 生命周期）
+   */
+  async disconnect() {
+    if (global.__schedulePushJob) {
+        global.__schedulePushJob.cancel();
+        global.__schedulePushJob = null;
+        global.__schedulePushCron = null;
+    }
+    if (global.scheduleEvents) {
+        global.scheduleEvents.off(this.handleConfigChange);
+    }
+}
 }
 export default SchedulePlugin

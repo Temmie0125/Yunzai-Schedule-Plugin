@@ -2,7 +2,7 @@
  * @Author: Temmie0125 1179755948@qq.com
  * @Date: 2026-03-06 13:43:00
  * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-09 21:18:28
+ * @LastEditTime: 2026-03-25 18:06:58
  * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\components\DataManager.js
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -169,40 +169,44 @@ export class DataManager {
     }
 
     // ---------- 翘课状态 ----------
-    /**
-     * 加载翘课状态
-     * @param {String} userId 用户
-     * @returns true/false
-     */
+    // 加载单个用户的翘课状态（返回 { enabled, expireTime }）
     static async loadSkipStatus(userId) {
-        const all = await this.loadAllSkipStatus()
-        return all[userId] || false
+        const all = await this.loadAllSkipStatus();
+        const raw = all[userId];
+        if (raw === undefined) return { enabled: false, expireTime: null };
+        if (typeof raw === 'boolean') {
+            // 旧格式，转换为新格式，没有过期时间，设为 null
+            return { enabled: raw, expireTime: null };
+        }
+        return raw;
     }
 
-    /**
-     * 加载所有翘课状态
-     * @returns JSON
-     */
+    // 加载所有翘课状态
     static async loadAllSkipStatus() {
-        if (!fs.existsSync(SKIP_STATUS_PATH)) return {}
+        if (!fs.existsSync(SKIP_STATUS_PATH)) return {};
         try {
-            return JSON.parse(fs.readFileSync(SKIP_STATUS_PATH, 'utf8'))
+            return JSON.parse(fs.readFileSync(SKIP_STATUS_PATH, 'utf8'));
         } catch {
-            return {}
+            return {};
         }
     }
 
-    /**
-     * 保存翘课状态
-     * @param {string} userId QQ号
-     * @param {boolean} status 状态
-     */
-    static async saveSkipStatus(userId, status) {
-        const all = await this.loadAllSkipStatus()
-        all[userId] = status
-        const dir = path.dirname(SKIP_STATUS_PATH)
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-        fs.writeFileSync(SKIP_STATUS_PATH, JSON.stringify(all, null, 2), 'utf8')
+    // 保存翘课状态（支持 enabled 和 expireTime）
+    static async saveSkipStatus(userId, enabled, expireTime = null) {
+        const all = await this.loadAllSkipStatus();
+        if (enabled) {
+            all[userId] = { enabled, expireTime };
+        } else {
+            delete all[userId];
+        }
+        const dir = path.dirname(SKIP_STATUS_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(SKIP_STATUS_PATH, JSON.stringify(all, null, 2), 'utf8');
+    }
+
+    // 可选：提供仅修改 enabled 的便捷方法
+    static async setSkipEnabled(userId, enabled, expireTime = null) {
+        await this.saveSkipStatus(userId, enabled, expireTime);
     }
 
     // ---------- 辅助 ----------
@@ -355,6 +359,7 @@ export class DataManager {
      */
     static async getAllReminderUsers() {
         const status = await this.loadReminderStatus();
-        return Object.keys(status);
+        // 只保留状态为 true 的用户
+        return Object.keys(status).filter(userId => status[userId] === true);
     }
 }
