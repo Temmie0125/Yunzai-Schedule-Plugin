@@ -1,11 +1,3 @@
-/*
- * @Author: Temmie0125 1179755948@qq.com
- * @Date: 2026-03-06 13:46:21
- * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-06 13:47:10
- * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\services\wakeupApi.js
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 // services/wakeupApi.js
 import https from 'node:https'
 

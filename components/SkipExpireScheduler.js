@@ -1,11 +1,3 @@
-/*
- * @Author: Temmie0125 1179755948@qq.com
- * @Date: 2026-03-25 16:56:23
- * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-25 17:18:37
- * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\components\SkipExpireScheduler.js
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 // components/SkipExpireScheduler.js
 import { DataManager } from './DataManager.js';
 import { ConfigManager } from './configManager.js';

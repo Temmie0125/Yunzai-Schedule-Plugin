@@ -1,11 +1,3 @@
-/*
- * @Author: Temmie0125 1179755948@qq.com
- * @Date: 2026-03-09 01:39:22
- * @LastEditors: Temmie0125 1179755948@qq.com
- * @LastEditTime: 2026-03-25 17:04:43
- * @FilePath: \实验与作业e:\bot\Yunzai\plugins\schedule\apps\group-schedule.js
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 //import fs from 'node:fs'
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
