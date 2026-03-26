@@ -1,5 +1,4 @@
-# 课表推送 cron 表达式（每天 20:00）
-pushCron: "0 20 * * *"
+pushHour: 20
 showTableName: true
 autoRecallCode: false
 renderScale: 1.0
