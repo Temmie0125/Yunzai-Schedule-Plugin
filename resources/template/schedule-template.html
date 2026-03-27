@@ -114,10 +114,11 @@
             gap: 16px;
         }
 
+        /* 修复卡片等宽问题：强制每个卡片宽度一致且不被内容撑开 */
         .member-card {
             display: grid;
             grid-template-columns: auto 1fr;
-            grid-template-rows: auto auto;
+            grid-template-rows: 1fr auto;
             gap: 15px;
             padding: 20px 15px 20px 50px;
             background: white;
@@ -125,6 +126,11 @@
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
             position: relative;
             border: 1px solid #edf2f7;
+            /* 关键修复：确保卡片在grid中严格遵守分配宽度，不被内容撑开 */
+            width: 100%;
+            min-width: 0;
+            /* 允许内容溢出时收缩，防止撑开父容器 */
+            box-sizing: border-box;
         }
 
         /* 左侧双箭头装饰 */
@@ -194,9 +200,12 @@
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            align-self: start;
+            align-self: stretch;
+            min-width: 0;
+            overflow: hidden;
         }
 
+        /* 昵称过长截断处理：强制不换行并显示省略号 */
         .member-name {
             font-size: 28px;
             color: #1a202c;
@@ -220,6 +229,8 @@
             align-items: center;
             gap: 12px;
             margin-top: 12px;
+            flex-wrap: wrap;
+            /* 防止小屏幕挤压，但保证内容可换行不溢出 */
         }
 
         .member-status {
@@ -244,7 +255,7 @@
         /* 课程信息区域 - 跨越两列 */
         .course-section {
             grid-column: 1 / -1;
-            margin-top: 8px;
+            margin-top: 0; 
         }
 
         .course-info-row {
