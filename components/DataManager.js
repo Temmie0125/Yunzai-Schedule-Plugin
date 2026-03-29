@@ -206,12 +206,9 @@ export class DataManager {
         // 先从已有数据获取
         const data = this.loadSchedule(userId)
         if (data?.nickname) return data.nickname
-
-        // 从事件中获取群名片/昵称
-        if (event.isGroup && event.sender) {
-            return event.sender.card || event.sender.nickname || null
-        }
-        return null
+        // 尝试获得用户昵称：群名片->直接昵称
+        const nickname = event.sender?.card || event.sender?.nickname || null
+        return nickname
     }
 
     /**
