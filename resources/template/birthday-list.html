@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>群生日列表</title>
+    <style>
+        /* 与课程表模板一致的字体和基础样式 */
+        @font-face {
+            font-family: 'Unifont';
+            src: url('../fonts/unifont.otf') format('opentype');
+            font-weight: normal;
+            font-style: normal;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Unifont', 'Microsoft YaHei', sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 1080px;
+            margin: 20px;
+        }
+        .container {
+            max-width: 1080px;
+            width: 100%;
+            background: white;
+            border-radius: 32px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            position: relative;
+        }
+        .header {
+            padding: 40px 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 48px;
+            font-weight: normal;
+            color: #333;
+            display: inline-block;
+            background: rgba(255, 105, 180, 0.2); /* 粉色主题 */
+            padding: 10px 40px;
+            border-radius: 60px;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            font-size: 20px;
+            color: #666;
+            margin-top: 10px;
+        }
+        .subtitle span {
+            background: #FF69B4;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            margin: 0 4px;
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            padding: 20px 30px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e9edf2;
+            flex-wrap: wrap;
+        }
+        .stat-item {
+            background: white;
+            border-radius: 40px;
+            padding: 8px 24px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .stat-value {
+            font-size: 26px;
+            font-weight: bold;
+            color: #FF69B4;
+            line-height: 1;
+        }
+        .stat-label {
+            font-size: 16px;
+            color: #495057;
+        }
+        .birthday-list {
+            padding: 20px 30px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        .birthday-card {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto auto;
+            gap: 15px;
+            padding: 20px 15px 20px 50px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            position: relative;
+            border: 1px solid #edf2f7;
+        }
+        /* 左侧双箭头装饰，与课程表一致 */
+        .birthday-card::before,
+        .birthday-card::after {
+            content: "🎂";
+            position: absolute;
+            left: 10px;
+            font-size: 48px;
+            line-height: 1;
+            font-weight: bold;
+            opacity: 0.3;
+            color: #FF69B4;
+        }
+        .birthday-card::before {
+            top: 30px;
+        }
+        .birthday-card::after {
+            top: 60px;
+            opacity: 0.2;
+            font-size: 56px;
+        }
+        .avatar {
+            width: 90px;
+            height: 90px;
+            border-radius: 25%;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: #f0f0f0;
+            border: 3px solid white;
+            box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+            grid-row: span 2;
+        }
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 25%;
+        }
+        .info {
+            grid-column: 2;
+            grid-row: 1 / 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-self: start;
+        }
+        .name {
+            font-size: 28px;
+            color: #1a202c;
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .name::before {
+            content: "🎉";
+            margin-right: 8px;
+            font-size: 28px;
+        }
+        .qq {
+            font-size: 18px;
+            color: #718096;
+            margin-top: 8px;
+        }
+        .birthday-info {
+            grid-column: 1 / -1;
+            margin-top: 8px;
+            font-size: 24px;
+            color: #2d3748;
+            font-weight: 500;
+            word-break: break-word;
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .birthday-date {
+            background: #FFF0F5;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 20px;
+            color: #FF69B4;
+        }
+        .days-left {
+            background: #E6F7FF;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 20px;
+            color: #1890ff;
+        }
+        .days-left.today {
+            background: #FFE7E7;
+            color: #f5222d;
+        }
+        .footer {
+            padding: 30px 30px 40px;
+            background: #f8fafc;
+            border-top: 1px solid #e9edf2;
+            text-align: center;
+            position: relative;
+        }
+        .tips {
+            font-size: 20px;
+            color: #2d3748;
+            margin-bottom: 20px;
+        }
+        .update-time {
+            font-size: 18px;
+            color: #718096;
+            margin-top: 20px;
+        }
+        .footer::after,
+        .footer::before {
+            content: "";
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: #FF69B4;
+            opacity: 0.3;
+            clip-path: polygon(0 0, 0% 100%, 100% 100%);
+        }
+        .footer::before {
+            right: 60px;
+            opacity: 0.2;
+        }
+        @media (max-width: 700px) {
+            .birthday-list {
+                grid-template-columns: 1fr;
+            }
+            .birthday-card {
+                padding: 25px 20px 25px 60px;
+            }
+            .avatar {
+                width: 80px;
+                height: 80px;
+            }
+            .name {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            {{if isRecent10}}
+            <h1>🎂 近期生日列表</h1>
+            {{else}}
+            <h1>🎂 群成员生日列表</h1>
+            {{/if}}
+            <div class="subtitle">
+                当前时间 <span>{{currentTime}}</span>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-value">{{totalCount}}</span>
+                <span class="stat-label">总记录</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">{{todayCount}}</span>
+                <span class="stat-label">今日生日</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">{{upcomingCount}}</span>
+                <span class="stat-label">30天内生日</span>
+            </div>
+        </div>
+
+        <div class="birthday-list">
+            {{each birthdays item}}
+            <div class="birthday-card">
+                <div class="avatar">
+                    <img src="{{item.avatar}}" alt="{{item.name}}">
+                </div>
+                <div class="info">
+                    <div class="name">{{item.name}}</div>
+                    <div class="qq">{{item.qq}}</div>
+                </div>
+                <div class="birthday-info">
+                    <span class="birthday-date">📅 {{item.birthday}}</span>
+                    {{if item.days === 0}}
+                        <span class="days-left today">🎉 今天生日！</span>
+                    {{else if item.days === 1}}
+                        <span class="days-left">🎈 明天生日</span>
+                    {{else}}
+                        <span class="days-left">⏳ 还有 {{item.days}} 天</span>
+                    {{/if}}
+                </div>
+            </div>
+            {{/each}}
+        </div>
+
+        <div class="footer">
+            <div class="tips">使用 #设置生日 月-日 设置你的生日<br>使用 #生日修改昵称 新昵称 修改显示昵称</div>
+            {{if isRecent10}}
+            <div class="tips">当前显示最近10个生日，查看全部请使用 #生日完整列表</div>
+            {{/if}}
+            <div class="update-time">Generated By @Temmie Schedule-Plugin · 更新时间: {{updateTime}}</div>
+        </div>
+    </div>
+</body>
+</html>

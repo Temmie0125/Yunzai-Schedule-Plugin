@@ -4,3 +4,5 @@ autoRecallCode: false
 renderScale: 1.0
 autoCancelCheckEnabled: false    
 autoCancelCheckInterval: 60
+birthdayPushHour: 0
+allowSelfModify: true

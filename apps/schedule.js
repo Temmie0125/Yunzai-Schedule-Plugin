@@ -102,7 +102,7 @@ export class SchedulePlugin extends plugin {
 
     // 如果当前全局任务存在且cron相同，则无需重建
     if (global.__schedulePushJob && global.__schedulePushCron === pushCron) {
-        logger.debug(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
+        logger.mark(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
         return;
     }
 

@@ -1,6 +1,10 @@
 // guoba/schemas/index.js
 export const schemas = [
     {
+        component: "Divider",
+        label: "课表模块设置"
+    },
+    {
         field: "pushHour",                     // 改为 pushHour
         label: "推送时间（小时）",
         component: "InputNumber",
@@ -65,5 +69,32 @@ export const schemas = [
         },
         defaultValue: 60,
         bottomHelpMessage: "自动检查翘课的时间间隔（分钟）"
+    },
+    // 分组
+    {
+        component: "Divider",
+        label: "生日模块设置"
+    },
+    {
+        field: "birthdayPushHour",
+        label: "生日推送时间",
+        component: "InputNumber",
+        required: true,
+        componentProps: {
+            min: 0,
+            max: 23,
+            step: 1,
+            placeholder: '请输入0-23的小时数',
+            addonAfter: '点'
+        },
+        defaultValue: 0,                      // 默认0点
+        bottomHelpMessage: "设置每天几点推送生日提醒。例如：0 表示每天0点推送。"
+    },
+    {
+        field: "allowSelfModify",
+        label: "允许成员修改生日",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "开启后，成员可以重新设置生日以进行修改"
     }
 ];

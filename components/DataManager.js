@@ -1,11 +1,10 @@
 // components/DataManager.js
 import fs from 'node:fs'
 import path from 'node:path'
-
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
-
+const BIRTHDAY_DATA_PATH = path.join(DATA_PATH, 'birthdayData.json');
 export class DataManager {
     /**
      * 加载用户课表数据
@@ -350,5 +349,27 @@ export class DataManager {
         const status = await this.loadReminderStatus();
         // 只保留状态为 true 的用户
         return Object.keys(status).filter(userId => status[userId] === true);
+    }
+    /**
+     * 加载生日数据
+     */
+    static loadBirthdayData() {
+        if (!fs.existsSync(BIRTHDAY_DATA_PATH)) return {};
+        try {
+            return JSON.parse(fs.readFileSync(BIRTHDAY_DATA_PATH, 'utf8'));
+        } catch (err) {
+            logger.error('[生日数据] 加载失败:', err);
+            return {};
+        }
+    }
+    /**
+     * 保存生日数据
+     * @param {*} 生日数据 
+     */
+    static saveBirthdayData(data) {
+        const dir = path.dirname(BIRTHDAY_DATA_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(BIRTHDAY_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
+        return true;
     }
 }

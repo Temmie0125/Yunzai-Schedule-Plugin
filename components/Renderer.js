@@ -214,3 +214,22 @@ export async function generateUserInfoImage(userId, userInfoData, options = {}) 
 
     return await renderTemplate('user-info-template', templateData, mergedOptions);
 }
+
+/**
+ * 生成生日列表图片
+ * @param {Object} data 模板数据
+ * @param {Object} options 额外选项
+ * @returns {Promise<Buffer|null>}
+ */
+export async function renderBirthdayList(data, options = {}) {
+    const config = ConfigManager.getConfig()
+    const scale = config.renderScale ?? 1.0
+    const mergedOptions = { ...options, scale }
+
+    const now = new Date()
+    const templateData = {
+        ...data,
+        updateTime: now.toLocaleString('zh-CN')
+    }
+    return await renderTemplate('birthday-list', templateData, mergedOptions)
+}
