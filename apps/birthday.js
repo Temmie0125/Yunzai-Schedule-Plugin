@@ -416,7 +416,7 @@ export class BirthdayReminder extends plugin {
         DataManager.saveBirthdayData(this.birthdayData)
         let replymsg = [`✅ 已${isFirstSet ? '修改' : '设置'}你的生日：${birthday}`]
         if (Bot.fl && !Bot.fl.has(Number(e.user_id))){
-            replymsg.push(`您还未添加好友哦，添加后还可以在生日当天收到私信祝福~`)
+            replymsg.push(`\n您还未添加好友哦，添加后还可以在生日当天收到私信祝福~`)
         }
         e.reply(replymsg)
         return true
