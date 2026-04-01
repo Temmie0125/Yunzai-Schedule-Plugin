@@ -86,6 +86,7 @@ git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./p
 | `#翘课` / `#取消翘课` | 开启/关闭翘课模式。会自动在当前课程或者下一节课结束时取消。也可使用`#clsskip`、`#clsunskip` |
 | `#开启课表订阅` / `#关闭课表订阅` | 开关次日课表推送（需加 Bot 好友） |
 | `#课表更新` | 从 GitHub 更新插件（需主人权限） |
+| `生日模块` | 支持设置生日并推送，详见帮助菜单 |
 
 > 更多命令请使用 `#课表帮助` 查看图文帮助。
 
@@ -141,7 +142,7 @@ schedule
 
 ## 许可证
 
-本项目采用 **MIT License**，详情请参见 [LICENSE](LICENSE) 文件。
+本项目采用 **GPL3.0 License**，详情请参见 [LICENSE](LICENSE) 文件。
 
 ---
 
