@@ -146,6 +146,28 @@ schedule
 
 ---
 
+## 贡献者
+
+感谢以下贡献者对本项目做出的贡献
+
+<a href="https://github.com/Temmie0125/Yunzai-Schedule-Plugin/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Temmie0125/Yunzai-Schedule-Plugin" />
+</a>
+
+![Alt](https://repobeats.axiom.co/api/embed/b9827361c1e731ad88b8a3d0c421c89ba5f46a96.svg "Repobeats analytics image")
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Temmie0125%2FYunzai-Schedule-Plugin&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Temmie0125/Yunzai-Schedule-Plugin&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=Temmie0125/Yunzai-Schedule-Plugin&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Temmie0125/Yunzai-Schedule-Plugin&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 ## 支持项目
 
 如果这个插件对你有帮助，欢迎给项目点个 Star ⭐，你的支持是我持续更新的动力！
