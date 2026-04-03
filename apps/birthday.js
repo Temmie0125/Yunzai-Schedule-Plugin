@@ -76,8 +76,8 @@ export class BirthdayReminder extends plugin {
                 { reg: "^#生日(设置|修改)昵称\\s+(.+)$", fnc: "modifyNickname" },
                 { reg: "^#(全部)?生日(完整)?列表$", fnc: "listBirthdays" },
                 // { reg: "^#(生日完整列表|全部生日列表)$", fnc: "listAllBirthdays" },
-                // { reg: "^#生日帮助$", fnc: "birthdayHelp" },
-                // 生日模块帮助已经整合进课表帮助，此处不再注册命令
+                { reg: "^#生日帮助$", fnc: "birthdayHelp" },
+                // 生日模块帮助已经整合进课表帮助，此处显示文本帮助
                 // 管理员命令
                 { reg: /^#添加生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday", permission: "master" },
                 { reg: /^#添加生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday", permission: "master" },
@@ -516,7 +516,7 @@ export class BirthdayReminder extends plugin {
     /** 帮助 */
     async birthdayHelp(e) {
         const msg = [
-            `生日模块帮助\n`,
+            `[Schedule生日模块]\n`,
             `========\n`,
             `[#设置生日 日期] 设置自己的生日\n`,
             `[#生日列表] 查看本群即将到来的10个生日\n`,
