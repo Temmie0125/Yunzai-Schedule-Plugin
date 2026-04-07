@@ -1,8 +1,8 @@
 // guoba/schemas/index.js
 export const schemas = [
     {
-        component: "Divider",
-        label: "课表模块设置"
+        component: 'SOFT_GROUP_BEGIN',
+        label: '课表模块设置'
     },
     {
         field: "pushHour",                     // 改为 pushHour
@@ -72,7 +72,7 @@ export const schemas = [
     },
     // 分组
     {
-        component: "Divider",
+        component: "SOFT_GROUP_BEGIN",
         label: "生日模块设置"
     },
     {
@@ -96,5 +96,27 @@ export const schemas = [
         component: "Switch",
         defaultValue: true,
         bottomHelpMessage: "开启后，成员可以重新设置生日以进行修改"
+    },
+    {
+        field: "birthdayWhitelistGroups",
+        label: "生日推送白名单群",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择需要推送生日提醒的群（留空则推送所有群）",
+            mode: "multiple"   // 多选
+        },
+        defaultValue: [],
+        bottomHelpMessage: "仅在这些群中发送生日祝福。留空则所有群都会尝试推送（但会被黑名单排除）。"
+    },
+    {
+        field: "birthdayBlacklistGroups",
+        label: "生日推送黑名单群",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择不推送生日提醒的群",
+            mode: "multiple"
+        },
+        defaultValue: [],
+        bottomHelpMessage: "这些群将不会收到生日祝福。白名单优先：如果白名单非空，黑名单无效。"
     }
 ];

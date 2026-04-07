@@ -6,3 +6,5 @@ autoCancelCheckEnabled: false
 autoCancelCheckInterval: 60
 birthdayPushHour: 0
 allowSelfModify: true
+birthdayWhitelistGroups: []
+birthdayBlacklistGroups: []

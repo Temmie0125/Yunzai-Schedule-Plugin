@@ -6,7 +6,7 @@ import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-
+import { makeForwardMsg } from '../components/common.js'
 // const BIRTHDAY_DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/birthday.json')
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
@@ -84,24 +84,28 @@ export class BirthdayReminder extends plugin {
                 { reg: /^#移除生日\s*(\d+)?$/, fnc: "removeBirthday", permission: "master" },
                 { reg: /^#修改生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday", permission: "master" },
                 { reg: /^#修改生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday", permission: "master" },
-                { reg: "^#检查生日$", fnc: "manualCheckBirthday", permission: "master" }
+                { reg: "^#检查生日$", fnc: "manualCheckBirthday", permission: "master" },
+                // 主人命令
+                { reg: "^#生日白名单(列表)?$", fnc: "whitelistList", permission: "master" },
+                { reg: "^#生日白名单添加\\s+(\\d+)$", fnc: "whitelistAdd", permission: "master" },
+                { reg: "^#生日白名单删除\\s+(\\d+)$", fnc: "whitelistRemove", permission: "master" },
+                { reg: "^#生日黑名单(列表)?$", fnc: "blacklistList", permission: "master" },
+                { reg: "^#生日黑名单添加\\s+(\\d+)$", fnc: "blacklistAdd", permission: "master" },
+                { reg: "^#生日黑名单删除\\s+(\\d+)$", fnc: "blacklistRemove", permission: "master" },
+                { reg: "^#生日黑白名单清空$", fnc: "clearAllLists", permission: "master" }
             ],
         })
-
         // 加载生日数据
         this.birthdayData = DataManager.loadBirthdayData()
-
         // 初始化定时推送任务
         this.pushJob = null
         this.initPushTask()
-
         // 监听配置变化事件（与课表插件共用事件总线）
         this.handleConfigChange = this.handleConfigChange.bind(this)
         if (global.scheduleEvents) {
             global.scheduleEvents.on(this.handleConfigChange)
         }
     }
-
     // 初始化定时任务
     initPushTask() {
         const config = ConfigManager.getConfig()
@@ -126,7 +130,6 @@ export class BirthdayReminder extends plugin {
             global[GLOBAL_BIRTHDAY_JOB].cancel()
             global[GLOBAL_BIRTHDAY_JOB] = null
         }
-
         try {
             const job = schedule.scheduleJob(pushCron, () => {
                 this.checkBirthdays()
@@ -139,7 +142,7 @@ export class BirthdayReminder extends plugin {
         }
     }
     handleConfigChange() {
-        logger.info('[Schedule生日提醒] 检测到配置变化，重载定时任务')
+        // logger.info('[Schedule生日提醒] 检测到配置变化，重载定时任务')
         this.initPushTask()
     }
     // 插件卸载时清理
@@ -175,7 +178,21 @@ export class BirthdayReminder extends plugin {
             return
         }
         // 群聊推送
-        const groupIds = Bot.getGroupList()
+        // 获取群聊配置
+        const config = ConfigManager.getConfig();
+        const whitelist = config.birthdayWhitelistGroups || [];
+        const blacklist = config.birthdayBlacklistGroups || [];
+        let groupIds = Bot.getGroupList()
+        // 根据黑白名单过滤群
+        groupIds = groupIds.filter(gid => {
+            const gidNum = Number(gid);
+            // 白名单优先：如果白名单非空，只保留在白名单内的群
+            if (whitelist.length > 0) {
+                return whitelist.some(w => Number(w) === gidNum);
+            }
+            // 白名单为空时，排除黑名单内的群
+            return !blacklist.some(b => Number(b) === gidNum);
+        });
         if (groupIds && groupIds.length) {
             for (const groupId of groupIds) {
                 if (String(groupId) === 'stdin') continue
@@ -221,7 +238,6 @@ export class BirthdayReminder extends plugin {
         const message = e.msg.trim()
         let targetUserId = e.at
         let birthday
-
         // 格式1: #添加生日 @某人 生日
         const atMatch = message.match(/^#添加生日\s*(\d{1,2}[-/.]\d{1,2})$/)
         if (atMatch && e.at) {
@@ -236,19 +252,16 @@ export class BirthdayReminder extends plugin {
             targetUserId = qqMatch[1]
             birthday = qqMatch[2]
         }
-
         const validation = formatAndValidateBirthday(birthday)
         if (!validation.valid) {
             e.reply('生日格式错误！请使用 月-日 格式，例如：1-1 或 01-01')
             return true
         }
         birthday = validation.formatted
-
         if (!e.group_id) {
             e.reply('请在群聊中使用此命令')
             return true
         }
-
         // 检查目标是否在群内
         const memberMap = await Bot.pickGroup(e.group_id).getMemberMap()
         if (!memberMap.has(Number(targetUserId))) {
@@ -256,7 +269,6 @@ export class BirthdayReminder extends plugin {
             return true
         }
         const userName = memberMap.get(Number(targetUserId)).nickname
-
         // 存储
         this.birthdayData[targetUserId] = {
             name: userName,
@@ -266,7 +278,6 @@ export class BirthdayReminder extends plugin {
             nicknameModified: false,
             isSelfSet: false
         }
-
         if (DataManager.saveBirthdayData(this.birthdayData)) {
             e.reply(`✅ 已成功为${userName}(${targetUserId})添加生日：${birthday}`)
         } else {
@@ -291,7 +302,6 @@ export class BirthdayReminder extends plugin {
             e.reply('请@要移除生日的人，或输入正确的QQ号！')
             return true
         }
-
         if (this.birthdayData[targetUserId]) {
             delete this.birthdayData[targetUserId]
             DataManager.saveBirthdayData(this.birthdayData)
@@ -330,7 +340,7 @@ export class BirthdayReminder extends plugin {
         if (e.msg.includes("完整") || e.msg.includes("全部")) {
             finaldata = birthdaysWithDays;
         }
-        else {     
+        else {
             finaldata = birthdaysWithDays.slice(0, 10);
             r10 = true;
         }
@@ -415,7 +425,7 @@ export class BirthdayReminder extends plugin {
         }
         DataManager.saveBirthdayData(this.birthdayData)
         let replymsg = [`✅ 已${isFirstSet ? '修改' : '设置'}你的生日：${birthday}`]
-        if (Bot.fl && !Bot.fl.has(Number(e.user_id))){
+        if (Bot.fl && !Bot.fl.has(Number(e.user_id))) {
             replymsg.push(`\n您还未添加好友哦，添加后还可以在生日当天收到私信祝福~`)
         }
         e.reply(replymsg)
@@ -530,8 +540,148 @@ export class BirthdayReminder extends plugin {
             `========\n`,
             `日期格式示例：1-14`
         ]
+        // 主人命令仅私聊展示，防止刷屏
+        if (e.isMaster && !e.isGroup) {
+            msg.push(
+                `\n==主人命令==`,
+                `[#生日白名单列表] 查看白名单群`,
+                `[#生日白名单添加 群号] 添加群到白名单`,
+                `[#生日白名单删除 群号] 从白名单移除`,
+                `[#生日黑名单列表] 查看黑名单群`,
+                `[#生日黑名单添加 群号] 添加群到黑名单`,
+                `[#生日黑名单删除 群号] 从黑名单移除`,
+                `[#生日黑白名单清空] 清空所有黑白名单`
+            );
+        }
         e.reply(msg)
         return true
+    }
+    // 辅助方法：获取群名称
+    async getGroupName(groupId) {
+        try {
+            const group = Bot.pickGroup(groupId);
+            if (group && group.group_name) return group.group_name;
+        } catch (e) { }
+        return String(groupId);
+    }
+
+    // 白名单列表
+    async whitelistList(e) {
+        const config = ConfigManager.getConfig();
+        const whitelist = config.birthdayWhitelistGroups || [];
+        if (whitelist.length === 0) {
+            return e.reply("当前生日白名单为空，所有群（黑名单除外）都会收到推送。");
+        }
+        // 构建消息列表
+        const msgList = ["📋 生日白名单群列表："];
+        for (const gid of whitelist) {
+            const name = await this.getGroupName(gid);
+            msgList.push(`${name} (${gid})`);
+        }
+        msgList.push(`\n共 ${whitelist.length} 个群。`);
+        // 使用合并转发发送
+        const forwardMsg = await makeForwardMsg(e, msgList, "生日白名单");
+        await e.reply(forwardMsg);
+        return true;
+    }
+
+    // 白名单添加
+    async whitelistAdd(e) {
+        const match = e.msg.match(/^#生日白名单添加\s+(\d+)$/);
+        if (!match) return e.reply("格式错误：请使用 #生日白名单添加 群号");
+        const groupId = match[1];
+        // 检查机器人是否在该群
+        const groupList = Bot.getGroupList();
+        if (!groupList.map(g => String(g)).includes(groupId)) {
+            return e.reply(`❌ 机器人不在群 ${groupId} 中，无法添加。`);
+        }
+        const config = ConfigManager.getConfig();
+        let whitelist = config.birthdayWhitelistGroups || [];
+        if (whitelist.includes(groupId)) {
+            return e.reply(`群 ${groupId} 已在白名单中。`);
+        }
+        whitelist.push(groupId);
+        // 保存配置
+        ConfigManager.setConfig({ ...config, birthdayWhitelistGroups: whitelist });
+        const groupName = await this.getGroupName(groupId);
+        e.reply(`✅ 已将 ${groupName} (${groupId}) 添加到生日白名单。\n现在只有白名单内的群会收到生日推送。`);
+    }
+
+    // 白名单删除
+    async whitelistRemove(e) {
+        const match = e.msg.match(/^#生日白名单删除\s+(\d+)$/);
+        if (!match) return e.reply("格式错误：请使用 #生日白名单删除 群号");
+        const groupId = match[1];
+        const config = ConfigManager.getConfig();
+        let whitelist = config.birthdayWhitelistGroups || [];
+        if (!whitelist.includes(groupId)) {
+            return e.reply(`群 ${groupId} 不在白名单中。`);
+        }
+        whitelist = whitelist.filter(g => g !== groupId);
+        ConfigManager.setConfig({ ...config, birthdayWhitelistGroups: whitelist });
+        const groupName = await this.getGroupName(groupId);
+        e.reply(`✅ 已将 ${groupName} (${groupId}) 移出白名单。`);
+    }
+
+    // 黑名单列表
+    async blacklistList(e) {
+        const config = ConfigManager.getConfig();
+        const blacklist = config.birthdayBlacklistGroups || [];
+        if (blacklist.length === 0) {
+            return e.reply("当前生日黑名单为空，所有群（受白名单约束）都会收到推送。");
+        }
+        const msgList = ["🚫 生日黑名单群列表："];
+        for (const gid of blacklist) {
+            const name = await this.getGroupName(gid);
+            msgList.push(`${name} (${gid})`);
+        }
+        msgList.push(`共 ${blacklist.length} 个群。`);
+        const forwardMsg = await makeForwardMsg(e, msgList, "生日黑名单");
+        await e.reply(forwardMsg);
+        return true;
+    }
+
+    // 黑名单添加
+    async blacklistAdd(e) {
+        const match = e.msg.match(/^#生日黑名单添加\s+(\d+)$/);
+        if (!match) return e.reply("格式错误：请使用 #生日黑名单添加 群号");
+        const groupId = match[1];
+        const config = ConfigManager.getConfig();
+        let blacklist = config.birthdayBlacklistGroups || [];
+        if (blacklist.includes(groupId)) {
+            return e.reply(`群 ${groupId} 已在黑名单中。`);
+        }
+        blacklist.push(groupId);
+        ConfigManager.setConfig({ ...config, birthdayBlacklistGroups: blacklist });
+        const groupName = await this.getGroupName(groupId);
+        e.reply(`✅ 已将 ${groupName} (${groupId}) 添加到黑名单。\n黑名单中的群不会收到生日推送。`);
+    }
+
+    // 黑名单删除
+    async blacklistRemove(e) {
+        const match = e.msg.match(/^#生日黑名单删除\s+(\d+)$/);
+        if (!match) return e.reply("格式错误：请使用 #生日黑名单删除 群号");
+        const groupId = match[1];
+        const config = ConfigManager.getConfig();
+        let blacklist = config.birthdayBlacklistGroups || [];
+        if (!blacklist.includes(groupId)) {
+            return e.reply(`群 ${groupId} 不在黑名单中。`);
+        }
+        blacklist = blacklist.filter(g => g !== groupId);
+        ConfigManager.setConfig({ ...config, birthdayBlacklistGroups: blacklist });
+        const groupName = await this.getGroupName(groupId);
+        e.reply(`✅ 已将 ${groupName} (${groupId}) 移出黑名单。`);
+    }
+
+    // 清空所有黑白名单
+    async clearAllLists(e) {
+        const config = ConfigManager.getConfig();
+        ConfigManager.setConfig({
+            ...config,
+            birthdayWhitelistGroups: [],
+            birthdayBlacklistGroups: []
+        });
+        e.reply("✅ 已清空生日推送的白名单和黑名单，现在所有群都会收到推送。");
     }
 
     /** 计算距离生日的天数 */

@@ -42,10 +42,15 @@ export class ConfigManager {
             autoCancelCheckInterval: 60,
             // 生日配置
             birthdayPushHour: 0,        // 生日推送小时，默认0点
-            allowSelfModify: true       // 允许用户自行修改/重新设置生日
+            allowSelfModify: true,       // 允许用户自行修改/重新设置生日
+            birthdayWhitelistGroups: [],  // 推送白名单
+            birthdayBlacklistGroups: []   // 推送黑名单
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
+        // 确保新增字段存在（防止旧配置没有这两个字段）
+        if (!config.birthdayWhitelistGroups) config.birthdayWhitelistGroups = [];
+        if (!config.birthdayBlacklistGroups) config.birthdayBlacklistGroups = [];
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -94,7 +99,8 @@ export class ConfigManager {
         const {
             pushHour, showTableName, autoRecallCode, renderScale,
             autoCancelCheckEnabled, autoCancelCheckInterval,
-            birthdayPushHour, allowSelfModify        // 新增
+            birthdayPushHour, allowSelfModify,
+            birthdayWhitelistGroups, birthdayBlacklistGroups
         } = data;
         const configToSave = {
             pushHour,
@@ -103,7 +109,8 @@ export class ConfigManager {
             renderScale,
             autoCancelCheckEnabled,
             autoCancelCheckInterval,
-            birthdayPushHour, allowSelfModify
+            birthdayPushHour, allowSelfModify,
+            birthdayWhitelistGroups, birthdayBlacklistGroups
         };
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {
