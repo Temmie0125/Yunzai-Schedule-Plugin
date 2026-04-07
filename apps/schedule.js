@@ -80,7 +80,7 @@ export class SchedulePlugin extends plugin {
      * 处理配置变化事件
      */
   handleConfigChange() {
-    logger.info('[推送任务] 检测到配置变化，重载定时任务');
+    // logger.info('[推送任务] 检测到配置变化，重载定时任务');
     this.initPushTask();
   }
   /**
@@ -102,7 +102,7 @@ export class SchedulePlugin extends plugin {
 
     // 如果当前全局任务存在且cron相同，则无需重建
     if (global.__schedulePushJob && global.__schedulePushCron === pushCron) {
-        logger.mark(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
+        // logger.mark(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
         return;
     }
 
@@ -114,6 +114,7 @@ export class SchedulePlugin extends plugin {
     }
 
     try {
+        logger.info('[推送任务] 开始加载定时任务...');
         global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
             // 调用静态方法，不依赖实例
             SchedulePlugin.pushTomorrowSchedule();

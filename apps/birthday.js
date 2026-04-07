@@ -118,7 +118,7 @@ export class BirthdayReminder extends plugin {
         }
         // 如果全局任务已存在且 cron 相同，则跳过
         if (global[GLOBAL_BIRTHDAY_JOB] && global[GLOBAL_BIRTHDAY_CRON] === pushCron) {
-            logger.mark("[Schedule生日提醒] 定时任务已存在且未更改cron, 跳过重载")
+            // logger.mark("[Schedule生日提醒] 定时任务已存在且未更改cron, 跳过重载")
             return
         }
         // 取消已有的全局任务
