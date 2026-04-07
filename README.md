@@ -12,6 +12,8 @@
 
 **Schedule 课程表插件** 是基于 [Yunzai-Bot V3](https://github.com/TimeRainStarSky/Yunzai) 的课程表管理插件。它支持通过 [WakeUP 课程表](https://www.wakeup.fun/) 的口令一键导入课表，并提供课表查询、群友上课状态围观、课表推送订阅等实用功能。
 
+本插件还内置了一个生日模块，支持成员设定生日并自动收到祝福。生日模块支持群单独配置，自由控制哪些群可以进行推送。
+
 > 🚀 **几乎免配置，开箱即用！**
 
 ---
@@ -89,6 +91,8 @@ git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./p
 | `生日模块` | 支持设置生日并推送，详见帮助菜单 |
 
 > 更多命令请使用 `#课表帮助` 查看图文帮助。
+
+![帮助图片](./resources/images/help.jpg "图文帮助")
 
 ---
 
