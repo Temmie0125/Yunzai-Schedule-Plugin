@@ -48,3 +48,15 @@ export async function makeForwardMsg(e, msg = [], dec = '') {
     }
     return forwardMsg
 }
+/**
+ * 权限检查（群管理员或主人）
+ * @param {*} e 
+ * @returns Boolean
+ */
+export function checkPermission(e) {
+    const member = e.group.pickMember(e.user_id)
+    if (e.isMaster) return true
+    if (e.isGroup && e.member?.role && ['owner', 'admin'].includes(e.member.role)) return true
+    if (e,isGroup && (member.is_admin || member.is_owner)) return true
+    return false
+}

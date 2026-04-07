@@ -143,3 +143,50 @@ export function calculateDateFromWeekAndDay(semesterStart, week, day) {
     target.setDate(startMonday.getDate() + offsetDays);
     return target;
 }
+/**
+ * 获取当前日期 MM-DD
+ * @returns MM-DD
+ */
+export function getCurrentDate() {
+    const now = new Date()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    return `${month}-${day}`
+}
+
+/**
+ * 验证并格式化生日（MM-DD）
+ * @param {String} birthday 
+ * @returns {String} MM-DD
+ */
+export function formatAndValidateBirthday(birthday) {
+    const regex = /^(\d{1,2})[-/.](\d{1,2})$/
+    const match = birthday.match(regex)
+    if (!match) return { valid: false, formatted: null }
+
+    let month = parseInt(match[1], 10)
+    let day = parseInt(match[2], 10)
+    if (month < 1 || month > 12 || day < 1 || day > 31) return { valid: false, formatted: null }
+
+    const monthStr = String(month).padStart(2, '0')
+    const dayStr = String(day).padStart(2, '0')
+    // 验证日期有效性
+    const date = new Date(2000, month - 1, day)
+    if (date.getMonth() + 1 !== month || date.getDate() !== day) return { valid: false, formatted: null }
+
+    return { valid: true, formatted: `${monthStr}-${dayStr}` }
+}
+/**
+ * 计算距离生日的天数
+ * @param {*} birthday 
+ * @returns Days Remain
+ */
+export function getDaysToBirthday(birthday) {
+    const today = new Date()
+    const [month, day] = birthday.split('-').map(Number)
+    const thisYearBirthday = new Date(today.getFullYear(), month - 1, day)
+    const target = today > thisYearBirthday
+        ? new Date(today.getFullYear() + 1, month - 1, day)
+        : thisYearBirthday
+    return Math.ceil((target - today) / (1000 * 60 * 60 * 24))
+}

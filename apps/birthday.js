@@ -6,7 +6,8 @@ import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-import { makeForwardMsg } from '../components/common.js'
+import { makeForwardMsg, checkPermission } from '../components/common.js'
+import { getCurrentDate, formatAndValidateBirthday, getDaysToBirthday} from '../utils/timeUtils.js';
 // const BIRTHDAY_DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/birthday.json')
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
@@ -26,40 +27,6 @@ const birthdayMessages = [
 function getRandomBirthdayMessage() {
     const index = Math.floor(Math.random() * birthdayMessages.length)
     return birthdayMessages[index]
-}
-
-/** 获取当前日期 MM-DD */
-function getCurrentDate() {
-    const now = new Date()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    return `${month}-${day}`
-}
-
-/** 验证并格式化生日（MM-DD） */
-function formatAndValidateBirthday(birthday) {
-    const regex = /^(\d{1,2})[-/.](\d{1,2})$/
-    const match = birthday.match(regex)
-    if (!match) return { valid: false, formatted: null }
-
-    let month = parseInt(match[1], 10)
-    let day = parseInt(match[2], 10)
-    if (month < 1 || month > 12 || day < 1 || day > 31) return { valid: false, formatted: null }
-
-    const monthStr = String(month).padStart(2, '0')
-    const dayStr = String(day).padStart(2, '0')
-    // 验证日期有效性
-    const date = new Date(2000, month - 1, day)
-    if (date.getMonth() + 1 !== month || date.getDate() !== day) return { valid: false, formatted: null }
-
-    return { valid: true, formatted: `${monthStr}-${dayStr}` }
-}
-
-/** 权限检查（群管理员或主人） */
-function checkPermission(e) {
-    if (e.isMaster) return true
-    if (e.isGroup && e.member?.role && ['owner', 'admin'].includes(e.member.role)) return true
-    return false
 }
 
 export class BirthdayReminder extends plugin {
@@ -329,7 +296,7 @@ export class BirthdayReminder extends plugin {
         }
         const birthdaysWithDays = []
         for (const [userId, data] of Object.entries(groupBirthdays)) {
-            const days = this.getDaysToBirthday(data.birthday)
+            const days = getDaysToBirthday(data.birthday)
             birthdaysWithDays.push({
                 userId, name: data.name, birthday: data.birthday, days
             })
@@ -378,7 +345,7 @@ export class BirthdayReminder extends plugin {
         if (!data) {
             return e.reply('你还没有设置生日~使用[#设置生日 月份-日期]来进行设置~')
         }
-        const daysLeft = this.getDaysToBirthday(data.birthday)
+        const daysLeft = getDaysToBirthday(data.birthday)
         let msg = `🎂 ${data.name}的生日信息 🎂\n生日: ${data.birthday}\n`
         if (daysLeft === 0) msg += '🎉 今天是你的生日！生日快乐！🎂'
         else if (daysLeft === 1) msg += '🎈 明天就是你的生日啦！'
@@ -528,7 +495,7 @@ export class BirthdayReminder extends plugin {
             nicknameModified: this.birthdayData[targetUserId].nicknameModified || false
         }
         if (DataManager.saveBirthdayData(this.birthdayData)) {
-            const daysLeft = this.getDaysToBirthday(birthday)
+            const daysLeft = getDaysToBirthday(birthday)
             let replyMsg = `✅ 已成功修改${oldName}(${targetUserId})的生日：\n原生日：${oldBirthday} → 新生日：${birthday}\n`
             if (daysLeft === 0) replyMsg += '🎉 今天就是TA的生日！生日快乐！'
             else replyMsg += `距离TA的生日还有 ${daysLeft} 天`
@@ -704,18 +671,6 @@ export class BirthdayReminder extends plugin {
         });
         return e.reply("✅ 已清空生日推送的白名单和黑名单，现在所有群都会收到推送。");
     }
-
-    /** 计算距离生日的天数 */
-    getDaysToBirthday(birthday) {
-        const today = new Date()
-        const [month, day] = birthday.split('-').map(Number)
-        const thisYearBirthday = new Date(today.getFullYear(), month - 1, day)
-        const target = today > thisYearBirthday
-            ? new Date(today.getFullYear() + 1, month - 1, day)
-            : thisYearBirthday
-        return Math.ceil((target - today) / (1000 * 60 * 60 * 24))
-    }
-
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))
     }
