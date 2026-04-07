@@ -72,6 +72,7 @@ export class BirthdayReminder extends plugin {
             rule: [
                 // 普通用户命令
                 { reg: "^#设置生日\\s+(\\d{1,2}[-/.]\\d{1,2})$", fnc: "setMyBirthday" },
+                { reg: "^#清除(我的)?生日$", fnc: "clearMyBirthday" },
                 { reg: "^#我的生日$", fnc: "myBirthday" },
                 { reg: "^#生日(设置|修改)昵称\\s+(.+)$", fnc: "modifyNickname" },
                 { reg: "^#(全部)?生日(完整)?列表$", fnc: "listBirthdays" },
@@ -79,13 +80,13 @@ export class BirthdayReminder extends plugin {
                 { reg: "^#生日帮助$", fnc: "birthdayHelp" },
                 // 生日模块帮助已经整合进课表帮助，此处显示文本帮助
                 // 管理员命令
-                { reg: /^#添加生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday", permission: "master" },
-                { reg: /^#添加生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday", permission: "master" },
-                { reg: /^#移除生日\s*(\d+)?$/, fnc: "removeBirthday", permission: "master" },
-                { reg: /^#修改生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday", permission: "master" },
-                { reg: /^#修改生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday", permission: "master" },
-                { reg: "^#检查生日$", fnc: "manualCheckBirthday", permission: "master" },
+                { reg: /^#添加生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday" },
+                { reg: /^#添加生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday" },
+                { reg: /^#移除生日\s*(\d+)?$/, fnc: "removeBirthday" },
+                { reg: /^#修改生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday" },
+                { reg: /^#修改生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday" },
                 // 主人命令
+                { reg: "^#检查生日$", fnc: "manualCheckBirthday", permission: "master" },
                 { reg: "^#生日白名单(列表)?$", fnc: "whitelistList", permission: "master" },
                 { reg: "^#生日白名单添加\\s+(\\d+)$", fnc: "whitelistAdd", permission: "master" },
                 { reg: "^#生日白名单删除\\s+(\\d+)$", fnc: "whitelistRemove", permission: "master" },
@@ -431,6 +432,26 @@ export class BirthdayReminder extends plugin {
         e.reply(replymsg)
         return true
     }
+    /** 用户清除自己的生日 */
+    async clearMyBirthday(e) {
+        const userId = e.user_id;
+        const config = ConfigManager.getConfig();
+        const allowSelfModify = config.allowSelfModify
+        if (!this.birthdayData[userId]) {
+            return e.reply("你还没有设置生日，无需清除。");
+        }
+        // 检查是否允许自行清除（可复用 allowSelfModify 或独立配置）
+        if (!allowSelfModify && !e.isMaster) {
+            return e.reply("这里被管理员禁止自行清除生日信息了呐QAQ，请联系管理员操作。");
+        }
+        delete this.birthdayData[userId];
+        if (DataManager.saveBirthdayData(this.birthdayData)) {
+            e.reply("✅ 已成功清除你的生日信息。");
+        } else {
+            e.reply("❌ 清除生日信息失败，请检查日志。");
+        }
+        return true;
+    }
     /** 修改生日昵称 */
     async modifyNickname(e) {
         const message = e.msg.trim()
@@ -604,7 +625,7 @@ export class BirthdayReminder extends plugin {
         // 保存配置
         ConfigManager.setConfig({ ...config, birthdayWhitelistGroups: whitelist });
         const groupName = await this.getGroupName(groupId);
-        e.reply(`✅ 已将 ${groupName} (${groupId}) 添加到生日白名单。\n现在只有白名单内的群会收到生日推送。`);
+        return e.reply(`✅ 已将 ${groupName} (${groupId}) 添加到生日白名单。\n现在只有白名单内的群会收到生日推送。`);
     }
 
     // 白名单删除
@@ -620,7 +641,7 @@ export class BirthdayReminder extends plugin {
         whitelist = whitelist.filter(g => g !== groupId);
         ConfigManager.setConfig({ ...config, birthdayWhitelistGroups: whitelist });
         const groupName = await this.getGroupName(groupId);
-        e.reply(`✅ 已将 ${groupName} (${groupId}) 移出白名单。`);
+        return e.reply(`✅ 已将 ${groupName} (${groupId}) 移出白名单。`);
     }
 
     // 黑名单列表
@@ -654,7 +675,7 @@ export class BirthdayReminder extends plugin {
         blacklist.push(groupId);
         ConfigManager.setConfig({ ...config, birthdayBlacklistGroups: blacklist });
         const groupName = await this.getGroupName(groupId);
-        e.reply(`✅ 已将 ${groupName} (${groupId}) 添加到黑名单。\n黑名单中的群不会收到生日推送。`);
+        return e.reply(`✅ 已将 ${groupName} (${groupId}) 添加到黑名单。\n黑名单中的群不会收到生日推送。`);
     }
 
     // 黑名单删除
@@ -670,7 +691,7 @@ export class BirthdayReminder extends plugin {
         blacklist = blacklist.filter(g => g !== groupId);
         ConfigManager.setConfig({ ...config, birthdayBlacklistGroups: blacklist });
         const groupName = await this.getGroupName(groupId);
-        e.reply(`✅ 已将 ${groupName} (${groupId}) 移出黑名单。`);
+        return e.reply(`✅ 已将 ${groupName} (${groupId}) 移出黑名单。`);
     }
 
     // 清空所有黑白名单
@@ -681,7 +702,7 @@ export class BirthdayReminder extends plugin {
             birthdayWhitelistGroups: [],
             birthdayBlacklistGroups: []
         });
-        e.reply("✅ 已清空生日推送的白名单和黑名单，现在所有群都会收到推送。");
+        return e.reply("✅ 已清空生日推送的白名单和黑名单，现在所有群都会收到推送。");
     }
 
     /** 计算距离生日的天数 */

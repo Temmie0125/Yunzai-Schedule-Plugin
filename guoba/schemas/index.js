@@ -92,10 +92,10 @@ export const schemas = [
     },
     {
         field: "allowSelfModify",
-        label: "允许成员修改生日",
+        label: "允许自行修改生日",
         component: "Switch",
         defaultValue: true,
-        bottomHelpMessage: "开启后，成员可以重新设置生日以进行修改"
+        bottomHelpMessage: "开启后，成员可以自行重新设置或清除生日以进行修改"
     },
     {
         field: "birthdayWhitelistGroups",
