@@ -97,6 +97,7 @@
             grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
+        /* 确保卡片宽度严格遵循父网格约束，避免内容撑开导致两列宽度不均 */
         .birthday-card {
             display: grid;
             grid-template-columns: auto 1fr;
@@ -108,6 +109,10 @@
             box-shadow: 0 5px 15px rgba(0,0,0,0.05);
             position: relative;
             border: 1px solid #edf2f7;
+            /* 强制卡片等宽 */
+            width: 100%;
+            min-width: 0;          /* 允许内容溢出时收缩，防止撑开父容器 */
+            box-sizing: border-box;
         }
         /* 左侧双箭头装饰，与课程表一致 */
         .birthday-card::before,
@@ -146,6 +151,7 @@
             object-fit: cover;
             border-radius: 25%;
         }
+        /* 右侧信息区域：防止昵称过长撑开父容器，限制溢出 */
         .info {
             grid-column: 2;
             grid-row: 1 / 2;
@@ -153,7 +159,12 @@
             flex-direction: column;
             justify-content: flex-start;
             align-self: start;
+            /* 防止内容溢出导致宽度异常 */
+            min-width: 0;      /* 允许子元素收缩 */
+            overflow: hidden;
+            width: 100%;
         }
+        /* 昵称样式：长昵称强制单行截断并显示省略号，确保两列宽度严格相等 */
         .name {
             font-size: 28px;
             color: #1a202c;
@@ -161,9 +172,11 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            width: 100%;
+            /* 保留原始伪元素装饰，但截断时emoji也会隐藏，视觉可接受且保证卡片等宽 */
         }
         .name::before {
-            content: "🎉";
+            content: "";
             margin-right: 8px;
             font-size: 28px;
         }
@@ -287,7 +300,7 @@
                     <img src="{{item.avatar}}" alt="{{item.name}}">
                 </div>
                 <div class="info">
-                    <div class="name">{{item.name}}</div>
+                    <div class="name">🎉 {{item.name}}</div>
                     <div class="qq">{{item.qq}}</div>
                 </div>
                 <div class="birthday-info">
