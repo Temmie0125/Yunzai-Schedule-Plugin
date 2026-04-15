@@ -5,7 +5,21 @@ export const schemas = [
         label: '课表模块设置'
     },
     {
-        field: "pushHour",                     // 改为 pushHour
+        field: "proxyUrl",
+        label: "课表服务器",
+        component: "Input",
+        placeholder: "请输入URL:PORT",
+        bottomHelpMessage: "请输入用于获取课表数据的URL。端口号为19178。例如http://YOUR_SERVER_URL:19178"
+    },
+    {
+        field: "apiToken",
+        label: "API Token",
+        component: "Input",
+        placeholder: "请输入Token",
+        bottomHelpMessage: "请输入用于访问课表服务的Token。可联系插件作者获取。"
+    },
+    {
+        field: "pushHour", 
         label: "推送时间（小时）",
         component: "InputNumber",
         required: true,

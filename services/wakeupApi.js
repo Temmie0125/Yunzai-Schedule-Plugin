@@ -1,12 +1,14 @@
 // services/wakeupApi.js
 import https from 'node:https'
+import http from 'node:http'
+import { ConfigManager } from '../components/configManager.js'
 
 /**
- * 从WakeUp API获取课表数据
+ * 从WakeUp API获取课表数据（原直连方式，现在已不可用，仅作为保留）
  * @param {string} code - 分享口令
  * @returns {Promise<object>} 解析后的课表数据
  */
-export function fetchScheduleFromAPI(code) {
+function fetchScheduleFromDirect(code) {
   return new Promise((resolve, reject) => {
     const options = {
       headers: { version: '280', 'User-Agent': 'Mozilla/5.0' }
@@ -36,6 +38,112 @@ export function fetchScheduleFromAPI(code) {
     }
     tryFetch(0)
   })
+}
+
+/**
+ * 通过中转服务获取课表数据
+ * @param {string} code - 分享口令
+ * @param {string} proxyUrl - 中转服务地址, 请填写http://${URL}:19178
+ * @param {string} apiToken - API Token
+ * @returns {Promise<object>}
+ */
+function fetchScheduleFromProxy(code, proxyUrl, apiToken) {
+  return new Promise((resolve, reject) => {
+    // 解析URL
+    let urlObj
+    try {
+      urlObj = new URL(proxyUrl)
+    } catch (err) {
+      return reject(new Error(`无效的中转服务地址: ${proxyUrl}`))
+    }
+    const isHttps = urlObj.protocol === 'https:'
+    const requestModule = isHttps ? https : http
+
+    const postData = JSON.stringify({
+      shareToken: code,
+      apiToken: apiToken
+    })
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: '/api/schedule',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 15000  // 15秒超时
+    }
+
+    const req = requestModule.request(options, (res) => {
+      let raw = ''
+      res.on('data', chunk => raw += chunk)
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(raw);
+          if (response.code === 0 && response.data) {
+            const decoded = Buffer.from(response.data, 'base64').toString('utf-8');
+            let rawDataString = decoded;
+            try {
+              const maybeJson = JSON.parse(decoded);
+              if (maybeJson && typeof maybeJson === 'object' && maybeJson.shareData) {
+                if (typeof maybeJson.shareData === 'string') {
+                  rawDataString = maybeJson.shareData;
+                  try {
+                    rawDataString = JSON.parse(rawDataString);
+                  } catch {
+                  }
+                } else {
+                  rawDataString = maybeJson.shareData;
+                }
+              }
+            } catch {
+            }
+            if (typeof rawDataString !== 'string') {
+              throw new Error('解码后的数据不是字符串格式');
+            }
+            resolve(parseScheduleData(rawDataString));
+          } else {
+            reject(new Error(response.message || '中转服务返回错误'));
+          }
+        } catch (err) {
+          reject(new Error(`解析中转服务响应失败: ${err.message}\n原始数据: ${raw}`));
+        }
+      })
+    })
+
+    req.on('error', (err) => {
+      reject(new Error(`请求中转服务失败: ${err.message}`))
+    })
+
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('请求中转服务超时'))
+    })
+
+    req.write(postData)
+    req.end()
+  })
+}
+
+/**
+ * 对外主函数：根据配置自动选择直连或中转
+ * @param {string} code - 分享口令
+ * @returns {Promise<object>}
+ */
+export function fetchScheduleFromAPI(code) {
+  const config = ConfigManager.getConfig()
+  const { proxyUrl, apiToken } = config
+
+  // 如果配置了中转服务地址且 Token 非空，则使用中转服务
+  if (proxyUrl && proxyUrl.trim() !== '' && apiToken && apiToken.trim() !== '') {
+    // logger.info('[WakeUpAPI] 使用中转服务获取课表数据')
+    return fetchScheduleFromProxy(code, proxyUrl, apiToken)
+  } else {
+    // logger.info('[WakeUpAPI] 使用直连方式获取课表数据')
+    return fetchScheduleFromDirect(code)
+  }
 }
 
 /**

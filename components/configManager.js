@@ -44,13 +44,18 @@ export class ConfigManager {
             birthdayPushHour: 0,        // 生日推送小时，默认0点
             allowSelfModify: true,       // 允许用户自行修改/重新设置生日
             birthdayWhitelistGroups: [],  // 推送白名单
-            birthdayBlacklistGroups: []   // 推送黑名单
+            birthdayBlacklistGroups: [],   // 推送黑名单
+            // 新增字段
+            proxyUrl: "",        // 中转服务地址
+            apiToken: ""         // 中转服务所需的 API Token
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
         // 确保新增字段存在（防止旧配置没有这两个字段）
         if (!config.birthdayWhitelistGroups) config.birthdayWhitelistGroups = [];
         if (!config.birthdayBlacklistGroups) config.birthdayBlacklistGroups = [];
+        if (config.proxyUrl === undefined) config.proxyUrl = "";
+        if (config.apiToken === undefined) config.apiToken = "";
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -100,7 +105,8 @@ export class ConfigManager {
             pushHour, showTableName, autoRecallCode, renderScale,
             autoCancelCheckEnabled, autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
-            birthdayWhitelistGroups, birthdayBlacklistGroups
+            birthdayWhitelistGroups, birthdayBlacklistGroups,
+            proxyUrl, apiToken
         } = data;
         const configToSave = {
             pushHour,
@@ -110,7 +116,8 @@ export class ConfigManager {
             autoCancelCheckEnabled,
             autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
-            birthdayWhitelistGroups, birthdayBlacklistGroups
+            birthdayWhitelistGroups, birthdayBlacklistGroups,
+            proxyUrl, apiToken 
         };
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {

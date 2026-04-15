@@ -8,3 +8,8 @@ birthdayPushHour: 0
 allowSelfModify: true
 birthdayWhitelistGroups: []
 birthdayBlacklistGroups: []
+# 中转服务地址（例如 http://YOUR_SERVER_URL:19178）
+# 留空或删除则使用直连官方API(现已不可用)
+proxyUrl: ""
+# 中转服务鉴权 Token, 如有需要请联系插件作者获取
+apiToken: ""
