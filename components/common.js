@@ -69,27 +69,50 @@ export function checkFriend(userId){
     if (!Bot.fl || !Bot.fl.has(Number(userId))) return false
     return true
 }
- /**
- * 从事件中提取文件信息
+/**
+ * 从事件对象中提取文件信息（兼容私聊和群聊）
  * @param {object} e 事件对象
- * @returns {{ fileName: string, fileSize: number, fileId: string } | null}
+ * @returns {{ fileName: string, fileSize: number, fileId: string, busid?: number } | null}
  */
- export function getFileInfo(e) {
+export function getFileInfo(e) {
     if (!e.file) return null;
-    // 尝试多种结构：e.file.data 或 e.file 本身
-    let fileData = e.file.data || e.file;
-    let fileName = fileData.file || fileData.filename || '';
-    let fileSize = parseInt(fileData.file_size || fileData.size || 0, 10);
-    let fileId = fileData.file_id || fileData.id || '';
-    // 如果上述方式未获取到完整信息，尝试直接从 e.file 读取（扁平化情况）
-    if (!fileName || !fileSize || !fileId) {
+    
+    let fileName = '';
+    let fileSize = 0;
+    let fileId = '';
+    let busid = null;
+    
+    // 私聊文件结构：e.file.data
+    if (e.file.data) {
+      fileName = e.file.data.file || e.file.data.filename || '';
+      fileSize = parseInt(e.file.data.file_size || e.file.data.size || 0, 10);
+      fileId = e.file.data.file_id || e.file.data.id || '';
+      busid = e.file.data.busid;
+    }
+    
+    // 群聊文件结构：e.file 直接包含 id, name, size, busid
+    if (!fileName && e.file.name) {
+      fileName = e.file.name;
+      fileSize = parseInt(e.file.size || 0, 10);
+      fileId = e.file.id || '';
+      busid = e.file.busid;
+    }
+    
+    // 兜底
+    if (!fileName) {
       fileName = e.file.file || e.file.filename || '';
+    }
+    if (!fileSize) {
       fileSize = parseInt(e.file.file_size || e.file.size || 0, 10);
+    }
+    if (!fileId) {
       fileId = e.file.file_id || e.file.id || '';
     }
+    
     if (!fileName || !fileSize || !fileId) {
       logger.warn("[课表导入] 无法提取完整的文件信息", { eFile: e.file });
       return null;
     }
-    return { fileName, fileSize, fileId };
+    
+    return { fileName, fileSize, fileId, busid };
   }

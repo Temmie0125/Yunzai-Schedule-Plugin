@@ -222,9 +222,49 @@ export class ScheduleManage extends plugin {
         return true;
     }
     /**
+ * 发送确认提示并等待用户确认
+ * @param {string} action 操作名称（导入/导出）
+ * @param {string} confirmContext 确认状态的上下文名称
+ * @returns {Promise<boolean>} 是否确认
+ */
+    async waitForConfirm(action, confirmContext) {
+        const msg = `⚠️ 您正在群聊中执行「${action}课表」操作，这可能会泄露您的课表信息。\n` +
+            `请发送「确认」继续，发送任意其他内容取消操作。\n` +
+            `（提示：建议在私聊中操作以保护隐私）`;
+        await this.reply(msg);
+        this.setContext(confirmContext);
+        return true; // 等待异步回调
+    }
+    async confirmImport() {
+        const userReply = this.e.msg.trim();
+        this.finish("confirmImport");
+        if (userReply !== "确认") {
+            await this.reply("❌ 已取消导入操作。");
+            return true;
+        }
+        // 确认后进入文件等待
+        this.setContext("waitingForImportFile");
+        await this.reply("请发送你要导入的JSON文件（支持本插件原生课表JSON或拾光课程表导出文件）", false, { at: true });
+        return true;
+    }
+    async confirmExport() {
+        const userReply = this.e.msg.trim();
+        this.finish("confirmExport");
+        if (userReply !== "确认") {
+            await this.reply("❌ 已取消导出操作。");
+            return true;
+        }
+        // 确认后执行导出
+        return await this.doExport();
+    }
+    /**
      * 导入课表文件（命令入口）
      */
     async importFromFile() {
+        if (this.e.group_id) {
+            // 群聊需要二次确认
+            return await this.waitForConfirm('导入', 'confirmImport');
+        }
         this.setContext("waitingForImportFile");
         await this.reply("请发送你要导入的JSON文件（支持本插件原生课表JSON或拾光课程表导出文件）", false, { at: true });
         return true;
@@ -237,23 +277,20 @@ export class ScheduleManage extends plugin {
             await this.reply("未检测到有效的文件信息，请直接发送 JSON 文件");
             return false;
         }
-        const { fileName, fileSize, fileId } = fileInfo;
-        const MAX_SIZE = 2 * 1024 * 1024; // 2MB
-        // 1. 校验文件扩展名
+        const { fileName, fileSize, fileId, busid } = fileInfo;
+        const MAX_SIZE = 2 * 1024 * 1024;
         if (!fileName.toLowerCase().endsWith('.json')) {
             await this.reply("❌ 只支持 JSON 格式的文件，请发送扩展名为 .json 的文件");
             return false;
         }
-        // 2. 校验文件大小
         if (fileSize > MAX_SIZE) {
             const sizeKB = (fileSize / 1024).toFixed(2);
             await this.reply(`❌ 文件过大（${sizeKB}KB），请确保 JSON 文件小于 2MB`);
             return false;
         }
-        // 3. 获取文件内容
         let fileContent;
         try {
-            fileContent = await this.getFileContent(fileId);
+            fileContent = await this.getFileContent(fileId, busid);
         } catch (err) {
             logger.error(`[课表导入] 获取文件内容异常: ${err}`);
             await this.reply("读取文件失败，请稍后重试");
@@ -263,7 +300,6 @@ export class ScheduleManage extends plugin {
             await this.reply("无法读取文件内容，请确保文件有效");
             return false;
         }
-        // 4. 解析 JSON
         let jsonData;
         try {
             jsonData = JSON.parse(fileContent);
@@ -271,7 +307,6 @@ export class ScheduleManage extends plugin {
             await this.reply("文件内容不是合法的 JSON 格式");
             return false;
         }
-        // 5. 导入课表
         const result = await importScheduleFromJsonData(e.user_id, jsonData, e);
         await this.reply(result.message);
         return true;
@@ -280,72 +315,71 @@ export class ScheduleManage extends plugin {
    * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）
    * @returns {Promise<string|null>}
    */
-    async getFileContent() {
+    async getFileContent(fileId, busid = null) {
         const e = this.e;
-        let fileId = e.file?.data?.file_id || e.file?.file_id;
-        if (!fileId) {
-            logger.warn("[课表导入] 无法获取 file_id");
-            return null;
-        }
         try {
-            // 调用 get_file API 获取文件信息
             let fileInfo = null;
-            if (typeof Bot.sendApi === 'function') {
-                fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
-            } else if (Bot.api && typeof Bot.api.get_file === 'function') {
-                fileInfo = await Bot.api.get_file({ file_id: fileId });
-            } else if (e.friend && typeof e.friend.sendApi === 'function') {
-                fileInfo = await e.friend.sendApi('get_file', { file_id: fileId });
-            } else if (e.group && typeof e.group.sendApi === 'function') {
-                fileInfo = await e.group.sendApi('get_file', { file_id: fileId });
+
+            if (e.isGroup) {
+                // 群聊：使用 get_group_file_url
+                if (typeof Bot.sendApi === 'function') {
+                    fileInfo = await Bot.sendApi('get_group_file_url', {
+                        group_id: e.group_id,
+                        file_id: fileId,
+                        busid: busid
+                    });
+                } else {
+                    logger.error("[课表导入] 无法找到调用 OneBot API 的方法");
+                    return null;
+                }
             } else {
-                logger.error("[课表导入] 无法找到调用 OneBot API 的方法");
-                return null;
+                // 私聊：使用 get_file
+                if (typeof Bot.sendApi === 'function') {
+                    fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
+                } else if (Bot.api && typeof Bot.api.get_file === 'function') {
+                    fileInfo = await Bot.api.get_file({ file_id: fileId });
+                } else if (e.friend && typeof e.friend.sendApi === 'function') {
+                    fileInfo = await e.friend.sendApi('get_file', { file_id: fileId });
+                } else {
+                    logger.error("[课表导入] 无法找到调用 OneBot API 的方法");
+                    return null;
+                }
             }
             if (!fileInfo || !fileInfo.data) {
                 logger.error("[课表导入] 获取文件信息失败:", fileInfo);
                 return null;
             }
             const data = fileInfo.data;
-            // 优先使用 url 下载（若存在）
+            // 优先使用 url 下载
             if (data.url && data.url.startsWith('http')) {
                 const response = await fetch(data.url);
                 if (!response.ok) return null;
                 return await response.text();
             }
-            // 若 url 为空，尝试读取本地文件（data.file 为路径）
+            // 尝试读取本地文件（私聊可能返回本地路径）
             if (data.file && typeof data.file === 'string') {
                 const filePath = data.file;
-                // 安全检查：只允许读取 .json 文件
                 if (path.extname(filePath).toLowerCase() !== '.json') {
                     logger.warn(`[课表导入] 文件扩展名不是 .json: ${filePath}`);
                     return null;
                 }
-                // 二次确认文件大小（防止外层校验后文件被替换）
                 if (fs.existsSync(filePath)) {
                     const stats = fs.statSync(filePath);
-                    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+                    const MAX_SIZE = 2 * 1024 * 1024;
                     if (stats.size > MAX_SIZE) {
                         logger.warn(`[课表导入] 文件大小超限: ${stats.size} bytes`);
                         return null;
                     }
                     const content = fs.readFileSync(filePath, 'utf-8');
                     logger.info(`[课表导入] 成功读取本地文件: ${filePath}`);
-                    // 异步删除临时文件（不阻塞返回，删除失败仅记录日志）
                     fs.unlink(filePath, (err) => {
-                        if (err) {
-                            logger.warn(`[课表导入] 删除临时文件失败: ${filePath}`, err);
-                        } else {
-                            logger.info(`[课表导入] 已删除临时文件: ${filePath}`);
-                        }
+                        if (err) logger.warn(`删除临时文件失败: ${filePath}`, err);
+                        else logger.info(`已删除临时文件: ${filePath}`);
                     });
                     return content;
-                } else {
-                    logger.warn(`[课表导入] 本地文件不存在: ${filePath}`);
-                    return null;
                 }
             }
-            logger.error("[课表导入] 无法获取文件内容，既无下载链接也无本地路径");
+            logger.error("[课表导入] 无法获取文件内容");
             return null;
         } catch (err) {
             logger.error(`[课表导入] 获取文件内容失败: ${err}`);
@@ -356,6 +390,18 @@ export class ScheduleManage extends plugin {
    * 导出课表
    */
     async exportSchedule() {
+        const userId = this.e.user_id;
+        if (this.e.group_id) {
+            // 群聊需要二次确认
+            return await this.waitForConfirm('导出', 'confirmExport');
+        }
+        // 私聊直接执行导出
+        return await this.doExport();
+    }
+    /**
+ * 实际执行导出的方法
+ */
+    async doExport() {
         const userId = this.e.user_id;
         const scheduleData = DataManager.loadSchedule(userId);
         if (!scheduleData) {
@@ -377,9 +423,7 @@ export class ScheduleManage extends plugin {
         const filePath = path.join(tmpDir, fileName);
         fs.writeFileSync(filePath, jsonStr, 'utf-8');
         try {
-            // 显式指定文件名（包含后缀）
             await this.e.reply(segment.file(filePath, fileName));
-            // 5秒后删除临时文件
             setTimeout(() => {
                 fs.unlink(filePath, (err) => {
                     if (err) logger.warn(`删除临时文件失败: ${filePath}`, err);
