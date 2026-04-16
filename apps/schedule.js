@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import schedule from 'node-schedule'
+import { checkFriend, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput, calculateDateFromWeekAndDay } from '../utils/timeUtils.js';
@@ -16,6 +17,7 @@ export class SchedulePlugin extends plugin {
       event: "message",
       priority: 1000,
       rule: [
+        // ===== 基础命令区 =====
         {
           reg: "^#(设置课表|schedule set)(?:\\s+(.+))?$",
           fnc: "setSchedule"
@@ -25,7 +27,7 @@ export class SchedulePlugin extends plugin {
           fnc: "importFromFile"
         },
         {
-          reg: "^#导出课表(拾光)?$",
+          reg: "^#导出(拾光)?课表(拾光)?$",
           fnc: "exportSchedule"
         },
         {
@@ -40,6 +42,7 @@ export class SchedulePlugin extends plugin {
           reg: "^#(课表设置签名|schedule setsign)(?:\\s+(.+))?$",
           fnc: "setSignature"
         },
+        // ===== 查询命令区 =====
         {
           reg: "^#(今日课表|schedule today)$",
           fnc: "showTodaySchedule"
@@ -107,20 +110,17 @@ export class SchedulePlugin extends plugin {
       logger.warn('[课程表插件] 未配置cron表达式，跳过');
       return;
     }
-
     // 如果当前全局任务存在且cron相同，则无需重建
     if (global.__schedulePushJob && global.__schedulePushCron === pushCron) {
       // logger.mark(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
       return;
     }
-
     // 取消旧任务（全局）
     if (global.__schedulePushJob) {
       global.__schedulePushJob.cancel();
       global.__schedulePushJob = null;
       global.__schedulePushCron = null;
     }
-
     try {
       logger.info('[推送任务] 开始加载定时任务...');
       global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
@@ -593,7 +593,7 @@ export class SchedulePlugin extends plugin {
   async enableReminder(e) {
     const userId = e.user_id;
     // 检查是否已经是好友
-    if (!Bot.fl || !Bot.fl.has(Number(userId))) {
+    if (!checkFriend(userId)) {
       await e.reply(
         `❌ 订阅失败！请先添加机器人为好友，才能开启课表订阅哦~\n`
       );
@@ -673,7 +673,7 @@ export class SchedulePlugin extends plugin {
           replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
           replyMsg = `======明日课程提醒======\n` + replyMsg;
         }
-        if (!Bot.fl || !Bot.fl.has(Number(userId))) {
+        if (!checkFriend(userId)) {
           logger.debug(`[课表订阅] 用户 ${userId} 不是机器人好友，无法私信`);
           continue;
         }
@@ -697,7 +697,7 @@ export class SchedulePlugin extends plugin {
   async waitingForImportFile() {
     this.finish("waitingForImportFile");
     const e = this.e;
-    const fileInfo = this.getFileInfo(e);
+    const fileInfo = getFileInfo(e);
     if (!fileInfo) {
       await this.reply("未检测到有效的文件信息，请直接发送 JSON 文件");
       return false;
@@ -744,32 +744,6 @@ export class SchedulePlugin extends plugin {
     const result = await importScheduleFromJsonData(e.user_id, jsonData, e);
     await this.reply(result.message);
     return true;
-  }
-  /**
- * 从事件中提取文件信息
- * @param {object} e 事件对象
- * @returns {{ fileName: string, fileSize: number, fileId: string } | null}
- */
-  getFileInfo(e) {
-    if (!e.file) return null;
-    // 尝试多种结构：e.file.data 或 e.file 本身
-    let fileData = e.file.data || e.file;
-    let fileName = fileData.file || fileData.filename || '';
-    let fileSize = parseInt(fileData.file_size || fileData.size || 0, 10);
-    let fileId = fileData.file_id || fileData.id || '';
-
-    // 如果上述方式未获取到完整信息，尝试直接从 e.file 读取（扁平化情况）
-    if (!fileName || !fileSize || !fileId) {
-      fileName = e.file.file || e.file.filename || '';
-      fileSize = parseInt(e.file.file_size || e.file.size || 0, 10);
-      fileId = e.file.file_id || e.file.id || '';
-    }
-
-    if (!fileName || !fileSize || !fileId) {
-      logger.warn("[课表导入] 无法提取完整的文件信息", { eFile: e.file });
-      return null;
-    }
-    return { fileName, fileSize, fileId };
   }
   /**
  * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）
@@ -857,18 +831,15 @@ export class SchedulePlugin extends plugin {
       await this.reply("你还没有设置课程表，请先导入课表");
       return false;
     }
-
     const isShiguang = this.e.msg.includes('拾光');
     let exportJson, fileName;
-
     if (isShiguang) {
-      exportJson = this.convertToShiguangFormat(scheduleData);
+      exportJson = DataManager.convertToShiguangFormat(scheduleData);
       fileName = `shiguang_schedule_${userId}_${Date.now()}.json`;
     } else {
-      exportJson = this.convertToNativeFormat(scheduleData);
+      exportJson = DataManager.convertToNativeFormat(scheduleData);
       fileName = `schedule_${userId}_${Date.now()}.json`;
     }
-
     const jsonStr = JSON.stringify(exportJson, null, 2);
     const tmpDir = path.join(process.cwd(), 'data', 'temp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
@@ -891,82 +862,6 @@ export class SchedulePlugin extends plugin {
       fs.unlink(filePath, () => { });
     }
     return true;
-  }
-
-  /**
-   * 转换为原生格式
-   */
-  convertToNativeFormat(scheduleData) {
-    return {
-      tableName: scheduleData.tableName,
-      semesterStart: scheduleData.semesterStart,
-      updateTime: scheduleData.updateTime,
-      nickname: scheduleData.nickname,
-      signature: scheduleData.signature,
-      courses: scheduleData.courses.map(c => ({
-        name: c.name,
-        teacher: c.teacher,
-        location: c.location,
-        day: c.day,
-        startTime: c.startTime,
-        endTime: c.endTime,
-        weeks: c.weeks
-      }))
-    };
-  }
-
-  /**
-   * 转换为拾光格式
-   */
-  convertToShiguangFormat(scheduleData) {
-    const defaultTimeSlots = this.getDefaultTimeSlots();
-    const courses = scheduleData.courses.map((course, index) => ({
-      id: `export_${Date.now()}_${index}`,
-      name: course.name,
-      teacher: course.teacher || '',
-      position: course.location || '',
-      day: course.day,
-      weeks: course.weeks,
-      color: 9,
-      isCustomTime: true,
-      customStartTime: course.startTime,
-      customEndTime: course.endTime
-    }));
-
-    return {
-      courses: courses,
-      timeSlots: defaultTimeSlots,
-      config: {
-        semesterStartDate: scheduleData.semesterStart
-      }
-    };
-  }
-
-  /**
-   * 获取默认时间段（可根据需要从配置文件读取）
-   */
-  getDefaultTimeSlots() {
-    // 从配置管理器获取，若无则使用硬编码默认值
-    const config = ConfigManager.getConfig();
-    if (config.timeSlots && Array.isArray(config.timeSlots)) {
-      return config.timeSlots;
-    }
-    // 默认大学作息时间表
-    return [
-      { number: 1, startTime: "08:00", endTime: "08:45" },
-      { number: 2, startTime: "08:50", endTime: "09:35" },
-      { number: 3, startTime: "09:50", endTime: "10:35" },
-      { number: 4, startTime: "10:40", endTime: "11:25" },
-      { number: 5, startTime: "11:30", endTime: "12:15" },
-      { number: 6, startTime: "14:00", endTime: "14:45" },
-      { number: 7, startTime: "14:50", endTime: "15:35" },
-      { number: 8, startTime: "15:45", endTime: "16:30" },
-      { number: 9, startTime: "16:35", endTime: "17:20" },
-      { number: 10, startTime: "18:30", endTime: "19:15" },
-      { number: 11, startTime: "19:20", endTime: "20:05" },
-      { number: 12, startTime: "20:10", endTime: "20:55" },
-      { number: 13, startTime: "21:10", endTime: "21:55" }
-    ];
   }
   /**
    * 插件卸载时清理（Yunzai 可能支持 disconnect 生命周期）

@@ -1,6 +1,7 @@
 // components/DataManager.js
 import fs from 'node:fs'
 import path from 'node:path'
+import { ConfigManager } from './ConfigManager.js'
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
@@ -371,5 +372,101 @@ export class DataManager {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(BIRTHDAY_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
         return true;
+    }
+    /**
+       * 转换为原生格式
+       */
+    static convertToNativeFormat(scheduleData) {
+        return {
+            tableName: scheduleData.tableName,
+            semesterStart: scheduleData.semesterStart,
+            updateTime: scheduleData.updateTime,
+            nickname: scheduleData.nickname,
+            signature: scheduleData.signature,
+            courses: scheduleData.courses.map(c => ({
+                name: c.name,
+                teacher: c.teacher,
+                location: c.location,
+                day: c.day,
+                startTime: c.startTime,
+                endTime: c.endTime,
+                weeks: c.weeks
+            }))
+        };
+    }
+    /**
+     * 转换为拾光JSON
+     * @param {*} scheduleData 
+     * @returns Shiguang JSON
+     */
+    static convertToShiguangFormat(scheduleData) {
+        const defaultTimeSlots = this.getDefaultTimeSlots();
+        const courses = scheduleData.courses.map((course) => ({
+            id: this.generateShortUuid(),
+            name: course.name,
+            teacher: course.teacher || '',
+            position: course.location || '',
+            day: Number(course.day),           // 确保为数字
+            weeks: course.weeks,
+            color: 9,
+            isCustomTime: true,
+            customStartTime: course.startTime,
+            customEndTime: course.endTime
+        }));
+
+        // 格式化日期为 YYYY-MM-DD
+        let semesterStart = scheduleData.semesterStart;
+        if (semesterStart) {
+            const date = new Date(semesterStart);
+            if (!isNaN(date.getTime())) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                semesterStart = `${year}-${month}-${day}`;
+            }
+        }
+
+        return {
+            courses,
+            timeSlots: defaultTimeSlots,
+            config: { semesterStartDate: semesterStart }
+        };
+    }
+    /**
+     * 生成标准UUID
+     * @returns UUID
+     */
+    static generateShortUuid() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+    /**
+ * 获取默认时间段（可根据需要从配置文件读取）
+ */
+    static getDefaultTimeSlots() {
+        // 从配置管理器获取，若无则使用硬编码默认值
+        const config = ConfigManager.getConfig();
+        if (config.timeSlots && Array.isArray(config.timeSlots)) {
+            return config.timeSlots;
+        }
+        // 默认大学作息时间表
+        return [
+            { number: 1, startTime: "08:00", endTime: "08:45" },
+            { number: 2, startTime: "08:50", endTime: "09:35" },
+            { number: 3, startTime: "09:50", endTime: "10:35" },
+            { number: 4, startTime: "10:40", endTime: "11:25" },
+            { number: 5, startTime: "11:30", endTime: "12:15" },
+            { number: 6, startTime: "14:00", endTime: "14:45" },
+            { number: 7, startTime: "14:50", endTime: "15:35" },
+            { number: 8, startTime: "15:45", endTime: "16:30" },
+            { number: 9, startTime: "16:35", endTime: "17:20" },
+            { number: 10, startTime: "18:30", endTime: "19:15" },
+            { number: 11, startTime: "19:20", endTime: "20:05" },
+            { number: 12, startTime: "20:10", endTime: "20:55" },
+            { number: 13, startTime: "21:10", endTime: "21:55" }
+        ];
     }
 }
