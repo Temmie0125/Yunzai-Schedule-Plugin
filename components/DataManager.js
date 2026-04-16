@@ -7,6 +7,9 @@ const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
 const BIRTHDAY_DATA_PATH = path.join(DATA_PATH, 'birthdayData.json');
+const HOLIDAY_RESOURCE_PATH = path.join(process.cwd(), 'plugins/schedule/resources/holiday/'); // 节假日数据目录
+// 节假日数据缓存（Map<年份, 节假日对象>）
+let holidayCache = new Map();
 export class DataManager {
     /**
      * 加载用户课表数据
@@ -497,5 +500,66 @@ export class DataManager {
             { number: 12, startTime: "20:10", endTime: "20:55" },
             { number: 13, startTime: "21:10", endTime: "21:55" }
         ];
+    }
+    /**
+     * 加载指定年份的节假日数据
+     * @param {number} year - 年份
+     * @returns {object|null} holiday 对象（key: MM-DD, value: 节假日信息）
+     */
+    static loadHolidayData(year) {
+        if (holidayCache.has(year)) return holidayCache.get(year);
+        const filePath = path.join(HOLIDAY_RESOURCE_PATH, `${year}.json`);
+        if (!fs.existsSync(filePath)) {
+            logger.warn(`[课程表插件] 节假日数据文件不存在: ${filePath}`);
+            return null;
+        }
+        try {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            const holidays = data.holiday || {};
+            holidayCache.set(year, holidays);
+            return holidays;
+        } catch (err) {
+            logger.error(`[课程表插件] 读取节假日数据失败: ${err}`);
+            return null;
+        }
+    }
+    /**
+ * 获取指定日期的节假日/调休信息
+ * @param {Date} date - 要查询的日期
+ * @returns {{ isHoliday: boolean, isWorkdayOnWeekend: boolean, name: string } | null}
+ */
+    static getHolidayInfoForDate(date) {
+        const year = date.getFullYear();
+        const holidays = this.loadHolidayData(year);
+        if (!holidays) return null;
+        const monthDay = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const holiday = holidays[monthDay];
+        if (!holiday) return null;
+        if (holiday.holiday === true) {
+            return { isHoliday: true, isWorkdayOnWeekend: false, name: holiday.name || '节假日' };
+        }
+        if (holiday.holiday === false) {
+            return { isHoliday: false, isWorkdayOnWeekend: true, name: holiday.name || '调休上班' };
+        }
+        return null;
+    }
+    /**
+     * 判断学期是否已结束（指定日期所在的周数超出课表最大周数）
+     * @param {object} schedule - 用户课表数据
+     * @param {Date} date - 要判断的日期
+     * @returns {boolean}
+     */
+    static isSemesterEnded(schedule, date) {
+        const semesterStart = schedule.semesterStart;
+        if (!semesterStart) return false;
+        const weekNum = calculateWeekFromDate(semesterStart, date);
+        if (weekNum === null) return true; // 日期早于学期开始，视为异常结束
+        // 计算课表最大周数
+        let maxWeek = 0;
+        if (schedule.courses && schedule.courses.length > 0) {
+            maxWeek = Math.max(...schedule.courses.flatMap(course => course.weeks));
+        }
+        // 没有课程或最大周数为0时，默认学期未结束（避免误判）
+        return maxWeek > 0 && weekNum > maxWeek;
     }
 }

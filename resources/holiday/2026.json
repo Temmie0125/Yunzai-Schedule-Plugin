@@ -1,0 +1,213 @@
+{
+    "code": 0,
+    "year": 2026,
+    "holiday": {
+        "01-01": {
+            "holiday": true,
+            "name": "元旦",
+            "date": "2026-01-01"
+        },
+        "01-02": {
+            "holiday": true,
+            "name": "元旦",
+            "date": "2026-01-02"
+        },
+        "01-03": {
+            "holiday": true,
+            "name": "元旦",
+            "date": "2026-01-03"
+        },
+        "01-04": {
+            "holiday": false,
+            "name": "元旦后补班",
+            "after": true,
+            "target": "元旦",
+            "date": "2026-01-04"
+        },
+        "02-14": {
+            "holiday": false,
+            "name": "春节前补班",
+            "after": false,
+            "target": "春节",
+            "date": "2026-02-14"
+        },
+        "02-15": {
+            "holiday": true,
+            "name": "春节",
+            "date": "2026-02-15"
+        },
+        "02-16": {
+            "holiday": true,
+            "name": "除夕",
+            "date": "2026-02-16"
+        },
+        "02-17": {
+            "holiday": true,
+            "name": "初一",
+            "date": "2026-02-17"
+        },
+        "02-18": {
+            "holiday": true,
+            "name": "初二",
+            "date": "2026-02-18"
+        },
+        "02-19": {
+            "holiday": true,
+            "name": "初三",
+            "date": "2026-02-19"
+        },
+        "02-20": {
+            "holiday": true,
+            "name": "初四",
+            "date": "2026-02-20"
+        },
+        "02-21": {
+            "holiday": true,
+            "name": "初五",
+            "date": "2026-02-21"
+        },
+        "02-22": {
+            "holiday": true,
+            "name": "初六",
+            "date": "2026-02-22"
+        },
+        "02-23": {
+            "holiday": true,
+            "name": "初七",
+            "date": "2026-02-23"
+        },
+        "02-28": {
+            "holiday": false,
+            "name": "春节后补班",
+            "target": "春节",
+            "after": true,
+            "date": "2026-02-28"
+        },
+        "04-04": {
+            "holiday": true,
+            "name": "清明节",
+            "date": "2026-04-04"
+        },
+        "04-05": {
+            "holiday": true,
+            "name": "清明节",
+            "date": "2026-04-05"
+        },
+        "04-06": {
+            "holiday": true,
+            "name": "清明节",
+            "date": "2026-04-06"
+        },
+        "05-01": {
+            "holiday": true,
+            "name": "劳动节",
+            "date": "2026-05-01"
+        },
+        "05-02": {
+            "holiday": true,
+            "name": "劳动节",
+            "date": "2026-05-02"
+        },
+        "05-03": {
+            "holiday": true,
+            "name": "劳动节",
+            "date": "2026-05-03"
+        },
+        "05-04": {
+            "holiday": true,
+            "name": "劳动节",
+            "date": "2026-05-04"
+        },
+        "05-05": {
+            "holiday": true,
+            "name": "劳动节",
+            "date": "2026-05-05"
+        },
+        "05-09": {
+            "holiday": false,
+            "name": "劳动节后补班",
+            "after": true,
+            "target": "劳动节",
+            "date": "2026-05-09"
+        },
+        "06-19": {
+            "holiday": true,
+            "name": "端午节",
+            "date": "2026-06-19"
+        },
+        "06-20": {
+            "holiday": true,
+            "name": "端午节",
+            "date": "2026-06-20"
+        },
+        "06-21": {
+            "holiday": true,
+            "name": "端午节",
+            "date": "2026-06-21"
+        },
+        "09-20": {
+            "holiday": false,
+            "name": "中秋节前补班",
+            "after": false,
+            "target": "中秋节",
+            "date": "2026-09-20"
+        },
+        "09-25": {
+            "holiday": true,
+            "name": "中秋节",
+            "date": "2026-09-25"
+        },
+        "09-26": {
+            "holiday": true,
+            "name": "中秋节",
+            "date": "2026-09-26"
+        },
+        "09-27": {
+            "holiday": true,
+            "name": "中秋节",
+            "date": "2026-09-27"
+        },
+        "10-01": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-01"
+        },
+        "10-02": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-02"
+        },
+        "10-03": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-03"
+        },
+        "10-04": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-04"
+        },
+        "10-05": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-05"
+        },
+        "10-06": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-06"
+        },
+        "10-07": {
+            "holiday": true,
+            "name": "国庆节",
+            "date": "2026-10-07"
+        },
+        "10-10": {
+            "holiday": false,
+            "after": true,
+            "name": "国庆节后补班",
+            "target": "国庆节",
+            "date": "2026-10-10"
+        }
+    }
+}

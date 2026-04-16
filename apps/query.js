@@ -112,6 +112,18 @@ export class ScheduleQuery extends plugin {
             await this.reply(result.error);
             return true;
         }
+        // 获取当天的节假日/调休信息
+        const holidayInfo = DataManager.getHolidayInfoForDate(today);
+        let globalNotice = null;
+        if (holidayInfo) {
+            if (holidayInfo.isHoliday) {
+                globalNotice = `今日是【${holidayInfo.name}】，法定节假日，无课程安排~`;
+                // 节假日直接返回，跳过渲染
+                return e.reply(globalNotice);
+            } else if (holidayInfo.isWorkdayOnWeekend) {
+                globalNotice = `⚠️ 今日为调休上班日（${holidayInfo.name}），实际课程安排请以学校通知为准。\n可使用 #课表查询 ${currentWeek} <星期几> 查询对应课表（例如 #课表查询 ${currentWeek} 1 查询周一课程）。`;
+            }
+        }
         // 尝试生成图片
         const schedule = DataManager.loadSchedule(userId);
         const userData = {
@@ -121,9 +133,12 @@ export class ScheduleQuery extends plugin {
             signature: schedule?.signature || '',
             courses: result.courses
         };
+        let replyMessage = [];
+        if (globalNotice) replyMessage.push(globalNotice);
         const img = await generateUserScheduleImage(userData, today, { e: this.e });
         if (img) {
-            await this.reply(segment.image(img));
+            replyMessage.push(segment.image(img));
+            await this.reply(replyMessage);
         } else {
             // 降级为文本
             const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
