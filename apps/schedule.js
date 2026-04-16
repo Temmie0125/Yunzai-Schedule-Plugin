@@ -1,11 +1,11 @@
-// import fs from 'node:fs'
-// import path from 'node:path'
+import fs from 'node:fs'
+import path from 'node:path'
 import schedule from 'node-schedule'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { importScheduleFromCode } from '../services/scheduleImporter.js'
 import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput, calculateDateFromWeekAndDay } from '../utils/timeUtils.js';
 import { generateHelpImage, generateUserScheduleImage, generateUserInfoImage } from '../components/Renderer.js'
+import { importScheduleFromCode, importScheduleFromJsonData } from '../services/scheduleImporter.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePlugin extends plugin {
@@ -19,6 +19,14 @@ export class SchedulePlugin extends plugin {
         {
           reg: "^#(设置课表|schedule set)(?:\\s+(.+))?$",
           fnc: "setSchedule"
+        },
+        {
+          reg: "^#导入课表$",
+          fnc: "importFromFile"
+        },
+        {
+          reg: "^#导出课表(拾光)?$",
+          fnc: "exportSchedule"
         },
         {
           reg: "^#(清除课表|schedule (clear|delete))$",
@@ -73,7 +81,7 @@ export class SchedulePlugin extends plugin {
     // 订阅全局配置变化事件
     this.handleConfigChange = this.handleConfigChange.bind(this);
     if (global.scheduleEvents) {
-        global.scheduleEvents.on(this.handleConfigChange);
+      global.scheduleEvents.on(this.handleConfigChange);
     }
   }
   /**
@@ -90,41 +98,41 @@ export class SchedulePlugin extends plugin {
     const config = ConfigManager.getConfig();
     const pushCron = config.pushCron;
     if (!pushCron) {
-        // 未配置时清除可能存在的旧任务
-        if (global.__schedulePushJob) {
-            global.__schedulePushJob.cancel();
-            global.__schedulePushJob = null;
-            global.__schedulePushCron = null;
-        }
-        logger.warn('[课程表插件] 未配置cron表达式，跳过');
-        return;
+      // 未配置时清除可能存在的旧任务
+      if (global.__schedulePushJob) {
+        global.__schedulePushJob.cancel();
+        global.__schedulePushJob = null;
+        global.__schedulePushCron = null;
+      }
+      logger.warn('[课程表插件] 未配置cron表达式，跳过');
+      return;
     }
 
     // 如果当前全局任务存在且cron相同，则无需重建
     if (global.__schedulePushJob && global.__schedulePushCron === pushCron) {
-        // logger.mark(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
-        return;
+      // logger.mark(`[课程表插件] 推送任务已存在且cron未变，跳过重新创建`);
+      return;
     }
 
     // 取消旧任务（全局）
     if (global.__schedulePushJob) {
-        global.__schedulePushJob.cancel();
-        global.__schedulePushJob = null;
-        global.__schedulePushCron = null;
+      global.__schedulePushJob.cancel();
+      global.__schedulePushJob = null;
+      global.__schedulePushCron = null;
     }
 
     try {
-        logger.info('[推送任务] 开始加载定时任务...');
-        global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
-            // 调用静态方法，不依赖实例
-            SchedulePlugin.pushTomorrowSchedule();
-        });
-        global.__schedulePushCron = pushCron;
-        logger.info(`[课程表插件] 已启用课表推送，cron: ${pushCron}`);
+      logger.info('[推送任务] 开始加载定时任务...');
+      global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
+        // 调用静态方法，不依赖实例
+        SchedulePlugin.pushTomorrowSchedule();
+      });
+      global.__schedulePushCron = pushCron;
+      logger.info(`[课程表插件] 已启用课表推送，cron: ${pushCron}`);
     } catch (err) {
-        logger.error(`[课程表插件] 调度失败: ${err}`);
+      logger.error(`[课程表插件] 调度失败: ${err}`);
     }
-}
+  }
   async showHelp(e) {
     const helpData = await DataManager.getHelpData()
     const img = await generateHelpImage(helpData, { e: e })
@@ -679,17 +687,299 @@ export class SchedulePlugin extends plugin {
     logger.info("[课表订阅] 推送完成");
   }
   /**
+ * 导入课表文件（命令入口）
+ */
+  async importFromFile() {
+    this.setContext("waitingForImportFile");
+    await this.reply("请发送你要导入的JSON文件（支持本插件原生课表JSON或拾光课程表导出文件）", false, { at: true });
+    return true;
+  }
+  async waitingForImportFile() {
+    this.finish("waitingForImportFile");
+    const e = this.e;
+    const fileInfo = this.getFileInfo(e);
+    if (!fileInfo) {
+      await this.reply("未检测到有效的文件信息，请直接发送 JSON 文件");
+      return false;
+    }
+    const { fileName, fileSize, fileId } = fileInfo;
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+
+    // 1. 校验文件扩展名
+    if (!fileName.toLowerCase().endsWith('.json')) {
+      await this.reply("❌ 只支持 JSON 格式的文件，请发送扩展名为 .json 的文件");
+      return false;
+    }
+    // 2. 校验文件大小
+    if (fileSize > MAX_SIZE) {
+      const sizeKB = (fileSize / 1024).toFixed(2);
+      await this.reply(`❌ 文件过大（${sizeKB}KB），请确保 JSON 文件小于 2MB`);
+      return false;
+    }
+
+    // 3. 获取文件内容
+    let fileContent;
+    try {
+      fileContent = await this.getFileContent(fileId);
+    } catch (err) {
+      logger.error(`[课表导入] 获取文件内容异常: ${err}`);
+      await this.reply("读取文件失败，请稍后重试");
+      return false;
+    }
+    if (!fileContent) {
+      await this.reply("无法读取文件内容，请确保文件有效");
+      return false;
+    }
+
+    // 4. 解析 JSON
+    let jsonData;
+    try {
+      jsonData = JSON.parse(fileContent);
+    } catch (err) {
+      await this.reply("文件内容不是合法的 JSON 格式");
+      return false;
+    }
+
+    // 5. 导入课表
+    const result = await importScheduleFromJsonData(e.user_id, jsonData, e);
+    await this.reply(result.message);
+    return true;
+  }
+  /**
+ * 从事件中提取文件信息
+ * @param {object} e 事件对象
+ * @returns {{ fileName: string, fileSize: number, fileId: string } | null}
+ */
+  getFileInfo(e) {
+    if (!e.file) return null;
+    // 尝试多种结构：e.file.data 或 e.file 本身
+    let fileData = e.file.data || e.file;
+    let fileName = fileData.file || fileData.filename || '';
+    let fileSize = parseInt(fileData.file_size || fileData.size || 0, 10);
+    let fileId = fileData.file_id || fileData.id || '';
+
+    // 如果上述方式未获取到完整信息，尝试直接从 e.file 读取（扁平化情况）
+    if (!fileName || !fileSize || !fileId) {
+      fileName = e.file.file || e.file.filename || '';
+      fileSize = parseInt(e.file.file_size || e.file.size || 0, 10);
+      fileId = e.file.file_id || e.file.id || '';
+    }
+
+    if (!fileName || !fileSize || !fileId) {
+      logger.warn("[课表导入] 无法提取完整的文件信息", { eFile: e.file });
+      return null;
+    }
+    return { fileName, fileSize, fileId };
+  }
+  /**
+ * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）
+ * @returns {Promise<string|null>}
+ */
+  async getFileContent() {
+    const e = this.e;
+    let fileId = e.file?.data?.file_id || e.file?.file_id;
+    if (!fileId) {
+      logger.warn("[课表导入] 无法获取 file_id");
+      return null;
+    }
+    try {
+      // 调用 get_file API 获取文件信息
+      let fileInfo = null;
+      if (typeof Bot.sendApi === 'function') {
+        fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
+      } else if (Bot.api && typeof Bot.api.get_file === 'function') {
+        fileInfo = await Bot.api.get_file({ file_id: fileId });
+      } else if (e.friend && typeof e.friend.sendApi === 'function') {
+        fileInfo = await e.friend.sendApi('get_file', { file_id: fileId });
+      } else if (e.group && typeof e.group.sendApi === 'function') {
+        fileInfo = await e.group.sendApi('get_file', { file_id: fileId });
+      } else {
+        logger.error("[课表导入] 无法找到调用 OneBot API 的方法");
+        return null;
+      }
+      if (!fileInfo || !fileInfo.data) {
+        logger.error("[课表导入] 获取文件信息失败:", fileInfo);
+        return null;
+      }
+      const data = fileInfo.data;
+      // 优先使用 url 下载（若存在）
+      if (data.url && data.url.startsWith('http')) {
+        const response = await fetch(data.url);
+        if (!response.ok) return null;
+        return await response.text();
+      }
+      // 若 url 为空，尝试读取本地文件（data.file 为路径）
+      if (data.file && typeof data.file === 'string') {
+        const filePath = data.file;
+        // 安全检查：只允许读取 .json 文件
+        if (path.extname(filePath).toLowerCase() !== '.json') {
+          logger.warn(`[课表导入] 文件扩展名不是 .json: ${filePath}`);
+          return null;
+        }
+        // 二次确认文件大小（防止外层校验后文件被替换）
+        if (fs.existsSync(filePath)) {
+          const stats = fs.statSync(filePath);
+          const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+          if (stats.size > MAX_SIZE) {
+            logger.warn(`[课表导入] 文件大小超限: ${stats.size} bytes`);
+            return null;
+          }
+          const content = fs.readFileSync(filePath, 'utf-8');
+          logger.info(`[课表导入] 成功读取本地文件: ${filePath}`);
+          // 异步删除临时文件（不阻塞返回，删除失败仅记录日志）
+          fs.unlink(filePath, (err) => {
+            if (err) {
+              logger.warn(`[课表导入] 删除临时文件失败: ${filePath}`, err);
+            } else {
+              logger.info(`[课表导入] 已删除临时文件: ${filePath}`);
+            }
+          });
+          return content;
+        } else {
+          logger.warn(`[课表导入] 本地文件不存在: ${filePath}`);
+          return null;
+        }
+      }
+      logger.error("[课表导入] 无法获取文件内容，既无下载链接也无本地路径");
+      return null;
+    } catch (err) {
+      logger.error(`[课表导入] 获取文件内容失败: ${err}`);
+      return null;
+    }
+  }
+  /**
+ * 导出课表
+ */
+  async exportSchedule() {
+    const userId = this.e.user_id;
+    const scheduleData = DataManager.loadSchedule(userId);
+    if (!scheduleData) {
+      await this.reply("你还没有设置课程表，请先导入课表");
+      return false;
+    }
+
+    const isShiguang = this.e.msg.includes('拾光');
+    let exportJson, fileName;
+
+    if (isShiguang) {
+      exportJson = this.convertToShiguangFormat(scheduleData);
+      fileName = `shiguang_schedule_${userId}_${Date.now()}.json`;
+    } else {
+      exportJson = this.convertToNativeFormat(scheduleData);
+      fileName = `schedule_${userId}_${Date.now()}.json`;
+    }
+
+    const jsonStr = JSON.stringify(exportJson, null, 2);
+    const tmpDir = path.join(process.cwd(), 'data', 'temp');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const filePath = path.join(tmpDir, fileName);
+    fs.writeFileSync(filePath, jsonStr, 'utf-8');
+
+    try {
+      // 显式指定文件名（包含后缀）
+      await this.e.reply(segment.file(filePath, fileName));
+      // 5秒后删除临时文件
+      setTimeout(() => {
+        fs.unlink(filePath, (err) => {
+          if (err) logger.warn(`删除临时文件失败: ${filePath}`, err);
+          else logger.debug(`已删除临时文件: ${filePath}`);
+        });
+      }, 5000);
+    } catch (err) {
+      logger.error(`发送文件失败: ${err}`);
+      await this.reply("生成文件失败，请稍后重试");
+      fs.unlink(filePath, () => { });
+    }
+    return true;
+  }
+
+  /**
+   * 转换为原生格式
+   */
+  convertToNativeFormat(scheduleData) {
+    return {
+      tableName: scheduleData.tableName,
+      semesterStart: scheduleData.semesterStart,
+      updateTime: scheduleData.updateTime,
+      nickname: scheduleData.nickname,
+      signature: scheduleData.signature,
+      courses: scheduleData.courses.map(c => ({
+        name: c.name,
+        teacher: c.teacher,
+        location: c.location,
+        day: c.day,
+        startTime: c.startTime,
+        endTime: c.endTime,
+        weeks: c.weeks
+      }))
+    };
+  }
+
+  /**
+   * 转换为拾光格式
+   */
+  convertToShiguangFormat(scheduleData) {
+    const defaultTimeSlots = this.getDefaultTimeSlots();
+    const courses = scheduleData.courses.map((course, index) => ({
+      id: `export_${Date.now()}_${index}`,
+      name: course.name,
+      teacher: course.teacher || '',
+      position: course.location || '',
+      day: course.day,
+      weeks: course.weeks,
+      color: 9,
+      isCustomTime: true,
+      customStartTime: course.startTime,
+      customEndTime: course.endTime
+    }));
+
+    return {
+      courses: courses,
+      timeSlots: defaultTimeSlots,
+      config: {
+        semesterStartDate: scheduleData.semesterStart
+      }
+    };
+  }
+
+  /**
+   * 获取默认时间段（可根据需要从配置文件读取）
+   */
+  getDefaultTimeSlots() {
+    // 从配置管理器获取，若无则使用硬编码默认值
+    const config = ConfigManager.getConfig();
+    if (config.timeSlots && Array.isArray(config.timeSlots)) {
+      return config.timeSlots;
+    }
+    // 默认大学作息时间表
+    return [
+      { number: 1, startTime: "08:00", endTime: "08:45" },
+      { number: 2, startTime: "08:50", endTime: "09:35" },
+      { number: 3, startTime: "09:50", endTime: "10:35" },
+      { number: 4, startTime: "10:40", endTime: "11:25" },
+      { number: 5, startTime: "11:30", endTime: "12:15" },
+      { number: 6, startTime: "14:00", endTime: "14:45" },
+      { number: 7, startTime: "14:50", endTime: "15:35" },
+      { number: 8, startTime: "15:45", endTime: "16:30" },
+      { number: 9, startTime: "16:35", endTime: "17:20" },
+      { number: 10, startTime: "18:30", endTime: "19:15" },
+      { number: 11, startTime: "19:20", endTime: "20:05" },
+      { number: 12, startTime: "20:10", endTime: "20:55" },
+      { number: 13, startTime: "21:10", endTime: "21:55" }
+    ];
+  }
+  /**
    * 插件卸载时清理（Yunzai 可能支持 disconnect 生命周期）
    */
   async disconnect() {
     if (global.__schedulePushJob) {
-        global.__schedulePushJob.cancel();
-        global.__schedulePushJob = null;
-        global.__schedulePushCron = null;
+      global.__schedulePushJob.cancel();
+      global.__schedulePushJob = null;
+      global.__schedulePushCron = null;
     }
     if (global.scheduleEvents) {
-        global.scheduleEvents.off(this.handleConfigChange);
+      global.scheduleEvents.off(this.handleConfigChange);
     }
-}
+  }
 }
 export default SchedulePlugin

@@ -83,3 +83,114 @@ export async function importScheduleFromCode(userId, code, event) {
         return { success: false, message: "设置课表失败，请稍后重试" }
     }
 }
+
+/**
+ * 从JSON数据导入课表（支持原生格式和拾光格式）
+ * @param {string|number} userId
+ * @param {object} jsonData - 解析后的JSON对象
+ * @param {object} event - 事件对象
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function importScheduleFromJsonData(userId, jsonData, event) {
+    try {
+      let courses = [];
+      let semesterStart = null;
+      let tableName = "导入的课表";
+      // 判断是否为拾光格式（包含 timeSlots 字段）
+      if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots) && jsonData.courses) {
+        // 拾光格式转换
+        const timeSlotMap = new Map();
+        for (const ts of jsonData.timeSlots) {
+          timeSlotMap.set(ts.number, { start: ts.startTime, end: ts.endTime });
+        }
+        courses = jsonData.courses.map(course => {
+          let startTime, endTime;
+          if (course.isCustomTime && course.customStartTime && course.customEndTime) {
+            startTime = course.customStartTime;
+            endTime = course.customEndTime;
+          } else if (course.startSection && course.endSection) {
+            // 根据节次获取时间
+            const startSlot = timeSlotMap.get(course.startSection);
+            const endSlot = timeSlotMap.get(course.endSection);
+            if (!startSlot || !endSlot) {
+              logger.warn(`[课表导入] 节次 ${course.startSection}-${course.endSection} 不在时间段定义中，跳过课程 ${course.name}`);
+              return null;
+            }
+            startTime = startSlot.start;
+            endTime = endSlot.end;
+          } else {
+            logger.warn(`[课表导入] 课程 ${course.name} 缺少时间信息，跳过`);
+            return null;
+          }
+          return {
+            name: course.name || "未知课程",
+            teacher: course.teacher || "",
+            location: course.position || "",
+            day: course.day,  // 1-7
+            startTime: startTime,
+            endTime: endTime,
+            weeks: course.weeks || []
+          };
+        }).filter(c => c !== null);
+        // 学期开始日期
+        if (jsonData.config && jsonData.config.semesterStartDate) {
+          semesterStart = jsonData.config.semesterStartDate;
+        }
+        tableName = "拾光课表导入";
+      } 
+      else if (jsonData.courses && Array.isArray(jsonData.courses)) {
+        // 原生格式（期望包含 courses, semesterStart, tableName 等）
+        courses = jsonData.courses.map(c => ({
+          name: c.name,
+          teacher: c.teacher || "",
+          location: c.location || "",
+          day: c.day,
+          startTime: c.startTime,
+          endTime: c.endTime,
+          weeks: c.weeks || []
+        }));
+        semesterStart = jsonData.semesterStart || null;
+        tableName = jsonData.tableName || "导入的课表";
+      } 
+      else {
+        return { success: false, message: "无法识别的JSON格式，缺少必要的courses字段或timeSlots字段" };
+      }
+      // 校验数据完整性
+      if (!courses.length) {
+        return { success: false, message: "解析后没有有效的课程数据，请检查文件内容" };
+      }
+      if (!semesterStart) {
+        // 如果没有学期开始日期，使用当前日期，并提示用户
+        semesterStart = new Date().toISOString().split('T')[0];
+        logger.warn(`[课表导入] 用户 ${userId} 的JSON未提供学期开始日期，使用默认值 ${semesterStart}`);
+      }
+      // 加载原有数据保留昵称和签名
+      const oldData = DataManager.loadSchedule(userId);
+      let nickname = oldData?.nickname;
+      let signature = oldData?.signature;
+      if (!nickname) {
+        nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
+      }
+      // 构造课表数据对象
+      const scheduleData = {
+        tableName: tableName,
+        semesterStart: semesterStart,
+        courses: courses,
+        updateTime: new Date().toISOString()
+      };
+      // 保存
+      DataManager.saveSchedule(userId, scheduleData, nickname, signature);
+      // 回复消息
+      let replyMsg = `✅ 课表导入成功！\n`;
+      replyMsg += `📚 课表名称：${tableName}\n`;
+      replyMsg += `📅 学期开始：${semesterStart}\n`;
+      replyMsg += `📖 课程数量：${courses.length} 门\n`;
+      replyMsg += `👤 昵称：${nickname}`;
+      if (signature) replyMsg += `\n💬 签名：${signature}`;
+      replyMsg += `\n使用 #今日课表 查看今日课程。`;
+      return { success: true, message: replyMsg };
+    } catch (err) {
+      logger.error(`[课表导入] 处理JSON数据失败: ${err}`);
+      return { success: false, message: "导入失败，请检查文件格式或联系管理员" };
+    }
+  }
