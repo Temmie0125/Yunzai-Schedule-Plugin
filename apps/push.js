@@ -68,7 +68,7 @@ export class SchedulePush extends plugin {
       logger.info('[推送任务] 开始加载定时任务...');
       global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
         // 调用静态方法，不依赖实例
-        SchedulePlugin.pushTomorrowSchedule();
+        SchedulePush.pushTomorrowSchedule();
       });
       global.__schedulePushCron = pushCron;
       logger.info(`[课程表插件] 已启用课表推送，cron: ${pushCron}`);
