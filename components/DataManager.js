@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from './ConfigManager.js'
+import { calculateWeekFromDate } from '../utils/timeUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
@@ -124,6 +125,34 @@ export class DataManager {
 
         fs.writeFileSync(filePath, JSON.stringify(fullData, null, 2), 'utf8')
         logger.info(`用户 ${userId} 课表保存成功，昵称: ${fullData.nickname}`)
+    }
+    /**
+   * 获取指定日期的课程
+   * @param {number} userId 用户QQ
+   * @param {Date} date 查询日期
+   * @returns {Promise<Object>} 包含 courses, week, day, displayName 或 error
+   */
+    static async getCoursesForDate(userId, date) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule) {
+            return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
+        }
+        const week = calculateWeekFromDate(schedule.semesterStart, date);
+        if (week === null) {
+            return { error: "查询日期早于学期开始日期，无法计算周数" };
+        }
+        const day = date.getDay() === 0 ? 7 : date.getDay(); // 1=周一 ... 7=周日
+        const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
+        if (maxWeek > 0 && week > maxWeek) {
+            return { error: `第 ${week} 周已超出本学期课程周数，请确认日期是否正确` };
+        }
+        let courses = schedule.courses.filter(course =>
+            course.day === day.toString() && course.weeks.includes(week)
+        );
+        // 按开始时间排序（升序）
+        courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+        const displayName = schedule.nickname || `用户${userId}`;
+        return { courses, week, day, displayName };
     }
 
     /**
