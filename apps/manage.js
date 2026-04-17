@@ -21,7 +21,7 @@ export class ScheduleManage extends plugin {
                     fnc: "importFromFile"
                 },
                 {
-                    reg: "^#导出(拾光)?课表(拾光)?$",
+                    reg: "^#导出(拾光)?课表(\\s)?(拾光)?$",
                     fnc: "exportSchedule"
                 },
                 {
