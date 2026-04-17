@@ -4,5 +4,15 @@
     "description": "Yunzai-Bot 课程表插件",
     "author": "Temmie",
     "license": "GPL-3.0-only",
-    "type": "module"
-  }
+    "type": "module",
+    "keywords": [
+        "yunzai",
+        "schedule",
+        "bot"
+    ],
+    "dependencies": {
+        "art-template": "4.13.2",
+        "puppeteer": "^24.41.0",
+        "yaml": "^2.8.3"
+    }
+}

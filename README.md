@@ -52,11 +52,18 @@
 git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./plugins/schedule
 ```
 
+然后，`cd plugins/schedule`进入插件目录，并执行下列命令安装依赖：
+
+```bash
+pnpm install
+```
+
 ### 方式二：手动下载
 
 1. 下载本仓库的 ZIP 压缩包
 2. 解压后将文件夹重命名为 `schedule`，放入 `Yunzai/plugins/` 目录
-3. 重启 Bot 即可
+3. 进入插件目录，执行`pnpm install`安装依赖
+4. 重启 Bot 即可
 
 > 💡 安装后请使用 `#课表帮助` 查看所有命令
 
