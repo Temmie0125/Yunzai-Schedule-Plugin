@@ -2,6 +2,7 @@
 import { fetchScheduleFromAPI } from './wakeupApi.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
+import { getCurrentFullDate } from '../utils/timeUtils.js'
 /**
  * 从口令导入课表的核心逻辑
  * @param {string|number} userId 用户QQ号
@@ -161,7 +162,7 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
       }
       if (!semesterStart) {
         // 如果没有学期开始日期，使用当前日期，并提示用户
-        semesterStart = new Date().toISOString().split('T')[0];
+        semesterStart = getCurrentFullDate();
         logger.warn(`[课表导入] 用户 ${userId} 的JSON未提供学期开始日期，使用默认值 ${semesterStart}`);
       }
       // 加载原有数据保留昵称和签名
@@ -188,6 +189,9 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
       replyMsg += `👤 昵称：${nickname}`;
       if (signature) replyMsg += `\n💬 签名：${signature}`;
       replyMsg += `\n使用 #今日课表 查看今日课程。`;
+      if (!semesterStart) {
+        replyMsg += `\n 注意：未发现学期开始日期，已用今日日期代替，请检查导入数据是否有误`;
+      }
       return { success: true, message: replyMsg };
     } catch (err) {
       logger.error(`[课表导入] 处理JSON数据失败: ${err}`);
