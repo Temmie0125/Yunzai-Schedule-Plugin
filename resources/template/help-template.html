@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,35 +11,38 @@
       font-family: 'Unifont';
       src: url('{{_res_path}}/fonts/unifont.otf') format('opentype');
     }
+
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
+
     body {
       font-family: 'Unifont', 'Microsoft YaHei', sans-serif;
       background: #f0f2f5;
       display: flex;
       justify-content: center;
       align-items: center;
+      max-width: 1080px;
       min-height: 100vh;
-      margin: 20px;
     }
+
     .container {
-      max-width: 1000px;
       width: 100%;
       background: white;
-      border-radius: 32px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
       overflow: hidden;
       position: relative;
     }
+
     /* 标题区 */
     .header {
       padding: 40px 30px 20px;
       text-align: center;
       background: #FFFFFF;
     }
+
     .header h1 {
       font-size: 48px;
       color: #333;
@@ -49,21 +53,25 @@
       margin-bottom: 20px;
       letter-spacing: 2px;
     }
+
     .header .subtitle {
       font-size: 20px;
       color: #666;
       margin-top: 10px;
     }
+
     .header .subtitle span {
       background: #00897B;
       color: white;
       padding: 4px 12px;
       border-radius: 30px;
     }
+
     /* 分组 */
     .group-box {
       padding: 20px 30px;
     }
+
     .group-title {
       font-size: 28px;
       color: #2d3748;
@@ -71,11 +79,13 @@
       padding-left: 15px;
       border-left: 6px solid #00897B;
     }
+
     .help-table {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
       gap: 15px;
     }
+
     .help-item {
       flex: 1 1 calc(33.33% - 10px);
       min-width: 250px;
@@ -87,10 +97,12 @@
       align-items: center;
       transition: all 0.2s;
     }
+
     .help-item:hover {
-      box-shadow: 0 5px 15px rgba(0,137,123,0.1);
+      box-shadow: 0 5px 15px rgba(0, 137, 123, 0.1);
       transform: translateY(-2px);
     }
+
     .help-icon {
       width: 50px;
       height: 50px;
@@ -105,19 +117,23 @@
       font-weight: bold;
       flex-shrink: 0;
     }
+
     .help-content {
       flex: 1;
     }
+
     .help-title {
       font-size: 22px;
       color: #1a202c;
       margin-bottom: 5px;
       display: block;
     }
+
     .help-desc {
       font-size: 16px;
       color: #718096;
     }
+
     /* 底部 */
     .footer {
       padding: 30px;
@@ -126,6 +142,7 @@
       text-align: center;
       position: relative;
     }
+
     .footer::after {
       content: "";
       position: absolute;
@@ -137,12 +154,14 @@
       opacity: 0.3;
       clip-path: polygon(0 0, 0% 100%, 100% 100%);
     }
+
     .update-time {
       font-size: 18px;
       color: #718096;
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="header">
@@ -174,4 +193,5 @@
     </div>
   </div>
 </body>
+
 </html>
