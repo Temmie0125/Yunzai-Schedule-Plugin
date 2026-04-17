@@ -104,7 +104,7 @@ git clone --depth=1 https://github.com/Temmie0125/Yunzai-Schedule-Plugin.git ./p
 
 > 更多命令请使用 `#课表帮助` 查看图文帮助。
 
-![帮助图片](./resources/images/help.jpg "图文帮助")
+![帮助图片](./resources/images/help.png "图文帮助")
 
 ---
 
