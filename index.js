@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path'
+import chalk from 'chalk';
 import { watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import { startSkipExpireScheduler } from './components/SkipExpireScheduler.js';
@@ -82,6 +83,9 @@ function startConfigWatcher() {
 export const apps = await loadPlugins();
 // 在插件加载完成后启动监听
 startConfigWatcher();
-logger.mark('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-logger.mark('┃✅ 课程表插件载入成功');
-logger.mark('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+logger.mark(chalk.rgb(178, 233, 250)(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`));
+logger.mark(chalk.rgb(0, 183, 240)(`┃  课程表插件 v${pkg.version} 载入成功~ ^_^♪`));
+logger.mark(`┃  作者: @Temmie`);
+logger.mark(chalk.rgb(0, 183, 240)(`┃  仓库地址：`))
+logger.mark(`┃  https://github.com/Temmie0125/Yunzai-Schedule-Plugin`);
+logger.mark(chalk.rgb(178, 233, 250)(`┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`));
