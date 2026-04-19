@@ -28,6 +28,30 @@ export class DataManager {
     }
 
     /**
+ * 获取所有已设置课表的用户数据（仅包含有效课程的用户）
+ * @returns {Array<{userId: string, schedule: object}>} 用户ID与课表对象的数组
+ */
+    static getAllUserSchedules() {
+        if (!fs.existsSync(DATA_PATH)) return [];
+        const files = fs.readdirSync(DATA_PATH).filter(f =>
+            f.endsWith('.json') &&
+            !['skip-status.json', 'reminder-status.json', 'birthdayData.json'].includes(f)
+        );
+        const result = [];
+        for (const file of files) {
+            const userId = path.basename(file, '.json');
+            // 检查文件名是否为纯数字（QQ号）
+            if (!/^\d+$/.test(userId)) continue;
+
+            const schedule = this.loadSchedule(userId);
+            if (schedule && schedule.courses && schedule.courses.length > 0) {
+                result.push({ userId, schedule });
+            }
+        }
+        return result;
+    }
+
+    /**
      * 保存用户昵称
      */
     static async saveUserNickname(userId, nickname) {

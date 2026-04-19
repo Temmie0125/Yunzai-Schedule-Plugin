@@ -3,7 +3,7 @@ import { generateHelpImage } from '../components/Renderer.js'
 export class ScheduleHelp extends plugin {
     constructor() {
         super({
-            name: "课程表帮助",
+            name: "[Schedule] 课程表帮助",
             dsc: "课表帮助服务",
             event: "message",
             priority: 1000,

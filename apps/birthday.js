@@ -32,7 +32,7 @@ function getRandomBirthdayMessage() {
 export class BirthdayReminder extends plugin {
     constructor() {
         super({
-            name: "生日提醒",
+            name: "[Schedule] 生日提醒",
             dsc: "生日提醒与祝福",
             event: "message",
             priority: 5000,
