@@ -47,7 +47,8 @@ export class ConfigManager {
             birthdayBlacklistGroups: [],   // 推送黑名单
             // 新增字段
             proxyUrl: "",        // 中转服务地址
-            apiToken: ""         // 中转服务所需的 API Token
+            apiToken: "",         // 中转服务所需的 API Token
+            defaultSemesterStart: "2026-03-02"   // 新增：默认学期开始日期
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
@@ -106,7 +107,8 @@ export class ConfigManager {
             autoCancelCheckEnabled, autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
-            proxyUrl, apiToken
+            proxyUrl, apiToken,
+            defaultSemesterStart   // 新增
         } = data;
         const configToSave = {
             pushHour,
@@ -117,7 +119,8 @@ export class ConfigManager {
             autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
-            proxyUrl, apiToken 
+            proxyUrl, apiToken,
+            defaultSemesterStart   // 新增
         };
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {

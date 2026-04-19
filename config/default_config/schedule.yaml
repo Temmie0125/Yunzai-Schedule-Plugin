@@ -13,3 +13,5 @@ birthdayBlacklistGroups: []
 proxyUrl: ""
 # 中转服务鉴权 Token, 如有需要请联系插件作者获取
 apiToken: ""
+# 默认学期开始日期
+defaultSemesterStart: "2026-03-02"
