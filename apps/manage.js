@@ -6,7 +6,7 @@ import { importScheduleFromCode, importScheduleFromJsonData } from '../services/
 export class ScheduleManage extends plugin {
     constructor() {
         super({
-            name: "课程表管理",
+            name: "[Schedule] 课程表管理",
             dsc: "课表管理，包括导入、导出与个人信息维护",
             event: "message",
             priority: 1000,

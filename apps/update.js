@@ -11,7 +11,7 @@ let uping = false
 export class ScheduleUpdate extends plugin {
     constructor() {
         super({
-            name: '课程表插件更新',
+            name: '[Schedule] 课程表插件更新',
             dsc: '更新课程表插件',
             event: 'message',
             priority: 1000,

@@ -6,7 +6,7 @@ import { generateUserScheduleImage, generateUserInfoImage } from '../components/
 export class ScheduleQuery extends plugin {
     constructor() {
         super({
-            name: "课程表查询",
+            name: "[Schedule] 课程表查询",
             dsc: "课表查询功能",
             event: "message",
             priority: 1000,

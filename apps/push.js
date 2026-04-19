@@ -9,7 +9,7 @@ const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePush extends plugin {
   constructor() {
     super({
-      name: "课程表推送",
+      name: "[Schedule] 课程表推送",
       dsc: "课表推送服务",
       event: "message",
       priority: 1000,

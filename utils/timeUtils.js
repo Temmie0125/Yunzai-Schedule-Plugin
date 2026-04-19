@@ -1,3 +1,4 @@
+import { ConfigManager } from "../components/ConfigManager.js";
 // 获取给定日期所在周的周一（周一为一周开始，周日为7）
 function getMondayOfSameWeek(date) {
     const d = new Date(date);
@@ -14,16 +15,17 @@ function getMondayOfSameWeek(date) {
  * @returns {number}
  */
 export function calculateCurrentWeek(semesterStart) {
-    // 处理未设置学期开始的情况（使用默认日期）
-    if (!semesterStart) {
-        const defaultStart = new Date('2024-02-26'); // 假设默认是周一
-        const now = new Date();
-        const startMonday = getMondayOfSameWeek(defaultStart);
-        const dayDiff = Math.floor((now - startMonday) / (1000 * 3600 * 24));
-        return Math.max(1, Math.floor(dayDiff / 7) + 1);
+    let startDateStr = semesterStart;
+    if (!startDateStr) {
+        // 从配置中读取默认学期开始日期
+        const config = ConfigManager.getConfig();
+        startDateStr = config.defaultSemesterStart;
+        if (!startDateStr) {
+            // 最终回退（理论上配置一定存在）
+            startDateStr = "2026-03-02";
+        }
     }
-
-    const startDate = new Date(semesterStart);
+    const startDate = new Date(startDateStr);
     // 获取学期开始日所在周的周一
     const startMonday = getMondayOfSameWeek(startDate);
     const now = new Date();
