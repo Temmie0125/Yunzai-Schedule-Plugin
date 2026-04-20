@@ -116,10 +116,10 @@ export class SchedulePush extends plugin {
    * 2. 节假日/周末不推送（调休上班日发送提示）
    */
   static async pushTomorrowSchedule() {
-    logger.info("[课表订阅] 开始推送明日课表");
+    logger.mark(`${logger.blue(`[课表订阅] 开始推送明日课表`)}`);
     const users = await DataManager.getAllReminderUsers();
     if (!users.length) {
-      logger.info("[课表订阅] 无订阅用户，任务结束");
+      logger.mark(`${logger.green(`[课表订阅] 无订阅用户，任务结束`)}`);
       return;
     }
     let tomorrow = new Date();
@@ -205,7 +205,7 @@ export class SchedulePush extends plugin {
         logger.error(`[课表订阅] 推送用户 ${userId} 时发生错误: ${err}`);
       }
     }
-    logger.info("[课表订阅] 推送完成");
+    logger.mark(`${logger.green("[课表订阅] 推送完成")}`);
   }
   /**
    * 插件卸载时清理

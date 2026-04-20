@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path'
 import chalk from 'chalk';
+import YAML from 'yaml';
 import { watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import { startSkipExpireScheduler } from './components/SkipExpireScheduler.js';
@@ -8,7 +9,7 @@ import { reloadSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { CONFIG_PATH, CONFIG_FILE } from './components/configManager.js'; // 需要从 configManager 导出路径
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
-
+let lastConfigContent = null;
 logger.mark('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 logger.mark('┃📅 课程表插件 载入中           ');
 logger.mark('┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -64,15 +65,55 @@ global.scheduleEvents = {
 function startConfigWatcher() {
     const configFile = path.join(CONFIG_PATH, CONFIG_FILE);
     if (!fs.existsSync(configFile)) return;
+
+    // 初始化缓存
+    try {
+        lastConfigContent = fs.readFileSync(configFile, 'utf8');
+    } catch (e) { /* ignore */ }
+
     let reloadTimer = null;
     watch(configFile, (eventType) => {
         if (eventType === 'change') {
             if (reloadTimer) clearTimeout(reloadTimer);
             reloadTimer = setTimeout(() => {
-                logger.info('[课程表插件] 检测到 schedule.yaml 变化，触发重载事件');
-                // 先重载翘课定时器（原有的）
+                let newContent;
+                try {
+                    newContent = fs.readFileSync(configFile, 'utf8');
+                } catch (err) {
+                    logger.error('[课程表插件] 读取配置文件失败:', err);
+                    reloadTimer = null;
+                    return;
+                }
+                // 内容完全相同则跳过
+                if (newContent === lastConfigContent) {
+                    logger.mark('[课程表插件] 配置文件内容未变化，跳过重载');
+                    reloadTimer = null;
+                    return;
+                }
+                // 进一步比较关键字段，防止仅空白/注释变化
+                try {
+                    const oldConfig = YAML.parse(lastConfigContent || '{}');
+                    const newConfig = YAML.parse(newContent);
+                    const keysToCompare = ['pushHour', 'birthdayPushHour', 'autoCancelCheckEnabled', 'autoCancelCheckInterval'];
+                    let hasRealChange = false;
+                    for (const key of keysToCompare) {
+                        if (oldConfig[key] !== newConfig[key]) {
+                            hasRealChange = true;
+                            break;
+                        }
+                    }
+                    if (!hasRealChange) {
+                        logger.mark('[课程表插件] 关键配置字段未变化，跳过重载');
+                        lastConfigContent = newContent; // 更新缓存
+                        reloadTimer = null;
+                        return;
+                    }
+                } catch (parseErr) {
+                    logger.warn('[课程表插件] 配置解析失败，按变化处理', parseErr);
+                }
+                logger.info('[课程表插件] 检测到 schedule.yaml 实质性变化，触发重载事件');
+                lastConfigContent = newContent;
                 reloadSkipExpireScheduler();
-                // 再广播给其他模块
                 global.scheduleEvents.emit({ type: 'config-changed', file: configFile });
                 reloadTimer = null;
             }, 500);
