@@ -22,6 +22,8 @@ export async function importScheduleFromCode(userId, code, event) {
     try {
         // 2. 获取配置
         const config = ConfigManager.getConfig()
+        const bot = event.bot || Bot
+        const botName = config.botName || bot.nickname || "Bot";
         const showTableName = config.showTableName ?? true
         const autoRecallCode = config.autoRecallCode ?? false
 
@@ -59,7 +61,7 @@ export async function importScheduleFromCode(userId, code, event) {
         if (nickname === userId.toString()) {
             replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`
         }
-        replyMsg += `\n⚠️ 正在尝试自动撤回您的口令，如果撤回失败请及时手动撤回口令哦~`
+        replyMsg += `\n⚠️ ${botName}正在尝试自动撤回您的口令，如果撤回失败请及时手动撤回口令哦~`
 
         // 7. 自动撤回口令（群聊且配置开启且Bot有管理员权限）
         if (inGroup && autoRecallCode) {

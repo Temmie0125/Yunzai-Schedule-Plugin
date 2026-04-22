@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { getFileInfo } from '../components/common.js'
+import { getBotName, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { importScheduleFromCode, importScheduleFromJsonData } from '../services/scheduleImporter.js'
 export class ScheduleManage extends plugin {
@@ -228,7 +228,8 @@ export class ScheduleManage extends plugin {
  * @returns {Promise<boolean>} 是否确认
  */
     async waitForConfirm(action, confirmContext) {
-        const msg = `⚠️ 您正在群聊中执行「${action}课表」操作，这可能会泄露您的课表信息。\n` +
+        const botName = getBotName(this.e);
+        const msg = `⚠️ ${botName}检测到您正在群聊中执行「${action}课表」操作，这可能会泄露您的课表信息。\n` +
             `请发送「确认」继续，发送任意其他内容取消操作。\n` +
             `（提示：建议在私聊中操作以保护隐私）`;
         await this.reply(msg);
@@ -272,20 +273,21 @@ export class ScheduleManage extends plugin {
     async waitingForImportFile() {
         this.finish("waitingForImportFile");
         const e = this.e;
+        const botName = getBotName(e);
         const fileInfo = getFileInfo(e);
         if (!fileInfo) {
-            await this.reply("未检测到有效的文件信息，请直接发送 JSON 文件");
+            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 文件`);
             return false;
         }
         const { fileName, fileSize, fileId, busid } = fileInfo;
         const MAX_SIZE = 2 * 1024 * 1024;
         if (!fileName.toLowerCase().endsWith('.json')) {
-            await this.reply("❌ 只支持 JSON 格式的文件，请发送扩展名为 .json 的文件");
+            await this.reply(`${botName}暂时只认识 JSON 格式的文件哦喵>_<，请发送扩展名为 .json 的文件~`);
             return false;
         }
         if (fileSize > MAX_SIZE) {
             const sizeKB = (fileSize / 1024).toFixed(2);
-            await this.reply(`❌ 文件过大（${sizeKB}KB），请确保 JSON 文件小于 2MB`);
+            await this.reply(`文件太大了(${sizeKB}KB)，${botName}吃不下惹QAQ，请确保 JSON 文件小于 2MB`);
             return false;
         }
         let fileContent;
@@ -293,18 +295,18 @@ export class ScheduleManage extends plugin {
             fileContent = await this.getFileContent(fileId, busid);
         } catch (err) {
             logger.error(`[课表导入] 获取文件内容异常: ${err}`);
-            await this.reply("读取文件失败，请稍后重试");
+            await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
             return false;
         }
         if (!fileContent) {
-            await this.reply("无法读取文件内容，请确保文件有效");
+            await this.reply(`${botName}无法读取文件内容(｡•﹃•｡)，请确保文件有效`);
             return false;
         }
         let jsonData;
         try {
             jsonData = JSON.parse(fileContent);
         } catch (err) {
-            await this.reply("文件内容不是合法的 JSON 格式");
+            await this.reply(`文件内容似乎不是合法的 JSON 格式哦喵(｡•﹃•｡)`);
             return false;
         }
         const result = await importScheduleFromJsonData(e.user_id, jsonData, e);
@@ -405,7 +407,7 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         const scheduleData = DataManager.loadSchedule(userId);
         if (!scheduleData) {
-            await this.reply("你还没有设置课程表，请先导入课表");
+            await this.reply("你还没有设置课程表，请先设置或导入课表哦~");
             return false;
         }
         const isShiguang = this.e.msg.includes('拾光');

@@ -6,6 +6,13 @@ export const schemas = [
         label: "全局设置"
     },
     {
+        field: "botName",
+        label: "Bot名称",
+        component: "Input",
+        placeholder: "请输入自定义名称",
+        bottomHelpMessage: "请输入要在本插件显示的自定义Bot名称。留空默认使用Bot昵称"
+    },
+    {
         component: 'Divider',
         label: '图片渲染设置'
     },

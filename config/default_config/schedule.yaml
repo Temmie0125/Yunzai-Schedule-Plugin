@@ -15,3 +15,5 @@ proxyUrl: ""
 apiToken: ""
 # 默认学期开始日期
 defaultSemesterStart: "2026-03-02"
+# 自定义bot名称
+botName: ""

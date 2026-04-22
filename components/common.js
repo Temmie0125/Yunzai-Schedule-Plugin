@@ -1,3 +1,4 @@
+import { ConfigManager } from "./configManager.js"
 /**
  *
  * 制作转发消息
@@ -132,4 +133,18 @@ export async function getGroupMembers(groupId) {
 export async function getAvatarUrl(userId) {
     // QQ头像地址
     return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`
+}
+/**
+ * 获取Bot自定义名称
+ */
+export function getBotName(e = null){
+    let bot;
+    if(e){
+        bot = e.bot || Bot;
+    }
+    else{
+        bot = Bot;
+    }
+    const config = ConfigManager.getConfig();
+    return config.botName || bot.nickname || "Bot";
 }

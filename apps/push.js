@@ -1,6 +1,6 @@
 // push.js
 import schedule from 'node-schedule'
-import { checkFriend } from '../components/common.js'
+import { checkFriend, getBotName } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { generateUserScheduleImage } from '../components/Renderer.js'
@@ -76,9 +76,10 @@ export class SchedulePush extends plugin {
    */
   async enableReminder(e) {
     const userId = e.user_id;
+    const botName = getBotName(e);
     if (!checkFriend(userId)) {
       await e.reply(
-        `❌ 订阅失败！请先添加机器人为好友，才能开启课表订阅哦~\n`
+        `❌ 订阅失败！请先添加${botName}为好友，才能开启课表订阅哦~\n`
       );
       return false;
     }
@@ -98,7 +99,7 @@ export class SchedulePush extends plugin {
       const minuteFormatted = minuteInt.toString().padStart(2, '0');
       timeDesc = `${hourStr}点${minuteFormatted}分`;
     }
-    await e.reply(`✅ 已开启课表订阅，每天${timeDesc}将为你推送明日课表（需保持好友关系）`);
+    await e.reply(`✅ 已开启课表订阅，${botName}每天${timeDesc}将为你推送明日课表（需保持好友关系哦~）`);
   }
   /**
    * 关闭课表订阅
