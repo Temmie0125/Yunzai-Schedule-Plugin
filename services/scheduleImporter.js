@@ -5,6 +5,71 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
 import { getCurrentFullDate } from '../utils/timeUtils.js'
 /**
+ * 通用：保存课表并保留用户原有昵称/签名
+ */
+async function saveScheduleWithUserData(userId, scheduleData, event) {
+  const oldData = DataManager.loadSchedule(userId);
+  let nickname = oldData?.nickname;
+  let signature = oldData?.signature;
+  if (!nickname) {
+    nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
+  }
+  DataManager.saveSchedule(userId, scheduleData, nickname, signature);
+  return { nickname, signature };
+}
+
+/**
+ * 通用：构建成功回复消息
+ * @param {string|number} userId - 用户QQ号
+ * @param {object} scheduleData - 课表数据
+ * @param {string} nickname - 用户昵称
+ * @param {string} signature - 个性签名（可选）
+ * @param {string} sourceLabel - 来源标签（如“✨ 星链”、“”）
+ * @param {boolean} showTableName - 是否显示课表名称
+ * @param {boolean} inGroup - 是否在群聊中
+ */
+function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabel, showTableName = true, inGroup = false) {
+  let replyMsg = `${sourceLabel}课表导入成功！\n`;
+  const shouldShowTableName = showTableName && scheduleData.tableName && (!inGroup || showTableName);
+  if (shouldShowTableName) {
+      replyMsg += `📚 课表名称：${scheduleData.tableName}\n`;
+  }
+  if (scheduleData.semesterStart) {
+      replyMsg += `📅 学期开始：${scheduleData.semesterStart}\n`;
+  }
+  replyMsg += `📖 课程数量：${scheduleData.courses.length} 门\n`;
+  replyMsg += `👤 昵称：${nickname}`;
+  if (signature) replyMsg += `\n💬 签名：${signature}`;
+  if (nickname === String(userId)) {
+      replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`;
+  }
+  return replyMsg;
+}
+
+/**
+* 通用：处理自动撤回口令，并追加提醒内容
+*/
+async function handleAutoRecall(replyMsg, event, autoRecallCode, botName) {
+  const inGroup = !!event.group;
+  if (!inGroup || !autoRecallCode) return replyMsg;
+
+  const group = event.group;
+  if (group.is_admin || group.is_owner) {
+    try {
+      replyMsg += `\n⚠️ ${botName}正在尝试自动撤回您的口令，如失败请手动撤回~`;
+      await group.recallMsg(event.message_id);
+      logger.mark(`[课表导入] 已自动撤回用户 ${event.user_id} 的口令消息`);
+    } catch (err) {
+      logger.error(`[课表导入] 撤回口令失败: ${err}`);
+    }
+  } else {
+    replyMsg += `\n⚠️ ${botName}无管理员权限，无法撤回口令，为确保您的隐私安全，请及时手动撤回口令哦~`;
+    logger.warn(`[课表导入] Bot在群 ${group.group_id} 无管理员权限，无法撤回`);
+  }
+  return replyMsg;
+}
+
+/**
  * 从口令导入课表的核心逻辑
  * @param {string|number} userId 用户QQ号
  * @param {string} code 提取出的口令
@@ -12,79 +77,27 @@ import { getCurrentFullDate } from '../utils/timeUtils.js'
  * @returns {Promise<{ success: boolean, message: string }>}
  */
 export async function importScheduleFromCode(userId, code, event) {
-  // 1. 格式校验
   if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code)) {
-    return {
-      success: false,
-      message: "口令格式不正确，请确保是WakeUp课程表的正确分享口令"
-    };
+    return { success: false, message: "口令格式不正确，请确保是WakeUp课程表的正确分享口令" };
   }
-
   try {
-    // 2. 获取配置
-    const config = ConfigManager.getConfig()
-    const bot = event.bot || Bot
+    const config = ConfigManager.getConfig();
+    const bot = event.bot || Bot;
     const botName = config.botName || bot.nickname || "Bot";
-    const showTableName = config.showTableName ?? true
-    const autoRecallCode = config.autoRecallCode ?? false
-
-    // 2. 调用 API 获取课表数据
+    const showTableName = config.showTableName ?? true;
+    const autoRecallCode = config.autoRecallCode ?? false;
     const scheduleData = await fetchScheduleFromAPI(code);
     if (!scheduleData) {
-      return {
-        success: false,
-        message: "获取课表失败，请检查口令"
-      };
+      return { success: false, message: "获取课表失败，请检查口令" };
     }
 
-    // 3. 保留原有昵称和签名
-    const oldData = DataManager.loadSchedule(userId);
-    let nickname = oldData?.nickname;
-    let signature = oldData?.signature;
-    if (!nickname) {
-      nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
-    }
-
-    // 4. 保存课表
-    DataManager.saveSchedule(userId, scheduleData, nickname, signature);
-
-    // 6. 构造成功消息（根据配置决定是否显示课表名称）
-    let replyMsg = `课程表设置成功！\n`
-    // 判断是否在群聊且配置为关闭显示课表名称
-    const inGroup = !!event.group
-    if (!inGroup || showTableName) {
-      replyMsg += `课表名称：${scheduleData.tableName}\n`
-    }
-    replyMsg += `学期开始：${scheduleData.semesterStart}\n`
-    replyMsg += `共 ${scheduleData.courses.length} 门课程\n`
-    replyMsg += `昵称：${nickname}`
-    if (signature) replyMsg += `\n签名：${signature}`
-    if (nickname === userId.toString()) {
-      replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`
-    }
-    if(event.isGroup) replyMsg += `\n⚠️ ${botName}正在尝试自动撤回您的口令，如果撤回失败请及时手动撤回口令哦~`
-
-    // 7. 自动撤回口令（群聊且配置开启且Bot有管理员权限）
-    if (inGroup && autoRecallCode) {
-      const group = event.group
-      // 检查Bot是否为管理员或群主
-      if (group.is_admin || group.is_owner) {
-        try {
-          // 撤回用户发送的口令消息
-          await group.recallMsg(event.message_id)
-          logger.mark(`[课表导入] 已自动撤回用户 ${userId} 在群 ${group.group_id} 的口令消息`)
-        } catch (recallErr) {
-          logger.error(`[课表导入] 撤回口令失败: ${recallErr}`)
-        }
-      } else {
-        logger.debug(`[课表导入] Bot在群 ${group.group_id} 无管理员权限，无法撤回`)
-      }
-    }
-
-    return { success: true, message: replyMsg }
+    const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
+    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "", showTableName, !!event.group);
+    replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
+    return { success: true, message: replyMsg };
   } catch (err) {
-    logger.error(`设置课表失败: ${err}`)
-    return { success: false, message: "设置课表失败，请稍后重试" }
+    logger.error(`设置课表失败: ${err}`);
+    return { success: false, message: "设置课表失败，请稍后重试" };
   }
 }
 
@@ -210,64 +223,27 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
  * @returns {Promise<{ success: boolean, message: string }>}
  */
 export async function importScheduleFromStarlinkCode(userId, code, event) {
-  // 1. 格式校验（星链分享码一般为5-20位字母数字横线）
-  if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code) || code.length < 4) {
-    return { success: false, message: '星链分享码格式不正确，请检查后重试' };
-  }
-
-  try {
-    const config = ConfigManager.getConfig();
-    const bot = event.bot || Bot;
-    const botName = config.botName || bot.nickname || 'Bot';
-    const autoRecallCode = config.autoRecallCode ?? false;
-
-    // 2. 调用星链API
-    const scheduleData = await fetchStarlinkSchedule(code);
-    if (!scheduleData || !scheduleData.courses.length) {
-      return { success: false, message: '获取星链课表失败，请检查分享码是否有效' };
+    if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code) || code.length < 4) {
+        return { success: false, message: '星链分享码格式不正确，请检查后重试' };
     }
+    try {
+        const config = ConfigManager.getConfig();
+        const bot = event.bot || Bot;
+        const botName = config.botName || bot.nickname || 'Bot';
+        const autoRecallCode = config.autoRecallCode ?? false;
 
-    // 3. 保留原有昵称和签名
-    const oldData = DataManager.loadSchedule(userId);
-    let nickname = oldData?.nickname;
-    let signature = oldData?.signature;
-    if (!nickname) {
-      nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
-    }
-    // 4. 保存课表
-    DataManager.saveSchedule(userId, scheduleData, nickname, signature);
-
-    // 5. 构造成功回复
-    let replyMsg = `✨ 星链课表导入成功！\n📚 课表名称：${scheduleData.tableName}\n`;
-    if (scheduleData.semesterStart) {
-      replyMsg += `📅 学期开始：${scheduleData.semesterStart}\n`;
-    }
-    replyMsg += `📖 课程数量：${scheduleData.courses.length} 门\n`;
-    replyMsg += `👤 昵称：${nickname}`;
-    if (signature) replyMsg += `\n💬 签名：${signature}`;
-    if (nickname === userId.toString()) {
-      replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`;
-    }
-    if(event.isGroup) replyMsg += `\n⚠️ ${botName}正在尝试自动撤回您的口令，如失败请手动撤回~`;
-
-    // 6. 自动撤回口令（群聊+配置开启+有管理员权限）
-    const inGroup = !!event.group;
-    if (inGroup && autoRecallCode) {
-      const group = event.group;
-      if (group.is_admin || group.is_owner) {
-        try {
-          await group.recallMsg(event.message_id);
-          logger.mark(`[星链导入] 已自动撤回用户 ${userId} 的口令消息`);
-        } catch (err) {
-          logger.error(`[星链导入] 撤回口令失败: ${err}`);
+        const scheduleData = await fetchStarlinkSchedule(code);
+        if (!scheduleData || !scheduleData.courses.length) {
+            return { success: false, message: '获取星链课表失败，请检查分享码是否有效' };
         }
-      } else {
-        logger.debug(`[星链导入] Bot在群 ${group.group_id} 无管理员权限，无法撤回`);
-      }
+
+        const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
+        let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "✨ 星链", true, !!event.group);
+        replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
+
+        return { success: true, message: replyMsg };
+    } catch (err) {
+        logger.error(`[星链导入] 失败: ${err}`);
+        return { success: false, message: `导入失败：${err.message}` };
     }
-    return { success: true, message: replyMsg };
-  } catch (err) {
-    logger.error(`[星链导入] 失败: ${err}`);
-    return { success: false, message: `导入失败：${err.message}` };
-  }
 }
