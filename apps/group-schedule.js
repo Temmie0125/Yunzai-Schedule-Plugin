@@ -1,7 +1,7 @@
 //import fs from 'node:fs'
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
-import { checkPermission, getGroupMembers, getAvatarUrl } from '../components/common.js'
+import { checkPermission, getGroupMembers, getAvatarUrl, getBotName } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
@@ -254,6 +254,7 @@ export class GroupSchedulePlugin extends plugin {
    */
   async queryUserSchedule() {
     const groupId = this.e.group_id;
+    const botName = getBotName(this.e);
     if (!groupId) {
       await this.reply("请在群聊中使用此命令");
       return true;
@@ -278,7 +279,7 @@ export class GroupSchedulePlugin extends plugin {
     const groupMembers = await getGroupMembers(groupId);
     const targetMember = groupMembers.find(m => m.user_id === targetId);
     if (!targetMember) {
-      await this.reply(`未找到成员 ${targetId}，可能不在本群`);
+      await this.reply(`${botName}似乎未找到成员${targetId}，可能不在本群...`);
       return true;
     }
     // 当前时间信息

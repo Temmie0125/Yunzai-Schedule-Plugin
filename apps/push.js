@@ -1,6 +1,6 @@
 // push.js
 import schedule from 'node-schedule'
-import { checkFriend } from '../components/common.js'
+import { checkFriend, getBotName } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { generateUserScheduleImage } from '../components/Renderer.js'
@@ -76,9 +76,10 @@ export class SchedulePush extends plugin {
    */
   async enableReminder(e) {
     const userId = e.user_id;
+    const botName = getBotName(e);
     if (!checkFriend(userId)) {
       await e.reply(
-        `❌ 订阅失败！请先添加机器人为好友，才能开启课表订阅哦~\n`
+        `❌ 订阅失败！请先添加${botName}为好友，才能开启课表订阅哦~\n`
       );
       return false;
     }
@@ -98,7 +99,7 @@ export class SchedulePush extends plugin {
       const minuteFormatted = minuteInt.toString().padStart(2, '0');
       timeDesc = `${hourStr}点${minuteFormatted}分`;
     }
-    await e.reply(`✅ 已开启课表订阅，每天${timeDesc}将为你推送明日课表（需保持好友关系）`);
+    await e.reply(`✅ 已开启课表订阅，${botName}每天${timeDesc}将为你推送明日课表（需保持好友关系哦~）`);
   }
   /**
    * 关闭课表订阅
@@ -116,10 +117,10 @@ export class SchedulePush extends plugin {
    * 2. 节假日/周末不推送（调休上班日发送提示）
    */
   static async pushTomorrowSchedule() {
-    logger.info("[课表订阅] 开始推送明日课表");
+    logger.mark(`${logger.blue(`[课表订阅] 开始推送明日课表`)}`);
     const users = await DataManager.getAllReminderUsers();
     if (!users.length) {
-      logger.info("[课表订阅] 无订阅用户，任务结束");
+      logger.mark(`${logger.green(`[课表订阅] 无订阅用户，任务结束`)}`);
       return;
     }
     let tomorrow = new Date();
@@ -205,7 +206,7 @@ export class SchedulePush extends plugin {
         logger.error(`[课表订阅] 推送用户 ${userId} 时发生错误: ${err}`);
       }
     }
-    logger.info("[课表订阅] 推送完成");
+    logger.mark(`${logger.green("[课表订阅] 推送完成")}`);
   }
   /**
    * 插件卸载时清理

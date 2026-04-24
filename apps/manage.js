@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { getFileInfo } from '../components/common.js'
+import { getBotName, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
-import { importScheduleFromCode, importScheduleFromJsonData } from '../services/scheduleImporter.js'
+import { importScheduleFromCode, importScheduleFromStarlinkCode, importScheduleFromJsonData } from '../services/scheduleImporter.js'
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -13,8 +13,12 @@ export class ScheduleManage extends plugin {
             rule: [
                 // ===== 基础命令区 =====
                 {
-                    reg: "^#(设置课表|schedule set)(?:\\s+(.+))?$",
+                    reg: "^#(设置课表|schedule set|设置星链课表|星链设置课表)(?:\\s+(.+))?$",
                     fnc: "setSchedule"
+                },
+                {
+                    reg: "^#(星链设置|设置星链)课表(?:\\s+(.+))?$",
+                    fnc: "setStarlinkSchedule"
                 },
                 {
                     reg: "^#导入课表$",
@@ -41,7 +45,10 @@ export class ScheduleManage extends plugin {
                     reg: ".*「[0-9a-zA-Z\\-_]+」.*",
                     fnc: "handleDirectCode"
                 },
-
+                {
+                    reg: ".*「星链课表」.*",
+                    fnc: "handleStarlinkDirect"
+                }
             ]
         })
     }
@@ -51,10 +58,15 @@ export class ScheduleManage extends plugin {
     async setSchedule() {
         const userId = this.e.user_id;
         const message = this.e.msg;
+        // 检查消息中是否包含“星链”，若包含则转向星链导入流程
+        if (message.includes('星链')) {
+            // 复用星链设置逻辑
+            return this.setStarlinkSchedule();
+        }
         let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1];
         if (!code) {
             this.setContext("waitingForCode");
-            await this.reply("请发送你的WakeUp课程表分享口令", false, { at: true });
+            await this.reply("请发送你的「WakeUp课程表」或者「星链课表」分享口令", false, { at: true });
             return true;
         }
         code = code.trim();
@@ -74,6 +86,19 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         let code = this.e.msg.trim();
         this.finish("waitingForCode");
+        // ----- 尝试匹配星链课表分享格式 -----
+        // 格式：输入：XXXXX （中文冒号或英文冒号）
+        let starlinkCode = null;
+        const inputMatch = code.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/);
+        if (inputMatch) {
+            starlinkCode = inputMatch[1];
+        }
+        if (starlinkCode) {
+            // 调用星链导入
+            const result = await importScheduleFromStarlinkCode(userId, starlinkCode, this.e);
+            await this.reply(result.message);
+            return true;
+        }
         const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
         if (match) {
             code = match[1];
@@ -97,6 +122,64 @@ export class ScheduleManage extends plugin {
             return false;
         }
         const result = await importScheduleFromCode(userId, code, this.e);
+        await this.reply(result.message);
+        return true;
+    }
+    /**
+    * 直接处理包含「星链课表」的消息，自动导入星链课表
+    */
+    async handleStarlinkDirect() {
+        const userId = this.e.user_id;
+        const message = this.e.msg;
+        // 提取分享码：匹配“输入：XXXXX”或“输入:XXXXX”
+        let code = null;
+        const match = message.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/);
+        if (match) {
+            code = match[1];
+        } else {
+            // 兜底：提取5-20位字母数字横线（常见星链分享码长度）
+            const fallback = message.match(/([0-9a-zA-Z\-_]{5,20})/);
+            if (fallback) code = fallback[1];
+        }
+        if (!code) {
+            logger.warn("[星链导入] 消息中包含「星链课表」但未找到分享码");
+            return false; // 不处理，让其他插件继续
+        }
+        const result = await importScheduleFromStarlinkCode(userId, code, this.e);
+        await this.reply(result.message);
+        return true;
+    }
+    // ========== 新增：星链专用设置方法 ==========
+    async setStarlinkSchedule() {
+        const userId = this.e.user_id;
+        const message = this.e.msg;
+        let code = message.match(/^#星链设置课表\s+(.+)$/)?.[1];
+        if (!code) {
+            this.setContext("waitingForStarlinkCode");
+            await this.reply("请发送你的星链课程表分享码（或包含分享码的文案）", false, { at: true });
+            return true;
+        }
+        code = code.trim();
+        // 尝试从文案中提取分享码（格式如：输入：XXXXX 或直接分享码）
+        const match = code.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/) || code.match(/([0-9a-zA-Z\-_]{5,20})/);
+        if (match) code = match[1];
+        const result = await importScheduleFromStarlinkCode(userId, code, this.e);
+        await this.reply(result.message);
+        return true;
+    }
+
+    async waitingForStarlinkCode() {
+        const userId = this.e.user_id;
+        let raw = this.e.msg.trim();
+        this.finish("waitingForStarlinkCode");
+        // 提取分享码
+        let code = raw.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/)?.[1];
+        if (!code) {
+            const fallback = raw.match(/([0-9a-zA-Z\-_]{5,20})/);
+            if (fallback) code = fallback[1];
+            else code = raw;
+        }
+        const result = await importScheduleFromStarlinkCode(userId, code, this.e);
         await this.reply(result.message);
         return true;
     }
@@ -228,7 +311,8 @@ export class ScheduleManage extends plugin {
  * @returns {Promise<boolean>} 是否确认
  */
     async waitForConfirm(action, confirmContext) {
-        const msg = `⚠️ 您正在群聊中执行「${action}课表」操作，这可能会泄露您的课表信息。\n` +
+        const botName = getBotName(this.e);
+        const msg = `⚠️ ${botName}检测到您正在群聊中执行「${action}课表」操作，这可能会泄露您的课表信息。\n` +
             `请发送「确认」继续，发送任意其他内容取消操作。\n` +
             `（提示：建议在私聊中操作以保护隐私）`;
         await this.reply(msg);
@@ -272,20 +356,21 @@ export class ScheduleManage extends plugin {
     async waitingForImportFile() {
         this.finish("waitingForImportFile");
         const e = this.e;
+        const botName = getBotName(e);
         const fileInfo = getFileInfo(e);
         if (!fileInfo) {
-            await this.reply("未检测到有效的文件信息，请直接发送 JSON 文件");
+            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 文件`);
             return false;
         }
         const { fileName, fileSize, fileId, busid } = fileInfo;
         const MAX_SIZE = 2 * 1024 * 1024;
         if (!fileName.toLowerCase().endsWith('.json')) {
-            await this.reply("❌ 只支持 JSON 格式的文件，请发送扩展名为 .json 的文件");
+            await this.reply(`${botName}暂时只认识 JSON 格式的文件哦喵>_<，请发送扩展名为 .json 的文件~`);
             return false;
         }
         if (fileSize > MAX_SIZE) {
             const sizeKB = (fileSize / 1024).toFixed(2);
-            await this.reply(`❌ 文件过大（${sizeKB}KB），请确保 JSON 文件小于 2MB`);
+            await this.reply(`文件太大了(${sizeKB}KB)，${botName}吃不下惹QAQ，请确保 JSON 文件小于 2MB`);
             return false;
         }
         let fileContent;
@@ -293,18 +378,18 @@ export class ScheduleManage extends plugin {
             fileContent = await this.getFileContent(fileId, busid);
         } catch (err) {
             logger.error(`[课表导入] 获取文件内容异常: ${err}`);
-            await this.reply("读取文件失败，请稍后重试");
+            await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
             return false;
         }
         if (!fileContent) {
-            await this.reply("无法读取文件内容，请确保文件有效");
+            await this.reply(`${botName}无法读取文件内容(｡•﹃•｡)，请确保文件有效`);
             return false;
         }
         let jsonData;
         try {
             jsonData = JSON.parse(fileContent);
         } catch (err) {
-            await this.reply("文件内容不是合法的 JSON 格式");
+            await this.reply(`文件内容似乎不是合法的 JSON 格式哦喵(｡•﹃•｡)`);
             return false;
         }
         const result = await importScheduleFromJsonData(e.user_id, jsonData, e);
@@ -405,7 +490,7 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         const scheduleData = DataManager.loadSchedule(userId);
         if (!scheduleData) {
-            await this.reply("你还没有设置课程表，请先导入课表");
+            await this.reply("你还没有设置课程表，请先设置或导入课表哦~");
             return false;
         }
         const isShiguang = this.e.msg.includes('拾光');

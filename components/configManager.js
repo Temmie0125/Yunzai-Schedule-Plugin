@@ -10,7 +10,6 @@ export class ConfigManager {
      * 获取用户配置（若不存在则从默认配置复制）
      * @returns {Object}
      */
-    // components/ConfigManager.js
     static getConfig() {
         const userFile = path.join(CONFIG_PATH, CONFIG_FILE)
         const defaultFile = path.join(DEFAULT_CONFIG_PATH, CONFIG_FILE)
@@ -48,7 +47,8 @@ export class ConfigManager {
             // 新增字段
             proxyUrl: "",        // 中转服务地址
             apiToken: "",         // 中转服务所需的 API Token
-            defaultSemesterStart: "2026-03-02"   // 新增：默认学期开始日期
+            defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
+            botName: ""    // bot自定义名称，默认取机器人昵称
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
@@ -67,9 +67,6 @@ export class ConfigManager {
         // 动态生成 pushCron 字段，供其他模块调用
         config.pushCron = `0 ${config.pushHour} * * *`;
         config.birthdayPushCron = `0 ${config.birthdayPushHour} * * *`;
-        // 注意：此处返回的 config 对象中，pushCron 是动态生成的，
-        // 但实际存储在文件中的 pushCron 字段（如果有）会被忽略，
-        // 因为保存时我们只保存 pushHour（见 setConfig 修改）
         return config;
     }
     /**
@@ -108,7 +105,8 @@ export class ConfigManager {
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
             proxyUrl, apiToken,
-            defaultSemesterStart   // 新增
+            defaultSemesterStart,
+            botName
         } = data;
         const configToSave = {
             pushHour,
@@ -120,7 +118,8 @@ export class ConfigManager {
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
             proxyUrl, apiToken,
-            defaultSemesterStart   // 新增
+            defaultSemesterStart,
+            botName
         };
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {
