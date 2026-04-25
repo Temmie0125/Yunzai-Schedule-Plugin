@@ -17,3 +17,5 @@ apiToken: ""
 defaultSemesterStart: "2026-03-02"
 # 自定义bot名称
 botName: ""
+# 字体风格
+font: "像素"

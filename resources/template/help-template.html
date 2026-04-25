@@ -8,8 +8,8 @@
   <style>
     /* 字体与群课表一致 */
     @font-face {
-      font-family: 'Unifont';
-      src: url('{{_res_path}}/fonts/unifont.otf') format('opentype');
+      font-family: 'ScheduleFont';
+      src: url('{{_fontInlineUrl}}') format('{{_fontFormat}}');
     }
 
     * {
@@ -19,11 +19,12 @@
     }
 
     body {
-      font-family: 'Unifont', 'Microsoft YaHei', sans-serif;
+      font-family: 'ScheduleFont', 'Unifont', 'Microsoft YaHei', sans-serif;
       background: #f0f2f5;
       display: flex;
       justify-content: center;
       align-items: center;
+      min-width: 1080px;
       max-width: 1080px;
       min-height: 100vh;
     }

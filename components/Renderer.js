@@ -14,7 +14,8 @@ let browserLock = false
 // 新增：渲染计数与重启阈值
 let renderCount = 0
 let restartThreshold = 100   // 默认值，可从 ConfigManager 覆盖
-
+// 字体映射
+let fontMapCache = null
 /**
  * 重启浏览器实例（关闭现有实例，清空状态，等待下一次 getBrowser 重新创建）
  */
@@ -101,7 +102,7 @@ function getDesignWidth(tplFile) {
         if (match) return parseInt(match[1])
         // 匹配 .container 的 width 或 max-width
         match = content.match(/\.container\s*{[^}]*width:\s*(\d+)px/i) ||
-                content.match(/\.container\s*{[^}]*max-width:\s*(\d+)px/i)
+            content.match(/\.container\s*{[^}]*max-width:\s*(\d+)px/i)
         if (match) return parseInt(match[1])
     } catch (err) {
         logger.warn(`[Schedule] 解析模板宽度失败: ${tplFile}`, err)
@@ -124,10 +125,29 @@ async function renderTemplate(templateName, data, options = {}) {
         logger.error(`[Schedule] 模板文件不存在: ${tplFile}`)
         return null
     }
+    // 注入字体和字体类别参数
+    if (!data._fontFile) {
+        const { fontFile, formatType } = getFontFileInfo()
+        data._fontFile = fontFile
+        data._fontFormat = formatType
+        // 构造完整的 file:// URL
+        // 在 renderTemplate 函数内，获取字体文件后添加 Base64 转换
+        const fontFilePath = path.join(pluginRoot, 'resources', 'fonts', fontFile)
+        if (fs.existsSync(fontFilePath)) {
+            const fontBuffer = fs.readFileSync(fontFilePath)
+            const fontBase64 = fontBuffer.toString('base64')
+            const mimeType = data._fontFormat === 'truetype' ? 'font/ttf' : 'font/otf'
+            data._fontInlineUrl = `data:${mimeType};base64,${fontBase64}`
+        } else {
+            data._fontInlineUrl = data._fontUrl  // 回退
+        }
+        // 固定逻辑字体族名，避免使用文件名
+        data._fontFamily = 'ScheduleFont'
+    }
     const designWidth = getDesignWidth(tplFile)
     const renderData = {
         ...data,
-        _res_path: `./plugins/schedule/resources/`
+        _res_path: data._res_path || `./plugins/schedule/resources/`
     }
     let html
     try {
@@ -145,11 +165,17 @@ async function renderTemplate(templateName, data, options = {}) {
             deviceScaleFactor: scale
         })
         await page.setContent(html, { waitUntil: 'networkidle0' })
-        await page.evaluate(() => Promise.all(
-            Array.from(document.images)
-                .filter(img => !img.complete)
-                .map(img => new Promise(resolve => { img.onload = img.onerror = resolve; }))
-        ))
+        // 等待所有图片加载 + 字体加载完成
+        await page.evaluate(async () => {
+            // 等待图片
+            await Promise.all(
+                Array.from(document.images)
+                    .filter(img => !img.complete)
+                    .map(img => new Promise(resolve => { img.onload = img.onerror = resolve; }))
+            );
+            // 等待字体加载
+            await document.fonts.ready;
+        });
         const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' })
         const result = Buffer.isBuffer(screenshotBuffer) ? screenshotBuffer : Buffer.from(screenshotBuffer)
         // 成功渲染后增加计数，并判断是否需要重启
@@ -356,4 +382,44 @@ export async function renderBirthdayList(data, options = {}) {
         updateTime: now.toLocaleString('zh-CN')
     }
     return await renderTemplate('birthday-list', templateData, mergedOptions)
+}
+/**
+ *  获取字体映射
+ */
+function getFontMap() {
+    if (fontMapCache) return fontMapCache
+    const fontMapPath = path.join(pluginRoot, 'resources', 'fonts.json')
+    try {
+        if (fs.existsSync(fontMapPath)) {
+            const content = fs.readFileSync(fontMapPath, 'utf8')
+            fontMapCache = JSON.parse(content)
+        } else {
+            fontMapCache = { "像素": "unifont.otf" }  // 默认回退
+        }
+    } catch (err) {
+        logger.error('[Schedule] 读取 fonts.json 失败', err)
+        fontMapCache = { "像素": "unifont.otf" }
+    }
+    return fontMapCache
+}
+/**
+ * 获取字体配置
+ */
+function getFontFileInfo() {
+    const config = ConfigManager.getConfig()
+    const fontName = config.font || "像素"
+    const fontMap = getFontMap()
+    let fontFile = fontMap[fontName]
+    if (!fontFile) {
+        logger.warn(`[Schedule] 未找到字体映射：${fontName}，将使用默认字体 unifont.otf`)
+        fontFile = "unifont.otf"
+    }
+    // 根据扩展名决定 format 类型
+    const ext = path.extname(fontFile).toLowerCase()
+    let formatType = 'opentype'  // 默认
+    if (ext === '.ttf') formatType = 'TrueType'
+    else if (ext === '.otf') formatType = 'opentype'
+    else if (ext === '.woff') formatType = 'woff'
+    else if (ext === '.woff2') formatType = 'woff2'
+    return { fontFile, formatType }
 }
