@@ -1,4 +1,4 @@
-import { ConfigManager } from "./configManager.js"
+import { ConfigManager } from "./ConfigManager.js"
 /**
  *
  * 制作转发消息
