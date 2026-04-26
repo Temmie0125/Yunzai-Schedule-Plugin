@@ -1,6 +1,6 @@
 // components/SkipExpireScheduler.js
 import { DataManager } from './DataManager.js';
-import { ConfigManager } from './configManager.js';
+import { ConfigManager } from './ConfigManager.js';
 
 // 使用全局对象存储定时器，避免模块重载时重复启动
 let globalTimer = global.__schedule_skip_timer__ || null;
