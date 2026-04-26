@@ -6,7 +6,7 @@ import { watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import { startSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { reloadSkipExpireScheduler } from './components/SkipExpireScheduler.js';
-import { CONFIG_PATH, CONFIG_FILE } from './components/configManager.js'; // 需要从 configManager 导出路径
+import { CONFIG_PATH, CONFIG_FILE } from './components/ConfigManager.js';
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
 let lastConfigContent = null;
