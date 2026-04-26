@@ -28,7 +28,20 @@ export const schemas = [
             placeholder: '请输入渲染精度'
         },
         defaultValue: 1.0,
-        bottomHelpMessage: "控制生成图片的大小。更高的精度图片更清晰，但渲染时间更长。建议1.0即可。"
+        bottomHelpMessage: "控制生成图片的质量。更高的精度图片更清晰，但渲染时间更长。建议1.0即可。"
+    },
+    {
+        field: "font",
+        label: "图片字体风格",
+        helpMessage: "选择生成图片时使用的字体。需确保 resources/fonts/ 目录下存在对应的字体文件。",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "像素（默认）", value: "像素" },
+                { label: "圆体", value: "圆体" }
+            ]
+        },
+        bottomHelpMessage: "选择生成图片时使用的字体。需确保 resources/fonts/ 目录下存在对应的字体文件。"
     },
     {
         component: 'Divider',
@@ -75,7 +88,7 @@ export const schemas = [
         label: '自动任务设置'
     },
     {
-        field: "pushHour", 
+        field: "pushHour",
         label: "推送时间（小时）",
         component: "InputNumber",
         required: true,

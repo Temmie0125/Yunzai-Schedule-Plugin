@@ -1,4 +1,29 @@
 import { ConfigManager } from "../components/ConfigManager.js";
+/**
+ * 生成1~31的中文数字映射表
+ */
+const chineseNumberMap = (() => {
+    const digits = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    const map = {};
+    // 1~10
+    for (let i = 1; i <= 10; i++) {
+        if (i === 10) map['十'] = 10;
+        else map[digits[i]] = i;
+    }
+    // 11~19
+    for (let i = 11; i <= 19; i++) {
+        map['十' + digits[i - 10]] = i;
+    }
+    // 20~31
+    for (let i = 20; i <= 31; i++) {
+        const tens = Math.floor(i / 10);
+        const units = i % 10;
+        let str = digits[tens] + '十';
+        if (units !== 0) str += digits[units];
+        map[str] = i;
+    }
+    return map;
+})();
 // 获取给定日期所在周的周一（周一为一周开始，周日为7）
 function getMondayOfSameWeek(date) {
     const d = new Date(date);
@@ -175,11 +200,9 @@ export function formatAndValidateBirthday(birthday) {
     const regex = /^(\d{1,2})[-/.](\d{1,2})$/
     const match = birthday.match(regex)
     if (!match) return { valid: false, formatted: null }
-
     let month = parseInt(match[1], 10)
     let day = parseInt(match[2], 10)
     if (month < 1 || month > 12 || day < 1 || day > 31) return { valid: false, formatted: null }
-
     const monthStr = String(month).padStart(2, '0')
     const dayStr = String(day).padStart(2, '0')
     // 验证日期有效性
@@ -201,4 +224,105 @@ export function getDaysToBirthday(birthday) {
         ? new Date(today.getFullYear() + 1, month - 1, day)
         : thisYearBirthday
     return Math.ceil((target - today) / (1000 * 60 * 60 * 24))
+}
+
+/**
+ * 将中文字符串转换为数字（仅支持 1~31）
+ * @param {string} str 如 "十一"、"二十一"
+ * @returns {number|null}
+ */
+function chineseToNumber(str) {
+    if (/^\d+$/.test(str)) return parseInt(str, 10);
+    return chineseNumberMap[str] || null;
+}
+
+/**
+ * 解析中文日期格式
+ * @param {string} input 用户输入，例如 “3月2日”、“十一月十一号”
+ * @returns {string|null} 标准 MM-DD 格式，失败返回 null
+ */
+export function parseChineseDateToMD(input) {
+    const regex = /^([\d一二三四五六七八九十]+)月([\d一二三四五六七八九十]+)[日号]?$/;
+    const match = input.match(regex);
+    if (!match) return null;
+    const month = chineseToNumber(match[1]);
+    const day = chineseToNumber(match[2]);
+    if (month === null || day === null) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * 通用生日字符串解析（数字分隔符 + 中文自然语言）
+ * @param {string} birthdayStr 用户输入的生日部分
+ * @returns {string|null} 标准 MM-DD 格式，失败返回 null
+ */
+export function parseBirthdayString(birthdayStr) {
+    // 优先尝试原始数字格式（MM-DD, MM/DD, MM.DD）
+    const validation = formatAndValidateBirthday(birthdayStr);
+    if (validation.valid) return validation.formatted;
+    // 再尝试中文自然语言
+    const chineseResult = parseChineseDateToMD(birthdayStr);
+    if (chineseResult) {
+        const validation2 = formatAndValidateBirthday(chineseResult);
+        if (validation2.valid) return validation2.formatted;
+    }
+    return null;
+}
+/**
+ * 解析星期几的自然语言表述
+ * @param {string} str - 如 "周一", "星期2", "周三", "周日", "星期七", "7"
+ * @returns {number|null} 1=周一 ... 7=周日
+ */
+export function parseWeekday(str) {
+    // 纯数字 1~7
+    if (/^[1-7]$/.test(str)) {
+        return parseInt(str, 10);
+    }
+    // 中文数字 一 ~ 七
+    const chineseMap = {
+        '一': 1, '二': 2, '三': 3, '四': 4,
+        '五': 5, '六': 6, '七': 7, '日': 7, '天': 7
+    };
+    // 匹配常见模式：周一 | 星期1 | 周1 | 礼拜一 | 星期天
+    const patterns = [
+        /(星期|周|礼拜)[\d一二三四五六七日天]/,
+        /^[一二三四五六七日天]$/
+    ];
+    let matched = false;
+    let key = '';
+    for (const pattern of patterns) {
+        const match = str.match(pattern);
+        if (match) {
+            matched = true;
+            key = match[0];
+            break;
+        }
+    }
+    if (!matched) return null;
+
+    // 提取最后一个可能是数字或中文数字的字符
+    const lastChar = key.slice(-1);
+    if (/[1-7]/.test(lastChar)) {
+        return parseInt(lastChar, 10);
+    }
+    return chineseMap[lastChar] || null;
+}
+
+/**
+ * 根据相对周偏移和星期几计算具体日期
+ * @param {number} weekOffset - -1(上周), 0(本周), 1(下周)
+ * @param {number} weekday - 1~7 (周一=1, 周日=7)
+ * @param {Date} baseDate - 基准日期，默认为当天
+ * @returns {Date} 计算得到的目标日期（时间部分归零）
+ */
+export function getDateByRelativeWeek(weekOffset, weekday, baseDate = new Date()) {
+    const base = new Date(baseDate);
+    base.setHours(0, 0, 0, 0);
+    // 获取基准日期所在周的周一
+    const monday = getMondayOfSameWeek(base);
+    // 目标日期 = 周一 + (weekOffset * 7 + (weekday - 1)) 天
+    const target = new Date(monday);
+    target.setDate(monday.getDate() + weekOffset * 7 + (weekday - 1));
+    return target;
 }

@@ -1,14 +1,11 @@
 // plugins/schedule/apps/birthday.js
 import schedule from 'node-schedule'
-import fs from 'node:fs'
-import path from 'path'
 import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-import { makeForwardMsg, checkPermission, getBotName } from '../components/common.js'
-import { getCurrentDate, formatAndValidateBirthday, getDaysToBirthday} from '../utils/timeUtils.js';
-// const BIRTHDAY_DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/birthday.json')
+import { makeForwardMsg, checkPermission, getBotName, checkFriend } from '../components/common.js'
+import { getCurrentDate, getDaysToBirthday, parseBirthdayString } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
 const GLOBAL_BIRTHDAY_CRON = '__birthdayPushCron'
@@ -23,12 +20,10 @@ const birthdayMessages = [
     "送上最真挚的祝福！",
     "愿未来更加精彩！"
 ]
-
 function getRandomBirthdayMessage() {
     const index = Math.floor(Math.random() * birthdayMessages.length)
     return birthdayMessages[index]
 }
-
 export class BirthdayReminder extends plugin {
     constructor() {
         super({
@@ -38,20 +33,18 @@ export class BirthdayReminder extends plugin {
             priority: 5000,
             rule: [
                 // 普通用户命令
-                { reg: "^#设置生日\\s+(\\d{1,2}[-/.]\\d{1,2})$", fnc: "setMyBirthday" },
+                { reg: "^#设置生日\\s+(.+)$", fnc: "setMyBirthday" },
                 { reg: "^#清除(我的)?生日$", fnc: "clearMyBirthday" },
                 { reg: "^#我的生日$", fnc: "myBirthday" },
                 { reg: "^#生日(设置|修改)昵称\\s+(.+)$", fnc: "modifyNickname" },
                 { reg: "^#(全部)?生日(完整)?列表$", fnc: "listBirthdays" },
-                // { reg: "^#(生日完整列表|全部生日列表)$", fnc: "listAllBirthdays" },
                 { reg: "^#生日帮助$", fnc: "birthdayHelp" },
-                // 生日模块帮助已经整合进课表帮助，此处显示文本帮助
                 // 管理员命令
-                { reg: /^#添加生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday" },
-                { reg: /^#添加生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "addBirthday" },
+                { reg: /^#添加生日\s+(\d+)\s+(.+)$/, fnc: "addBirthday" },      // QQ+生日
+                { reg: /^#添加生日\s*(.+)$/, fnc: "addBirthday" },              // 可能带@的格式
                 { reg: /^#移除生日\s*(\d+)?$/, fnc: "removeBirthday" },
-                { reg: /^#修改生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday" },
-                { reg: /^#修改生日\s*(\d{1,2}[-/.]\d{1,2})$/, fnc: "modifyBirthday" },
+                { reg: /^#修改生日\s+(\d+)\s+(.+)$/, fnc: "modifyBirthday" },
+                { reg: /^#修改生日\s*(.+)$/, fnc: "modifyBirthday" },
                 // 主人命令
                 { reg: "^#检查生日$", fnc: "manualCheckBirthday", permission: "master" },
                 { reg: "^#生日白名单(列表)?$", fnc: "whitelistList", permission: "master" },
@@ -200,58 +193,25 @@ export class BirthdayReminder extends plugin {
     /** 添加生日（管理员） */
     async addBirthday(e) {
         if (!checkPermission(e)) {
-            e.reply('只有管理员或群主才能添加生日')
-            return true
+            return e.reply('只有管理员或群主才能添加生日');
         }
-        const message = e.msg.trim()
-        let targetUserId = e.at
-        let birthday
-        // 格式1: #添加生日 @某人 生日
-        const atMatch = message.match(/^#添加生日\s*(\d{1,2}[-/.]\d{1,2})$/)
-        if (atMatch && e.at) {
-            birthday = atMatch[1]
-        } else {
-            // 格式2: #添加生日 QQ号 生日
-            const qqMatch = message.match(/^#添加生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/)
-            if (!qqMatch) {
-                e.reply('格式错误！正确格式：#添加生日 @某人 月-日 或 #添加生日 QQ号 月-日')
-                return true
-            }
-            targetUserId = qqMatch[1]
-            birthday = qqMatch[2]
-        }
-        const validation = formatAndValidateBirthday(birthday)
-        if (!validation.valid) {
-            e.reply('生日格式错误！请使用 月-日 格式，例如：1-1 或 01-01')
-            return true
-        }
-        birthday = validation.formatted
-        if (!e.group_id) {
-            e.reply('请在群聊中使用此命令')
-            return true
-        }
-        // 检查目标是否在群内
-        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap()
-        if (!memberMap.has(Number(targetUserId))) {
-            e.reply(`本群不存在用户 ${targetUserId}`)
-            return true
-        }
-        const userName = memberMap.get(Number(targetUserId)).nickname
-        // 存储
+        if (!e.group_id) return e.reply('请在群聊中使用此命令');
+        const { targetUserId, birthday, errorMsg } = this._parseAdminBirthdayCommand(e);
+        if (errorMsg) return e.reply(errorMsg);
+        // 检查用户是否在群内
+        const { exists, nickname, errorMsg: userError } = await this._checkUserInGroup(e.group_id, targetUserId);
+        if (!exists) return e.reply(userError);
+        // 如果已存在记录，直接覆盖
         this.birthdayData[targetUserId] = {
-            name: userName,
+            name: nickname,
             birthday: birthday,
             addedBy: e.user_id,
             addedAt: new Date().toISOString(),
             nicknameModified: false,
             isSelfSet: false
-        }
-        if (DataManager.saveBirthdayData(this.birthdayData)) {
-            e.reply(`✅ 已成功为${userName}(${targetUserId})添加生日：${birthday}`)
-        } else {
-            e.reply('❌ 保存生日数据失败，请检查日志')
-        }
-        return true
+        };
+        this._saveBirthdayDataAndReply(e, this.birthdayData, `已成功为${nickname}(${targetUserId})添加生日：${birthday}`);
+        return true;
     }
 
     /** 移除生日（管理员） */
@@ -357,21 +317,20 @@ export class BirthdayReminder extends plugin {
 
     /** 设置我的生日 */
     async setMyBirthday(e) {
-        const config = ConfigManager.getConfig()
-        const allowSelfModify = config.allowSelfModify
-        const message = e.msg.trim()
-        const match = message.match(/^#设置生日\s+(\d{1,2}[-/.]\d{1,2})$/)
+        const config = ConfigManager.getConfig();
+        const allowSelfModify = config.allowSelfModify;
+        const message = e.msg.trim();
+        const match = message.match(/^#设置生日\s+(.+)$/);
         if (!match) {
-            e.reply('格式错误！正确格式：#设置生日 月-日')
-            return true
+            e.reply('格式错误！正确格式：#设置生日 3-2 或 #设置生日 3月2日');
+            return true;
         }
-        let birthday = match[1]
-        const validation = formatAndValidateBirthday(birthday)
-        if (!validation.valid) {
-            e.reply('生日格式错误！请使用 月-日 格式，例如：1-1 或 01-01')
-            return true
+        const birthdayRaw = match[1].trim();
+        const birthday = parseBirthdayString(birthdayRaw);
+        if (!birthday) {
+            e.reply('生日格式错误！请使用 月-日 或 3月2日 这样的格式~');
+            return true;
         }
-        birthday = validation.formatted
         const userId = e.user_id
         const userName = e.sender?.card || e.sender?.nickname || `用户${userId}`
         // 是否是首次设置
@@ -394,7 +353,7 @@ export class BirthdayReminder extends plugin {
         DataManager.saveBirthdayData(this.birthdayData)
         const botName = getBotName(e)
         let replymsg = [`✅ 已${isFirstSet ? '修改' : '设置'}你的生日：${birthday}`]
-        if (Bot.fl && !Bot.fl.has(Number(e.user_id))) {
+        if (!checkFriend(Number(e.user_id))) {
             replymsg.push(`\n您还未添加好友哦，添加后还可以在生日当天收到${botName}的私信祝福~`)
         }
         e.reply(replymsg)
@@ -443,73 +402,36 @@ export class BirthdayReminder extends plugin {
     /** 管理员修改生日 */
     async modifyBirthday(e) {
         if (!checkPermission(e)) {
-            e.reply('只有管理员或群主才能修改生日')
-            return true
+            return e.reply('只有管理员或群主才能修改生日');
         }
-        const message = e.msg.trim()
-        let targetUserId = e.at
-        let birthday
-        const atMatch = message.match(/^#修改生日\s*(\d{1,2}[-/.]\d{1,2})$/)
-        if (atMatch && e.at) {
-            birthday = atMatch[1]
-        } else {
-            const qqMatch = message.match(/^#修改生日\s+(\d+)\s+(\d{1,2}[-/.]\d{1,2})$/)
-            if (!qqMatch) {
-                e.reply('格式错误！正确格式：#修改生日 @某人 月-日 或 #修改生日 QQ号 月-日')
-                return true
-            }
-            targetUserId = qqMatch[1]
-            birthday = qqMatch[2]
+        if (!e.group_id) return e.reply('请在群聊中使用此命令');
+        const { targetUserId, birthday, errorMsg } = this._parseAdminBirthdayCommand(e);
+        if (errorMsg) return e.reply(errorMsg);
+        const { exists, nickname, errorMsg: userError } = await this._checkUserInGroup(e.group_id, targetUserId);
+        if (!exists) return e.reply(userError);
+        const oldRecord = this.birthdayData[targetUserId];
+        if (!oldRecord) {
+            return e.reply(`❌ ${nickname}(${targetUserId}) 还没有设置生日，请先使用 #添加生日 命令`);
         }
-        const validation = formatAndValidateBirthday(birthday)
-        if (!validation.valid) {
-            e.reply('生日格式错误！请使用 月-日 格式，例如：1-1 或 01-01')
-            return true
-        }
-        birthday = validation.formatted
-        if (!e.group_id) {
-            e.reply('请在群聊中使用此命令')
-            return true
-        }
-        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap()
-        if (!memberMap.has(Number(targetUserId))) {
-            e.reply(`本群不存在用户 ${targetUserId}`)
-            return true
-        }
-        const userName = memberMap.get(Number(targetUserId)).nickname
-        if (!this.birthdayData[targetUserId]) {
-            e.reply(`❌ ${userName}(${targetUserId}) 还没有设置生日，请使用 #添加生日 命令添加`)
-            return true
-        }
-        const oldBirthday = this.birthdayData[targetUserId].birthday
-        const oldName = this.birthdayData[targetUserId].name
+        const oldBirthday = oldRecord.birthday;
         this.birthdayData[targetUserId] = {
-            name: oldName,
+            ...oldRecord,
             birthday: birthday,
-            addedBy: this.birthdayData[targetUserId].addedBy,
-            addedAt: this.birthdayData[targetUserId].addedAt,
             modifiedBy: e.user_id,
             modifiedAt: new Date().toISOString(),
             oldBirthday: oldBirthday,
-            isModified: true,
-            isSelfSet: this.birthdayData[targetUserId].isSelfSet || false,
-            nicknameModified: this.birthdayData[targetUserId].nicknameModified || false
+            isModified: true
+        };
+        this._saveBirthdayDataAndReply(e, this.birthdayData, 
+            `已成功修改${nickname}(${targetUserId})的生日：${oldBirthday} → ${birthday}`
+        );
+        // 私聊通知（只有是好友才通知）
+        if ((targetUserId !== e.user_id) && !checkFriend(Number(e.user_id))) {
+            try {
+                await Bot.pickFriend(targetUserId).sendMsg(`管理员已修改你的生日：${oldBirthday} → ${birthday}`);
+            } catch (err) { logger.error(`通知失败: ${err}`); }
         }
-        if (DataManager.saveBirthdayData(this.birthdayData)) {
-            const daysLeft = getDaysToBirthday(birthday)
-            let replyMsg = `✅ 已成功修改${oldName}(${targetUserId})的生日：\n原生日：${oldBirthday} → 新生日：${birthday}\n`
-            if (daysLeft === 0) replyMsg += '🎉 今天就是TA的生日！生日快乐！'
-            else replyMsg += `距离TA的生日还有 ${daysLeft} 天`
-            e.reply(replyMsg)
-            if (targetUserId !== e.user_id) {
-                try {
-                    await Bot.pickFriend(targetUserId).sendMsg(`管理员已修改你的生日：${oldBirthday} → ${birthday}`)
-                } catch (err) { logger.error(`[Schedule生日提醒] 通知用户失败: ${err}`) }
-            }
-        } else {
-            e.reply('❌ 保存生日数据失败，请检查日志')
-        }
-        return true
+        return true;
     }
 
     /** 帮助 */
@@ -521,10 +443,10 @@ export class BirthdayReminder extends plugin {
             `[#生日列表] 查看本群即将到来的10个生日\n`,
             `[#生日完整列表] 查看本群所有生日\n`,
             `[#我的生日] 查看自己的生日信息\n`,
-            `[#生日修改昵称 昵称] 修改生日提醒的昵称\n`            
+            `[#生日修改昵称 昵称] 修改生日提醒的昵称\n`
         ]
         // 判断是否是管理员
-        if (e.isGroup && checkPermission(e)){
+        if (e.isGroup && checkPermission(e)) {
             msg.push(
                 `==以下为管理员命令==\n`,
                 `[#修改生日 QQ号 日期] 修改某人的生日\n`,
@@ -560,22 +482,7 @@ export class BirthdayReminder extends plugin {
 
     // 白名单列表
     async whitelistList(e) {
-        const config = ConfigManager.getConfig();
-        const whitelist = config.birthdayWhitelistGroups || [];
-        if (whitelist.length === 0) {
-            return e.reply("当前生日白名单为空，所有群（黑名单除外）都会收到推送。");
-        }
-        // 构建消息列表
-        const msgList = ["📋 生日白名单群列表："];
-        for (const gid of whitelist) {
-            const name = await this.getGroupName(gid);
-            msgList.push(`${name} (${gid})`);
-        }
-        msgList.push(`\n共 ${whitelist.length} 个群。`);
-        // 使用合并转发发送
-        const forwardMsg = await makeForwardMsg(e, msgList, "生日白名单");
-        await e.reply(forwardMsg);
-        return true;
+        return this._showList(e, 'white');
     }
 
     // 白名单添加
@@ -618,20 +525,7 @@ export class BirthdayReminder extends plugin {
 
     // 黑名单列表
     async blacklistList(e) {
-        const config = ConfigManager.getConfig();
-        const blacklist = config.birthdayBlacklistGroups || [];
-        if (blacklist.length === 0) {
-            return e.reply("当前生日黑名单为空，所有群（受白名单约束）都会收到推送。");
-        }
-        const msgList = ["🚫 生日黑名单群列表："];
-        for (const gid of blacklist) {
-            const name = await this.getGroupName(gid);
-            msgList.push(`${name} (${gid})`);
-        }
-        msgList.push(`共 ${blacklist.length} 个群。`);
-        const forwardMsg = await makeForwardMsg(e, msgList, "生日黑名单");
-        await e.reply(forwardMsg);
-        return true;
+        return this._showList(e, 'black');
     }
 
     // 黑名单添加
@@ -675,6 +569,85 @@ export class BirthdayReminder extends plugin {
             birthdayBlacklistGroups: []
         });
         return e.reply("✅ 已清空生日推送的白名单和黑名单，现在所有群都会收到推送。");
+    }
+    // ---------- 公共解析与校验 ----------
+    /**
+     * 从消息中提取目标QQ和生日字符串（用于管理员命令 #添加生日 / #修改生日）
+     * @param {Object} e 事件对象
+     * @returns {Object} { targetUserId, birthdayRaw, errorMsg }
+     */
+    _parseAdminBirthdayCommand(e) {
+        const msg = e.msg.trim();
+        let targetUserId = e.at;
+        let birthdayRaw = null;
+        if (targetUserId) {
+            // 有@的情况：格式 "#添加生日 3月2日" 或 "#修改生日 3-2"
+            const match = msg.match(/^#(添加|修改)生日\s+(.+)$/);
+            if (match) birthdayRaw = match[2].trim();
+        } else {
+            // 无@的情况：格式 "#添加生日 123456 3-2"
+            const match = msg.match(/^#(添加|修改)生日\s+(\d+)\s+(.+)$/);
+            if (match) {
+                targetUserId = match[2];
+                birthdayRaw = match[3].trim();
+            }
+        }
+        if (!targetUserId || !birthdayRaw) {
+            return { errorMsg: '格式错误！正确格式：#添加生日 @某人 3月2日 或 #添加生日 QQ号 3-2' };
+        }
+        const birthday = parseBirthdayString(birthdayRaw);
+        if (!birthday) {
+            return { errorMsg: '生日格式错误！请使用 月-日 或 3月2日 这样的格式' };
+        }
+        return { targetUserId, birthdayRaw, birthday, errorMsg: null };
+    }
+    /**
+     * 检查目标用户是否在当前群内，并返回其昵称
+     * @param {string} groupId
+     * @param {string} userId
+     * @returns {Promise<{ exists: boolean, nickname: string, errorMsg: string }>}
+     */
+    async _checkUserInGroup(groupId, userId) {
+        const group = Bot.pickGroup(groupId);
+        if (!group) return { exists: false, nickname: '', errorMsg: '无法获取群信息' };
+        const memberMap = await group.getMemberMap();
+        const userNum = Number(userId);
+        if (!memberMap.has(userNum)) {
+            return { exists: false, nickname: '', errorMsg: `本群不存在用户 ${userId}` };
+        }
+        return { exists: true, nickname: memberMap.get(userNum).nickname, errorMsg: null };
+    }
+    /**
+     * 保存生日数据并返回标准回复
+     * @param {Object} newData 新数据对象
+     * @param {string} successMsg 成功消息
+     * @returns {boolean} 是否保存成功
+     */
+    _saveBirthdayDataAndReply(e, newData, successMsg) {
+        if (DataManager.saveBirthdayData(newData)) {
+            e.reply(`✅ ${successMsg}`);
+            return true;
+        } else {
+            e.reply('❌ 保存生日数据失败，请检查日志');
+            return false;
+        }
+    }
+    async _showList(e, type) {
+        const config = ConfigManager.getConfig();
+        const key = type === 'white' ? 'birthdayWhitelistGroups' : 'birthdayBlacklistGroups';
+        const list = config[key] || [];
+        const title = type === 'white' ? '📋 生日白名单群列表' : '🚫 生日黑名单群列表';
+        const emptyMsg = type === 'white' ? '白名单为空，所有群（黑名单除外）都会收到推送。' : '黑名单为空，所有群（受白名单约束）都会收到推送。';
+        if (list.length === 0) return e.reply(emptyMsg);
+        const msgList = [title];
+        for (const gid of list) {
+            const name = await this.getGroupName(gid);
+            msgList.push(`${name} (${gid})`);
+        }
+        msgList.push(`共 ${list.length} 个群。`);
+        const forwardMsg = await makeForwardMsg(e, msgList, title);
+        await e.reply(forwardMsg);
+        return true;
     }
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))

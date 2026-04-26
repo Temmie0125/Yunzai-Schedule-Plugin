@@ -7,8 +7,8 @@
     <style>
         /* 与课程表模板一致的字体和基础样式 */
         @font-face {
-            font-family: 'Unifont';
-            src: url('../fonts/unifont.otf') format('opentype');
+            font-family: 'ScheduleFont';
+            src: url('{{_fontInlineUrl}}') format('{{_fontFormat}}');
             font-weight: normal;
             font-style: normal;
         }
@@ -18,7 +18,7 @@
             box-sizing: border-box;
         }
         body {
-            font-family: 'Unifont', 'Microsoft YaHei', sans-serif;
+            font-family: 'ScheduleFont', 'Unifont', 'Microsoft YaHei', sans-serif;
             background: #f0f2f5;
             display: flex;
             justify-content: center;

@@ -1,6 +1,14 @@
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { calculateCurrentWeek, calculateWeekFromDate, parseDateInput, calculateDateFromWeekAndDay } from '../utils/timeUtils.js';
+import {
+    calculateCurrentWeek,
+    calculateWeekFromDate,
+    parseDateInput,
+    calculateDateFromWeekAndDay,
+    parseWeekday,
+    getDateByRelativeWeek,
+    parseChineseDateToMD
+} from '../utils/timeUtils.js';
 import { generateUserScheduleImage, generateUserInfoImage } from '../components/Renderer.js'
 
 export class ScheduleQuery extends plugin {
@@ -252,7 +260,14 @@ export class ScheduleQuery extends plugin {
         }
         // 2. 尝试匹配日期格式
         const dateInput = msg.replace(/^#(?:课表查询|schedule query)\s*/, '');
-        const date = parseDateInput(dateInput, schedule.semesterStart);
+        let date = parseDateInput(dateInput, schedule.semesterStart);
+        // 2.5 如果数字格式失败，尝试中文自然语言日期（如 10月1日、十一月十一日）
+        if (!date) {
+            const chineseMD = parseChineseDateToMD(dateInput);
+            if (chineseMD) {
+                date = parseDateInput(chineseMD, schedule.semesterStart);
+            }
+        }
         if (date) {
             const result = await DataManager.getCoursesForDate(userId, date);
             if (result.error) {
@@ -275,14 +290,69 @@ export class ScheduleQuery extends plugin {
             }
             return true;
         }
+        // 尝试匹配自然语言周数
+        const naturalDate = this.parseNaturalLanguageQuery(param, schedule.semesterStart);
+        if (naturalDate) {
+            const result = await DataManager.getCoursesForDate(userId, naturalDate);
+            if (result.error) {
+                await this.reply(result.error);
+                return true;
+            }
+            const userData = {
+                nickname: result.displayName,
+                week: result.week,
+                day: result.day,
+                signature: schedule?.signature || '',
+                courses: result.courses
+            };
+            const img = await generateUserScheduleImage(userData, naturalDate, { e: this.e });
+            if (img) {
+                await this.reply(segment.image(img));
+            } else {
+                const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+                await this.reply(replyMsg);
+            }
+            return true;
+        }
         // 3. 无法解析，给出提示
         const currentWeek = calculateCurrentWeek(schedule.semesterStart);
         await this.reply(
-            `无法识别的查询格式。\n请使用以下格式：\n` +
+            `无法识别的查询格式。请使用以下格式：\n` +
             `1. #课表查询 周数 星期（如 #课表查询 ${currentWeek} 1）\n` +
-            `2. #课表查询 月-日（如 #课表查询 10-1，将自动识别学期年份）`
+            `2. #课表查询 月-日 或 月/日（如 #课表查询 10-1）\n` +
+            `3. #课表查询 中文日期（如 #课表查询 10月1日 或 十一月十一）\n` +
+            `4. #课表查询 本周/上周/下周 + 星期几（如 #课表查询 本周三）`
         );
         return true;
+    }
+    /**
+      * 解析自然语言课表查询参数
+      * @param {string} param - 用户输入的参数部分（如 "本周三"、"上周五"、"周一"）
+      * @param {string} semesterStart - 学期开始日期 YYYY-MM-DD (仅用于辅助，非必需)
+      * @returns {Date|null} 成功返回日期对象，失败返回 null
+    */
+    parseNaturalLanguageQuery(param, semesterStart) {
+        if (!param) return null;
+        // 1. 判断相对周偏移
+        let weekOffset = 0; // 默认本周
+        let remaining = param;
+        if (param.startsWith('上')) {
+            weekOffset = -1;
+            remaining = param.slice(1);
+        } else if (param.startsWith('下')) {
+            weekOffset = 1;
+            remaining = param.slice(1);
+        } else if (param.startsWith('本')) {
+            weekOffset = 0;
+            remaining = param.slice(1);
+        }
+        // 2. 解析星期几
+        const weekday = parseWeekday(remaining);
+        if (!weekday) return null;
+
+        // 3. 根据相对周和星期几计算具体日期
+        const targetDate = getDateByRelativeWeek(weekOffset, weekday, new Date());
+        return targetDate;
     }
 }
 export default ScheduleQuery
