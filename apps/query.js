@@ -317,7 +317,7 @@ export class ScheduleQuery extends plugin {
         // 3. 无法解析，给出提示
         const currentWeek = calculateCurrentWeek(schedule.semesterStart);
         await this.reply(
-            `无法识别的查询格式。请使用以下格式：\n` +
+            `日期不存在或者格式有误~ 请使用以下格式：\n` +
             `1. #课表查询 周数 星期（如 #课表查询 ${currentWeek} 1）\n` +
             `2. #课表查询 月-日 或 月/日（如 #课表查询 10-1）\n` +
             `3. #课表查询 中文日期（如 #课表查询 10月1日 或 十一月十一）\n` +
