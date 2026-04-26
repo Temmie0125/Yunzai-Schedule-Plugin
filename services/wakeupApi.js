@@ -1,9 +1,9 @@
 // services/wakeupApi.js
 import https from 'node:https'
 import http from 'node:http'
-import { ConfigManager } from '../components/configManager.js'
+import { ConfigManager } from '../components/ConfigManager.js'
 
-/**
+/** 
  * 从WakeUp API获取课表数据（原直连方式，现在已不可用，仅作为保留）
  * @param {string} code - 分享口令
  * @returns {Promise<object>} 解析后的课表数据
