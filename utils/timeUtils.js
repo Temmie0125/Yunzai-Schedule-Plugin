@@ -184,7 +184,7 @@ export function getCurrentDate() {
  * 获取当前日期YYYY-MM-DD
  * @returns YYYY-MM-DD
  */
-export function getCurrentFullDate(){
+export function getCurrentFullDate() {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -196,34 +196,47 @@ export function getCurrentFullDate(){
  * @param {String} birthday 
  * @returns {String} MM-DD
  */
+/**
+ * 验证并格式化生日（MM-DD）
+ * @param {string} birthday 输入字符串，如 "2-30"
+ * @returns {{ valid: boolean, formatted: string|null, errorCode?: string }}
+ * errorCode: 'invalid_format' | 'nonexistent_date' | 'overflow' | null
+ */
 export function formatAndValidateBirthday(birthday) {
     const regex = /^(\d{1,2})[-/.](\d{1,2})$/
     const match = birthday.match(regex)
-    if (!match) return { valid: false, formatted: null }
+    if (!match) return { valid: false, formatted: null, errorCode: 'invalid_format' }
     let month = parseInt(match[1], 10)
     let day = parseInt(match[2], 10)
-    if (month < 1 || month > 12 || day < 1 || day > 31) return { valid: false, formatted: null }
+    // 月份/日期超出范围（1-12, 1-31）
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+        return { valid: false, formatted: null, errorCode: 'overflow' }
+    }
+    // 使用日期对象验证真实存在性（如 2月30日会被校正为3月2日）
+    const testDate = new Date(2000, month - 1, day)  // 年份用2000足够，闰年不影响月日校验
+    if (testDate.getMonth() + 1 !== month || testDate.getDate() !== day) {
+        return { valid: false, formatted: null, errorCode: 'nonexistent_date' }
+    }
     const monthStr = String(month).padStart(2, '0')
     const dayStr = String(day).padStart(2, '0')
-    // 验证日期有效性
-    const date = new Date(2000, month - 1, day)
-    if (date.getMonth() + 1 !== month || date.getDate() !== day) return { valid: false, formatted: null }
-
-    return { valid: true, formatted: `${monthStr}-${dayStr}` }
+    return { valid: true, formatted: `${monthStr}-${dayStr}`, errorCode: null }
 }
 /**
- * 计算距离生日的天数
- * @param {*} birthday 
- * @returns Days Remain
+ * 获取距离下一个生日庆祝日的天数（从 today 开始计算）
+ * @param {string} birthdayMMDD 格式 "MM-DD"
+ * @returns {number} 剩余天数，0 表示今天就是庆祝日
  */
-export function getDaysToBirthday(birthday) {
+export function getDaysToBirthday(birthdayMMDD) {
     const today = new Date()
-    const [month, day] = birthday.split('-').map(Number)
-    const thisYearBirthday = new Date(today.getFullYear(), month - 1, day)
-    const target = today > thisYearBirthday
-        ? new Date(today.getFullYear() + 1, month - 1, day)
-        : thisYearBirthday
-    return Math.ceil((target - today) / (1000 * 60 * 60 * 24))
+    today.setHours(0, 0, 0, 0)
+    const thisYearCeleb = getCelebrationDateOfYear(today.getFullYear(), birthdayMMDD)
+    // 如果今年的庆祝日已经过了（或者今天刚好是庆祝日但 today > thisYearCeleb 不会发生，因为今天等于庆祝日时差为0）
+    if (today > thisYearCeleb) {
+        const nextYearCeleb = getCelebrationDateOfYear(today.getFullYear() + 1, birthdayMMDD)
+        return Math.ceil((nextYearCeleb - today) / (1000 * 60 * 60 * 24))
+    } else {
+        return Math.ceil((thisYearCeleb - today) / (1000 * 60 * 60 * 24))
+    }
 }
 
 /**
@@ -253,21 +266,28 @@ export function parseChineseDateToMD(input) {
 }
 
 /**
- * 通用生日字符串解析（数字分隔符 + 中文自然语言）
- * @param {string} birthdayStr 用户输入的生日部分
- * @returns {string|null} 标准 MM-DD 格式，失败返回 null
+ * 通用生日字符串解析（数字分隔符 + 中文自然语言）—— 返回详细错误
+ * @param {string} birthdayStr
+ * @returns {{ valid: boolean, formatted: string|null, errorCode: string|null }}
  */
 export function parseBirthdayString(birthdayStr) {
-    // 优先尝试原始数字格式（MM-DD, MM/DD, MM.DD）
-    const validation = formatAndValidateBirthday(birthdayStr);
-    if (validation.valid) return validation.formatted;
-    // 再尝试中文自然语言
-    const chineseResult = parseChineseDateToMD(birthdayStr);
-    if (chineseResult) {
-        const validation2 = formatAndValidateBirthday(chineseResult);
-        if (validation2.valid) return validation2.formatted;
+    // 尝试标准数字格式 (MM-DD, MM/DD, MM.DD)
+    const numResult = formatAndValidateBirthday(birthdayStr)
+    if (numResult.valid) return numResult
+    if (numResult.errorCode === 'nonexistent_date' || numResult.errorCode === 'overflow') {
+        return numResult   // 日期不存在或超出范围，直接返回
     }
-    return null;
+    // 尝试中文自然语言
+    const chineseResult = parseChineseDateToMD(birthdayStr)
+    if (chineseResult) {
+        const chk = formatAndValidateBirthday(chineseResult)
+        if (chk.valid) return chk
+        if (chk.errorCode === 'nonexistent_date' || chk.errorCode === 'overflow') {
+            return chk
+        }
+    }
+    // 最终格式错误
+    return { valid: false, formatted: null, errorCode: 'invalid_format' }
 }
 /**
  * 解析星期几的自然语言表述
@@ -325,4 +345,48 @@ export function getDateByRelativeWeek(weekOffset, weekday, baseDate = new Date()
     const target = new Date(monday);
     target.setDate(monday.getDate() + weekOffset * 7 + (weekday - 1));
     return target;
+}
+/**
+ * 判断是否为闰年
+ * @param {number} year
+ * @returns {boolean}
+ */
+export function isLeapYear(year) {
+    return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0)
+}
+/**
+ * 获取某个年份中，某个 MM-DD 生日对应的实际庆祝日期（处理 2月29日平年映射到 2月28日）
+ * @param {number} year 年份
+ * @param {number} month 月份 (1-12)
+ * @param {number} day 日期 (1-31)
+ * @returns {{ month: number, day: number }} 实际庆祝的月+日
+ */
+export function getActualCelebrationDate(year, month, day) {
+    if (month === 2 && day === 29 && !isLeapYear(year)) {
+        return { month: 2, day: 28 }
+    }
+    return { month, day }
+}
+/**
+ * 获取给定年份中，某人生日的具体 Date 对象（按实际庆祝日期计算）
+ * @param {number} year
+ * @param {string} birthdayMMDD 格式 "MM-DD"
+ * @returns {Date} 该年对应的庆祝日期（时间部分为 00:00:00）
+ */
+export function getCelebrationDateOfYear(year, birthdayMMDD) {
+    const [month, day] = birthdayMMDD.split('-').map(Number)
+    const { month: realMonth, day: realDay } = getActualCelebrationDate(year, month, day)
+    return new Date(year, realMonth - 1, realDay, 0, 0, 0)
+}
+/**
+ * 判断今天是否为某个人的实际庆祝生日
+ * @param {string} birthdayMMDD 用户存储的生日（可能为 "02-29"）
+ * @returns {boolean}
+ */
+export function isTodayCelebration(birthdayMMDD) {
+    const today = new Date()
+    const year = today.getFullYear()
+    const [storeMonth, storeDay] = birthdayMMDD.split('-').map(Number)
+    const { month: realMonth, day: realDay } = getActualCelebrationDate(year, storeMonth, storeDay)
+    return today.getMonth() + 1 === realMonth && today.getDate() === realDay
 }

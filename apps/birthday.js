@@ -5,7 +5,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
 import { makeForwardMsg, checkPermission, getBotName, checkFriend } from '../components/common.js'
-import { getCurrentDate, getDaysToBirthday, parseBirthdayString } from '../utils/timeUtils.js';
+import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
 const GLOBAL_BIRTHDAY_CRON = '__birthdayPushCron'
@@ -130,7 +130,8 @@ export class BirthdayReminder extends plugin {
         logger.mark(`[Schedule生日提醒] 检查生日，今天是: ${today}`)
         const todayBirthdayUsers = []
         for (const [userId, data] of Object.entries(this.birthdayData)) {
-            if (data.birthday === today) {
+            // 使用新的适配函数判断今天是否是该用户的实际庆祝日
+            if (isTodayCelebration(data.birthday)) {
                 todayBirthdayUsers.push({ userId, name: data.name })
             }
         }
@@ -326,11 +327,18 @@ export class BirthdayReminder extends plugin {
             return true;
         }
         const birthdayRaw = match[1].trim();
-        const birthday = parseBirthdayString(birthdayRaw);
-        if (!birthday) {
-            e.reply('生日格式错误！请使用 月-日 或 3月2日 这样的格式~');
+        const parseResult = parseBirthdayString(birthdayRaw);
+        if (!parseResult.valid) {
+            const errorMsgMap = {
+                'invalid_format': '生日格式错误！请使用“月-日”或“3月2日”这种格式~',
+                'overflow': '月份应在1-12之间，日期应在1-31之间~',
+                'nonexistent_date': `“${birthdayRaw}”不是一个有效的日期，请检查后重新设置~`
+            };
+            const replyMsg = errorMsgMap[parseResult.errorCode] || '生日格式错误，请使用正确的月-日格式！';
+            e.reply(replyMsg);
             return true;
         }
+        const birthday = parseResult.formatted;
         const userId = e.user_id
         const userName = e.sender?.card || e.sender?.nickname || `用户${userId}`
         // 是否是首次设置
@@ -422,7 +430,7 @@ export class BirthdayReminder extends plugin {
             oldBirthday: oldBirthday,
             isModified: true
         };
-        this._saveBirthdayDataAndReply(e, this.birthdayData, 
+        this._saveBirthdayDataAndReply(e, this.birthdayData,
             `已成功修改${nickname}(${targetUserId})的生日：${oldBirthday} → ${birthday}`
         );
         // 私聊通知（只有是好友才通知）
@@ -574,7 +582,7 @@ export class BirthdayReminder extends plugin {
     /**
      * 从消息中提取目标QQ和生日字符串（用于管理员命令 #添加生日 / #修改生日）
      * @param {Object} e 事件对象
-     * @returns {Object} { targetUserId, birthdayRaw, errorMsg }
+     * @returns {Object} { targetUserId, birthday, errorMsg }
      */
     _parseAdminBirthdayCommand(e) {
         const msg = e.msg.trim();
@@ -595,11 +603,25 @@ export class BirthdayReminder extends plugin {
         if (!targetUserId || !birthdayRaw) {
             return { errorMsg: '格式错误！正确格式：#添加生日 @某人 3月2日 或 #添加生日 QQ号 3-2' };
         }
-        const birthday = parseBirthdayString(birthdayRaw);
-        if (!birthday) {
-            return { errorMsg: '生日格式错误！请使用 月-日 或 3月2日 这样的格式' };
+        const parseResult = parseBirthdayString(birthdayRaw);
+        if (!parseResult.valid) {
+            let errorMsg;
+            switch (parseResult.errorCode) {
+                case 'invalid_format':
+                    errorMsg = '生日格式错误！请使用 月-日 或 3月2日 这样的格式~';
+                    break;
+                case 'overflow':
+                    errorMsg = '月份应在1-12之间，日期应在1-31之间~';
+                    break;
+                case 'nonexistent_date':
+                    errorMsg = `“${birthdayRaw}”不是真实存在的日期，请重新输入有效日期。`;
+                    break;
+                default:
+                    errorMsg = '生日格式错误！';
+            }
+            return { errorMsg, targetUserId: null, birthday: null };
         }
-        return { targetUserId, birthdayRaw, birthday, errorMsg: null };
+        return { targetUserId, birthday: parseResult.formatted, errorMsg: null };
     }
     /**
      * 检查目标用户是否在当前群内，并返回其昵称
