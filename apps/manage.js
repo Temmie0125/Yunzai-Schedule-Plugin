@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getBotName, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
-import { importScheduleFromCode, importScheduleFromStarlinkCode, importScheduleFromJsonData } from '../services/scheduleImporter.js'
+import { importScheduleFromCode, importScheduleFromStarlinkCode, importScheduleFromJsonData, importScheduleFromIcsData } from '../services/scheduleImporter.js'
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -350,7 +350,7 @@ export class ScheduleManage extends plugin {
             return await this.waitForConfirm('导入', 'confirmImport');
         }
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的JSON文件（支持本插件原生课表JSON或拾光课程表导出文件）", false, { at: true });
+        await this.reply("请发送你要导入的课表文件（支持本插件原生课表JSON、拾光课程表导出JSON或者ics文件）", false, { at: true });
         return true;
     }
     async waitingForImportFile() {
@@ -359,18 +359,20 @@ export class ScheduleManage extends plugin {
         const botName = getBotName(e);
         const fileInfo = getFileInfo(e);
         if (!fileInfo) {
-            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 文件`);
+            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件~`);
             return false;
         }
         const { fileName, fileSize, fileId, busid } = fileInfo;
         const MAX_SIZE = 2 * 1024 * 1024;
-        if (!fileName.toLowerCase().endsWith('.json')) {
-            await this.reply(`${botName}暂时只认识 JSON 格式的文件哦喵>_<，请发送扩展名为 .json 的文件~`);
+        // 获取文件扩展名
+        const ext = path.extname(fileName).toLowerCase();
+        if (ext !== '.json' && ext !== '.ics') {
+            await this.reply(`${botName}暂时只认识 JSON 和 ICS 格式的文件哦喵>_<`);
             return false;
         }
         if (fileSize > MAX_SIZE) {
             const sizeKB = (fileSize / 1024).toFixed(2);
-            await this.reply(`文件太大了(${sizeKB}KB)，${botName}吃不下惹QAQ，请确保 JSON 文件小于 2MB`);
+            await this.reply(`文件太大了(${sizeKB}KB)，${botName}吃不下惹QAQ，请确保发送的文件小于 2MB~`);
             return false;
         }
         let fileContent;
@@ -385,14 +387,19 @@ export class ScheduleManage extends plugin {
             await this.reply(`${botName}无法读取文件内容(｡•﹃•｡)，请确保文件有效`);
             return false;
         }
-        let jsonData;
-        try {
-            jsonData = JSON.parse(fileContent);
-        } catch (err) {
-            await this.reply(`文件内容似乎不是合法的 JSON 格式哦喵(｡•﹃•｡)`);
-            return false;
+        let result;
+        if (ext === '.json') {
+            let jsonData;
+            try {
+                jsonData = JSON.parse(fileContent);
+            } catch (err) {
+                await this.reply('文件内容不是合法的 JSON 格式，请检查后重试~');
+                return false;
+            }
+            result = await importScheduleFromJsonData(e.user_id, jsonData, e);
+        } else { // .ics
+            result = await importScheduleFromIcsData(e.user_id, fileContent, e);
         }
-        const result = await importScheduleFromJsonData(e.user_id, jsonData, e);
         await this.reply(result.message);
         return true;
     }
@@ -444,8 +451,10 @@ export class ScheduleManage extends plugin {
             // 尝试读取本地文件（私聊可能返回本地路径）
             if (data.file && typeof data.file === 'string') {
                 const filePath = data.file;
-                if (path.extname(filePath).toLowerCase() !== '.json') {
-                    logger.warn(`[课表导入] 文件扩展名不是 .json: ${filePath}`);
+                // 获取文件扩展名
+                const ext = path.extname(filePath).toLowerCase();
+                if (!ext || (ext !== '.json' && ext !== '.ics')) {
+                    logger.warn(`[课表导入] 文件扩展名不是 .json或 .ics: ${filePath}`);
                     return null;
                 }
                 if (fs.existsSync(filePath)) {
