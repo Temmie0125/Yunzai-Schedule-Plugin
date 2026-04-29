@@ -25,7 +25,7 @@ const chineseNumberMap = (() => {
     return map;
 })();
 // 获取给定日期所在周的周一（周一为一周开始，周日为7）
-function getMondayOfSameWeek(date) {
+export function getMondayOfSameWeek(date) {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
     const day = d.getDay(); // 0=周日, 1=周一, ..., 6=周六

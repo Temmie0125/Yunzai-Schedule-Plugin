@@ -3,7 +3,8 @@ import { fetchScheduleFromAPI } from './wakeupApi.js'
 import { fetchStarlinkSchedule } from './starlinkApi.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
-import { getCurrentFullDate } from '../utils/timeUtils.js'
+import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate } from '../utils/timeUtils.js'
+import ICalExpander from 'ical-expander';
 /**
  * 通用：保存课表并保留用户原有昵称/签名
  */
@@ -32,16 +33,16 @@ function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabe
   let replyMsg = `${sourceLabel}课表导入成功！\n`;
   const shouldShowTableName = showTableName && scheduleData.tableName && (!inGroup || showTableName);
   if (shouldShowTableName) {
-      replyMsg += `📚 课表名称：${scheduleData.tableName}\n`;
+    replyMsg += `📚 课表名称：${scheduleData.tableName}\n`;
   }
   if (scheduleData.semesterStart) {
-      replyMsg += `📅 学期开始：${scheduleData.semesterStart}\n`;
+    replyMsg += `📅 学期开始：${scheduleData.semesterStart}\n`;
   }
   replyMsg += `📖 课程数量：${scheduleData.courses.length} 门\n`;
   replyMsg += `👤 昵称：${nickname}`;
   if (signature) replyMsg += `\n💬 签名：${signature}`;
   if (nickname === String(userId)) {
-      replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`;
+    replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`;
   }
   return replyMsg;
 }
@@ -77,6 +78,15 @@ async function handleAutoRecall(replyMsg, event, autoRecallCode, botName) {
  * @returns {Promise<{ success: boolean, message: string }>}
  */
 export async function importScheduleFromCode(userId, code, event) {
+  // 直接返回不支持提示
+  const message = `❌ WakeUp 课程表已停止支持口令导入！\n` +
+    `WakeUp 近期加强了接口限制，本插件无法继续通过口令导入。\n` +
+    `建议您尽快迁移至其他课表软件（如拾光课表、星链课表）。\n` +
+    `✅ 您可以使用以下方式继续导入课程表：\n` +
+    `• 发送 #导入课表 并上传课表文件（支持拾光导出JSON格式 / ICS 日历文件）\n` +
+    `• 使用星链课表分享口令（直接发送「星链课表」分享消息）\n\n` +
+    `迁移教程请查看 #课表帮助 或联系管理员。`;
+  return { success: false, message };
   if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code)) {
     return { success: false, message: "口令格式不正确，请确保是WakeUp课程表的正确分享口令" };
   }
@@ -223,27 +233,133 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
  * @returns {Promise<{ success: boolean, message: string }>}
  */
 export async function importScheduleFromStarlinkCode(userId, code, event) {
-    if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code) || code.length < 4) {
-        return { success: false, message: '星链分享码格式不正确，请检查后重试' };
-    }
-    try {
-        const config = ConfigManager.getConfig();
-        const bot = event.bot || Bot;
-        const botName = config.botName || bot.nickname || 'Bot';
-        const autoRecallCode = config.autoRecallCode ?? false;
+  if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code) || code.length < 4) {
+    return { success: false, message: '星链分享码格式不正确，请检查后重试' };
+  }
+  try {
+    const config = ConfigManager.getConfig();
+    const bot = event.bot || Bot;
+    const botName = config.botName || bot.nickname || 'Bot';
+    const autoRecallCode = config.autoRecallCode ?? false;
 
-        const scheduleData = await fetchStarlinkSchedule(code);
-        if (!scheduleData || !scheduleData.courses.length) {
-            return { success: false, message: '获取星链课表失败，请检查分享码是否有效' };
+    const scheduleData = await fetchStarlinkSchedule(code);
+    if (!scheduleData || !scheduleData.courses.length) {
+      return { success: false, message: '获取星链课表失败，请检查分享码是否有效' };
+    }
+
+    const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
+    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "✨ 星链", true, !!event.group);
+    replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
+
+    return { success: true, message: replyMsg };
+  } catch (err) {
+    logger.error(`[星链导入] 失败: ${err}`);
+    return { success: false, message: `导入失败：${err.message}` };
+  }
+}
+/**
+ * 从 ICS 文本内容导入课表
+ * @param {string|number} userId
+ * @param {string} icsText
+ * @param {object} event
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function importScheduleFromIcsData(userId, icsText, event) {
+  try {
+    const expander = new ICalExpander({ ics: icsText, maxIterations: 5000 });
+    const all = expander.between(new Date(2000, 0, 1), new Date(2100, 0, 1));
+    const occurrences = [...(all.events || []), ...(all.occurrences || [])];
+
+    if (occurrences.length === 0) {
+      return { success: false, message: '未在文件中找到任何课程事件' };
+    }
+
+    // 计算学期开始（最早事件所在周的周一），先统一转换日期
+    const dates = occurrences.map(o => {
+      // 转换 startDate 为 JS Date
+      let sd = o.startDate;
+      if (typeof sd.toJSDate === 'function') sd = sd.toJSDate();
+      return sd;
+    });
+    const earliest = new Date(Math.min(...dates.map(d => d.getTime())));
+    const semesterStartDate = getMondayOfSameWeek(earliest);
+    const semesterStart = [
+      semesterStartDate.getFullYear(),
+      String(semesterStartDate.getMonth() + 1).padStart(2, '0'),
+      String(semesterStartDate.getDate()).padStart(2, '0')
+    ].join('-');
+
+    const courseMap = new Map();
+    for (const occ of occurrences) {
+      // 转换日期
+      let startDate = occ.startDate;
+      let endDate = occ.endDate;
+      if (typeof startDate.toJSDate === 'function') startDate = startDate.toJSDate();
+      if (typeof endDate.toJSDate === 'function') endDate = endDate.toJSDate();
+
+      const item = occ.item;
+      const summary = item.summary || '未知课程';
+
+      let location = '';
+      let teacher = '';
+      const rawLocation = (item.location || '').trim();
+      if (rawLocation) {
+        const parts = rawLocation.split(/\s+/);
+        if (parts.length >= 2) {
+          teacher = parts.pop();
+          location = parts.join(' ');
+        } else {
+          location = rawLocation;
         }
+      }
 
-        const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
-        let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "✨ 星链", true, !!event.group);
-        replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
+      const weekday = startDate.getDay() || 7;
+      const startTime = [startDate.getHours(), startDate.getMinutes()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+      const endTime = [endDate.getHours(), endDate.getMinutes()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+      const week = calculateWeekFromDate(semesterStart, startDate);
+      if (week === null) continue;
 
-        return { success: true, message: replyMsg };
-    } catch (err) {
-        logger.error(`[星链导入] 失败: ${err}`);
-        return { success: false, message: `导入失败：${err.message}` };
+      const key = `${summary}|${weekday}|${startTime}|${endTime}`;
+      if (!courseMap.has(key)) {
+        courseMap.set(key, {
+          name: summary,
+          day: weekday,
+          startTime,
+          endTime,
+          weeks: new Set(),
+          location,
+          teacher
+        });
+      }
+      const course = courseMap.get(key);
+      course.weeks.add(week);
+      if (!course.location && location) course.location = location;
+      if (!course.teacher && teacher) course.teacher = teacher;
     }
+
+    const courses = Array.from(courseMap.values()).map(c => ({
+      ...c,
+      weeks: Array.from(c.weeks).sort((a, b) => a - b)
+    }));
+
+    if (courses.length === 0) {
+      return { success: false, message: '未能解析出有效的课程数据' };
+    }
+
+    const scheduleData = {
+      tableName: 'ICS 课程表',
+      semesterStart,
+      courses,
+      updateTime: new Date().toISOString()
+    };
+
+    const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
+    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, '📅 ICS', true, !!event.group);
+    return { success: true, message: replyMsg };
+  } catch (err) {
+    logger.error(`[ICS导入] ${err}`);
+    return { success: false, message: `导入 ICS 文件失败：${err.message}` };
+  }
 }

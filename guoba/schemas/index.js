@@ -55,7 +55,7 @@ export const schemas = [
         componentProps: {
             placeholder: "请输入日期，格式 YYYY-MM-DD"
         },
-        defaultValue: "2024-02-26",
+        defaultValue: "2026-03-02",
         rules: [
             { required: true, message: "请填写默认学期开始日期" }
         ],
@@ -65,6 +65,7 @@ export const schemas = [
         component: 'SOFT_GROUP_BEGIN',
         label: '课表模块设置'
     },
+    /*
     {
         component: 'Divider',
         label: 'WakeUP反代设置'
@@ -83,6 +84,7 @@ export const schemas = [
         placeholder: "请输入Token",
         bottomHelpMessage: "请输入用于访问课表服务的Token。可联系插件作者获取。"
     },
+    */
     {
         component: 'Divider',
         label: '自动任务设置'

@@ -47,7 +47,7 @@ export class ScheduleUpdate extends plugin {
             await this.reply('插件目录不是 git 仓库，无法通过 git 更新，请手动更新')
             return false
         }
-        
+
 
         const isForce = this.e.msg.includes('强制')
 
@@ -64,50 +64,123 @@ export class ScheduleUpdate extends plugin {
     }
 
     async runUpdate(isForce) {
-        await this.ensureGitignore();   // <--- 新增
-        const branch = await this.getCurrentBranch()
-        const repoPath = PLUGIN_PATH
+        await this.ensureGitignore();
 
-        let command
+        // 1. 保存旧版 package.json
+        const oldPkg = await this.getPackageJsonContent();
+
+        const branch = await this.getCurrentBranch();
+        const repoPath = PLUGIN_PATH;
+
+        let command;
         if (isForce) {
             command = [
                 `git -C "${repoPath}" fetch --all --prune`,
                 `git -C "${repoPath}" reset --hard origin/${branch}`,
                 `git -C "${repoPath}" clean -fd`
-            ].join(' && ')
-            await this.reply('开始强制更新，将丢弃所有本地修改...')
+            ].join(' && ');
+            await this.reply('开始强制更新，将丢弃所有本地修改...');
         } else {
-            command = `git -C "${repoPath}" pull --no-rebase`
-            await this.reply('开始更新课程表插件...')
+            command = `git -C "${repoPath}" pull --no-rebase`;
+            await this.reply('开始更新课程表插件...');
         }
 
-        const oldCommit = await this.getCommitId()
-        const { error, stdout, stderr } = await this.execAsync(command)
+        const oldCommit = await this.getCommitId();
+        const { error, stdout, stderr } = await this.execAsync(command);
 
         if (error) {
-            logger.error(`git 命令执行失败: ${error}`)
-            await this.handleGitError(error, stdout, stderr)
-            return false
+            logger.error(`git 命令执行失败: ${error}`);
+            await this.handleGitError(error, stdout, stderr);
+            return false;
         }
 
-        // 检查是否已是最新
         if (/(Already up[ -]to[ -]date|已经是最新的)/.test(stdout)) {
-            await this.reply('课程表插件已经是最新版本')
-            return true
+            await this.reply('课程表插件已经是最新版本');
+            return true;
         }
 
-        // 获取更新日志
-        const logs = await this.getUpdateLogs(oldCommit)
+        // 2. 获取新版 package.json
+        const newPkg = await this.getPackageJsonContent();
+        const depsChanged = this.isDependenciesChanged(oldPkg, newPkg);
+
+        // 3. 获取更新日志
+        const logs = await this.getUpdateLogs(oldCommit);
         if (logs && logs.length > 0) {
-            await this.reply(await common.makeForwardMsg(this.e, logs, '课程表插件更新日志'))
+            await this.reply(await common.makeForwardMsg(this.e, logs, '课程表插件更新日志'));
         } else {
-            await this.reply('课程表插件更新完成')
+            await this.reply('课程表插件更新完成');
         }
 
-        // 询问是否重启
-        await this.reply('更新完成，是否现在重启 Yunzai 以应用更新？(回复 y/n)')
-        this.setContext('waitRestart')
-        return true
+        // 4. 依赖变化处理
+        if (depsChanged) {
+            await this.reply(
+                '⚠️ 检测到插件依赖项发生变化，' +
+                '必须安装新依赖才能正常运行。是否立即自动运行 `pnpm install` ？(回复 y/n)'
+            );
+            this.setContext('waitForInstallDeps');
+            // 保存后续重启所需的标志
+            this.pluginUpdateContext = { shouldRestartAfterInstall: true };
+            return true;
+        }
+
+        // 5. 无依赖变化，直接询问重启
+        await this.reply('更新完成，是否现在重启 Yunzai 以应用更新？(回复 y/n)');
+        this.setContext('waitRestart');
+        return true;
+    }
+
+    // 处理用户确认安装依赖
+    async waitForInstallDeps() {
+        const reply = this.e.msg.trim().toLowerCase();
+        this.finish('waitForInstallDeps');
+        if (reply !== 'y' && reply !== 'yes' && reply !== '是') {
+            await this.reply('已取消自动安装依赖。请稍后手动在插件目录运行 `pnpm install` 并重启 Bot。');
+            return true;
+        }
+
+        await this.reply('正在安装依赖，可能需要几分钟，请稍候...');
+        const installCmd = `cd "${PLUGIN_PATH}" && pnpm install`;
+        const { error, stdout, stderr } = await this.execAsync(installCmd);
+        if (error) {
+            logger.error(`依赖安装失败: ${error}`);
+            await this.reply(`依赖安装失败：${error.message}\n请手动进入插件目录运行 pnpm install 并重启 Bot。`);
+            return true;
+        }
+        await this.reply('依赖安装成功！');
+
+        // 安装完成后询问重启
+        await this.reply('依赖已更新，是否现在重启 Yunzai 以应用更新？(回复 y/n)');
+        this.setContext('waitRestart');
+        return true;
+    }
+
+    // 读取 package.json 内容（返回对象）
+    async getPackageJsonContent() {
+        const pkgPath = path.join(PLUGIN_PATH, 'package.json');
+        if (!fs.existsSync(pkgPath)) return { dependencies: {} };
+        const content = await fs.promises.readFile(pkgPath, 'utf8');
+        try {
+            return JSON.parse(content);
+        } catch {
+            return { dependencies: {} };
+        }
+    }
+
+    // 比较 dependencies 是否有变化
+    isDependenciesChanged(oldPkg, newPkg) {
+        const oldDeps = oldPkg.dependencies || {};
+        const newDeps = newPkg.dependencies || {};
+        const oldDevDeps = oldPkg.devDependencies || {};
+        const newDevDeps = newPkg.devDependencies || {};
+
+        // 合并所有依赖名
+        const allKeys = new Set([...Object.keys(oldDeps), ...Object.keys(newDeps), ...Object.keys(oldDevDeps), ...Object.keys(newDevDeps)]);
+        for (const key of allKeys) {
+            const oldVer = oldDeps[key] || oldDevDeps[key];
+            const newVer = newDeps[key] || newDevDeps[key];
+            if (oldVer !== newVer) return true;
+        }
+        return false;
     }
 
     async waitRestart() {
