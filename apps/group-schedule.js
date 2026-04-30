@@ -176,6 +176,7 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     // 发送课表消息
+    this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
     await this.sendScheduleMessage(membersWithSchedule, currentWeek, currentDay, globalNotice);
     return true;
   }
@@ -219,6 +220,7 @@ export class GroupSchedulePlugin extends plugin {
       allUsersData.length = MAX_DISPLAY;
     }
     */
+    this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
     await this.sendScheduleMessage(allUsersData, currentWeek, currentDay, globalNotice);
     return true;
   }
