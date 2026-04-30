@@ -174,7 +174,8 @@ export class DataManager {
             return { error: `第 ${week} 周已超出本学期课程周数，请确认日期是否正确` };
         }
         let courses = schedule.courses.filter(course =>
-            course.day === day.toString() && course.weeks.includes(week)
+            // 转换为数字避免数值类型问题
+            parseInt(course.day) === day && course.weeks.includes(week)
         );
         // 按开始时间排序（升序）
         courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
