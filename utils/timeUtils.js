@@ -193,11 +193,6 @@ export function getCurrentFullDate() {
 }
 /**
  * 验证并格式化生日（MM-DD）
- * @param {String} birthday 
- * @returns {String} MM-DD
- */
-/**
- * 验证并格式化生日（MM-DD）
  * @param {string} birthday 输入字符串，如 "2-30"
  * @returns {{ valid: boolean, formatted: string|null, errorCode?: string }}
  * errorCode: 'invalid_format' | 'nonexistent_date' | 'overflow' | null
