@@ -134,24 +134,7 @@ export class ScheduleQuery extends plugin {
         }
         // 尝试生成图片
         const schedule = DataManager.loadSchedule(userId);
-        const userData = {
-            nickname: result.displayName,
-            week: result.week,
-            day: result.day,
-            signature: schedule?.signature || '',
-            courses: result.courses
-        };
-        let replyMessage = [];
-        if (globalNotice) replyMessage.push(globalNotice);
-        const img = await generateUserScheduleImage(userData, today, { e: this.e });
-        if (img) {
-            replyMessage.push(segment.image(img));
-            await this.reply(replyMessage);
-        } else {
-            // 降级为文本
-            const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-            await this.reply(replyMsg);
-        }
+        await this._sendScheduleReply(userId, today, result, schedule);
         return true;
     }
     /**
@@ -169,21 +152,7 @@ export class ScheduleQuery extends plugin {
         }
         // 尝试生成图片
         const schedule = DataManager.loadSchedule(userId);
-        const userData = {
-            nickname: result.displayName,
-            week: result.week,
-            day: result.day,
-            signature: schedule?.signature || '',
-            courses: result.courses
-        };
-        const img = await generateUserScheduleImage(userData, tomorrow, { e: this.e });
-        if (img) {
-            await this.reply(segment.image(img));
-        } else {
-            // 降级为文本
-            const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-            await this.reply(replyMsg);
-        }
+        await this._sendScheduleReply(userId, tomorrow, result, schedule);
         return true;
     }
     /**
@@ -242,20 +211,7 @@ export class ScheduleQuery extends plugin {
                 await this.reply(result.error);
                 return true;
             }
-            const userData = {
-                nickname: result.displayName,
-                week: result.week,
-                day: result.day,
-                signature: schedule?.signature || '',
-                courses: result.courses
-            };
-            const img = await generateUserScheduleImage(userData, targetDate, { e: this.e });
-            if (img) {
-                await this.reply(segment.image(img));
-            } else {
-                const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-                await this.reply(replyMsg);
-            }
+            await this._sendScheduleReply(userId, targetDate, result, schedule);
             return true;
         }
         // 2. 尝试匹配日期格式
@@ -274,20 +230,7 @@ export class ScheduleQuery extends plugin {
                 await this.reply(result.error);
                 return true;
             }
-            const userData = {
-                nickname: result.displayName,
-                week: result.week,
-                day: result.day,
-                signature: schedule?.signature || '',
-                courses: result.courses
-            };
-            const img = await generateUserScheduleImage(userData, date, { e: this.e });
-            if (img) {
-                await this.reply(segment.image(img));
-            } else {
-                const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-                await this.reply(replyMsg);
-            }
+            await this._sendScheduleReply(userId, date, result, schedule);
             return true;
         }
         // 尝试匹配自然语言周数
@@ -298,20 +241,7 @@ export class ScheduleQuery extends plugin {
                 await this.reply(result.error);
                 return true;
             }
-            const userData = {
-                nickname: result.displayName,
-                week: result.week,
-                day: result.day,
-                signature: schedule?.signature || '',
-                courses: result.courses
-            };
-            const img = await generateUserScheduleImage(userData, naturalDate, { e: this.e });
-            if (img) {
-                await this.reply(segment.image(img));
-            } else {
-                const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
-                await this.reply(replyMsg);
-            }
+            await this._sendScheduleReply(userId, naturalDate, result, schedule);
             return true;
         }
         // 3. 无法解析，给出提示
@@ -353,6 +283,31 @@ export class ScheduleQuery extends plugin {
         // 3. 根据相对周和星期几计算具体日期
         const targetDate = getDateByRelativeWeek(weekOffset, weekday, new Date());
         return targetDate;
+    }
+
+    /**
+     * 通用课表回复（图片优先，降级文本）
+     * @param {string} userId - 用户ID
+     * @param {Date} targetDate - 查询的日期
+     * @param {Object} result - getCoursesForDate 返回的结果
+     * @param {Object} schedule - 用户课表数据
+     */
+    async _sendScheduleReply(userId, targetDate, result, schedule) {
+        const userData = {
+            nickname: result.displayName,
+            week: result.week,
+            day: result.day,
+            signature: schedule?.signature || '',
+            courses: result.courses
+        };
+        await this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
+        const img = await generateUserScheduleImage(userData, targetDate, { e: this.e });
+        if (img) {
+            await this.reply(segment.image(img));
+        } else {
+            const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
+            await this.reply(replyMsg);
+        }
     }
 }
 export default ScheduleQuery

@@ -156,47 +156,56 @@ async function renderTemplate(templateName, data, options = {}) {
         logger.error(`[Schedule] 模板 ${templateName} 解析失败:`, err)
         return null
     }
-    const browser = await getBrowser()
-    const page = await browser.newPage()
-    try {
-        await page.setViewport({
-            width: designWidth,
-            height: 100,
-            deviceScaleFactor: scale
-        })
-        await page.setContent(html, { waitUntil: 'networkidle0' })
-        // 等待所有图片加载 + 字体加载完成
-        await page.evaluate(async () => {
-            // 等待图片
-            await Promise.all(
-                Array.from(document.images)
-                    .filter(img => !img.complete)
-                    .map(img => new Promise(resolve => { img.onload = img.onerror = resolve; }))
-            );
-            // 等待字体加载
-            await document.fonts.ready;
-        });
-        const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' })
-        const result = Buffer.isBuffer(screenshotBuffer) ? screenshotBuffer : Buffer.from(screenshotBuffer)
-        // 成功渲染后增加计数，并判断是否需要重启
-        renderCount++
-        /** 计算图片大小 */
-        const kb = (result.length / 1024).toFixed(2) + "KB"
-        logger.mark(
-            `[图片生成][${templateName}][${renderCount}次] ${kb} ${logger.green(`${Date.now() - start}ms`)}`,
-        )
-        if (renderCount >= restartThreshold) {
-            logger.info(`[Schedule] 已达到渲染次数阈值 (${renderCount}/${restartThreshold})，重启Puppeteer`)
-            // 异步执行重启，不阻塞当前图片返回
-            restartBrowser().catch(err => logger.error('[Schedule] 异步重启失败', err))
+    const maxRetries = options.retries ?? 0
+    let lastError = null
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+            logger.warn(`[Schedule] 渲染模板 ${templateName} 失败，正在重试(${attempt}/${maxRetries}): ${lastError.message}`)
+            await restartBrowser()
         }
-        return result
-    } catch (err) {
-        logger.error(`[Schedule] 渲染模板 ${templateName} 失败:`, err)
-        return null
-    } finally {
-        await page.close()
+        const browser = await getBrowser()
+        const page = await browser.newPage()
+        try {
+            await page.setViewport({
+                width: designWidth,
+                height: 100,
+                deviceScaleFactor: scale
+            })
+            await page.setContent(html, { waitUntil: 'networkidle0' })
+            // 等待所有图片加载 + 字体加载完成
+            await page.evaluate(async () => {
+                // 等待图片
+                await Promise.all(
+                    Array.from(document.images)
+                        .filter(img => !img.complete)
+                        .map(img => new Promise(resolve => { img.onload = img.onerror = resolve; }))
+                );
+                // 等待字体加载
+                await document.fonts.ready;
+            });
+            const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' })
+            const result = Buffer.isBuffer(screenshotBuffer) ? screenshotBuffer : Buffer.from(screenshotBuffer)
+            // 成功渲染后增加计数，并判断是否需要重启
+            renderCount++
+            /** 计算图片大小 */
+            const kb = (result.length / 1024).toFixed(2) + "KB"
+            logger.mark(
+                `[图片生成][${templateName}][${renderCount}次] ${kb} ${logger.green(`${Date.now() - start}ms`)}`,
+            )
+            if (renderCount >= restartThreshold) {
+                logger.info(`[Schedule] 已达到渲染次数阈值 (${renderCount}/${restartThreshold})，重启Puppeteer`)
+                // 异步执行重启，不阻塞当前图片返回
+                restartBrowser().catch(err => logger.error('[Schedule] 异步重启失败', err))
+            }
+            return result
+        } catch (err) {
+            lastError = err
+        } finally {
+            await page.close()
+        }
     }
+    logger.error(`[Schedule] 渲染模板 ${templateName} 失败（已重试${maxRetries}次）:`, lastError)
+    return null
 }
 /**
  * 生成群课表图片
@@ -300,7 +309,7 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
 export async function generateUserScheduleImage(userData, targetDate = null, options = {}) {
     const config = ConfigManager.getConfig()
     const scale = config.renderScale ?? 1.0
-    const mergedOptions = { ...options, scale }
+    const mergedOptions = { retries: 1, ...options, scale }
     let dateStr = '';
     if (targetDate) {
         dateStr = targetDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });

@@ -66,7 +66,7 @@ export class ScheduleManage extends plugin {
         let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1];
         if (!code) {
             this.setContext("waitingForCode");
-            await this.reply("请发送你的「WakeUp课程表」或者「星链课表」分享口令", false, { at: true });
+            await this.reply("请发送你的「星链课表」分享口令。\n发送“取消”以取消操作。", false, { at: true });
             return true;
         }
         code = code.trim();
@@ -86,6 +86,7 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         let code = this.e.msg.trim();
         this.finish("waitingForCode");
+        if (code === "取消" || code.toLowerCase() === "cancel" ) return this.reply("已取消操作")
         // ----- 尝试匹配星链课表分享格式 -----
         // 格式：输入：XXXXX （中文冒号或英文冒号）
         let starlinkCode = null;
@@ -156,7 +157,7 @@ export class ScheduleManage extends plugin {
         let code = message.match(/^#星链设置课表\s+(.+)$/)?.[1];
         if (!code) {
             this.setContext("waitingForStarlinkCode");
-            await this.reply("请发送你的星链课程表分享码（或包含分享码的文案）", false, { at: true });
+            await this.reply("请发送你的星链课程表分享码（或包含分享码的文案）。\n输入“取消”以取消操作。", false, { at: true });
             return true;
         }
         code = code.trim();
@@ -172,6 +173,7 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         let raw = this.e.msg.trim();
         this.finish("waitingForStarlinkCode");
+        if (raw === "取消" || raw.toLowerCase() === "cancel" ) return this.reply("已取消操作")
         // 提取分享码
         let code = raw.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/)?.[1];
         if (!code) {
@@ -350,12 +352,16 @@ export class ScheduleManage extends plugin {
             return await this.waitForConfirm('导入', 'confirmImport');
         }
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件（支持本插件原生课表JSON、拾光课程表导出JSON或者ics文件）", false, { at: true });
+        await this.reply("请发送你要导入的课表文件（支持本插件原生课表JSON、拾光课程表导出JSON或者ICS文件）。\n输入“取消”以取消操作。", false, { at: true });
         return true;
     }
     async waitingForImportFile() {
         this.finish("waitingForImportFile");
         const e = this.e;
+        if (typeof e.msg === 'string'){
+            const code = e.msg.trim();
+            if (code === "取消" || code.toLowerCase() === "cancel" ) return this.reply("已取消导入操作。");
+        }
         const botName = getBotName(e);
         const fileInfo = getFileInfo(e);
         if (!fileInfo) {
@@ -411,7 +417,6 @@ export class ScheduleManage extends plugin {
         const e = this.e;
         try {
             let fileInfo = null;
-
             if (e.isGroup) {
                 // 群聊：使用 get_group_file_url
                 if (typeof Bot.sendApi === 'function') {

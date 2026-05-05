@@ -19,3 +19,5 @@ defaultSemesterStart: "2026-03-02"
 botName: ""
 # 字体风格
 font: "像素"
+# 群课表排序方式 userId：按QQ号；courseStatus：按上课状态
+sortMode: "userId"

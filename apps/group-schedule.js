@@ -1,6 +1,7 @@
 //import fs from 'node:fs'
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
+import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil } from '../utils/timeUtils.js'
@@ -176,7 +177,10 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     // 发送课表消息
-    await this.sendScheduleMessage(membersWithSchedule, currentWeek, currentDay, globalNotice);
+    const config = ConfigManager.getConfig();
+    const sortedMembers = this._sortMembers(membersWithSchedule, config.sortMode);
+    this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
+    await this.sendScheduleMessage(sortedMembers, currentWeek, currentDay, globalNotice);
     return true;
   }
   async showAllUsersSchedule() {
@@ -219,8 +223,10 @@ export class GroupSchedulePlugin extends plugin {
       allUsersData.length = MAX_DISPLAY;
     }
     */
-    await this.sendScheduleMessage(allUsersData, currentWeek, currentDay, globalNotice);
-    return true;
+    const config = ConfigManager.getConfig();
+    const sortedMembers = this._sortMembers(allUsersData, config.sortMode);
+    this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
+    await this.sendScheduleMessage(sortedMembers, currentWeek, currentDay, globalNotice);
   }
   /**
  * 发送课表消息
@@ -386,6 +392,39 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     return false;
+  }
+  /**
+ * 根据配置对成员列表排序
+ * @param {Array} members - 成员数据数组
+ * @param {string} sortMode - 排序模式："userId" 或 "courseStatus"
+ * @returns {Array} 排序后的新数组
+ */
+  _sortMembers(members, sortMode) {
+    // 防御性拷贝，避免修改原数组
+    const list = [...members];
+    if (sortMode === 'courseStatus') {
+      // 分为两组：有剩余课程（进行中/未开始/翘课中） 和 其他
+      const hasClass = [];
+      const noClass = [];
+      for (const m of list) {
+        if (m.status === '进行中' || m.status === '未开始' || m.status === '翘课中') {
+          hasClass.push(m);
+        } else {
+          noClass.push(m);
+        }
+      }
+      // 有课组：按当前课程的开始时间升序（时间格式 HH:MM 可直接字符串比较）
+      hasClass.sort((a, b) => {
+        const startA = a.currentCourse?.startTime || '99:99';
+        const startB = b.currentCourse?.startTime || '99:99';
+        return startA.localeCompare(startB);
+      });
+      // 无课组：按 QQ 号升序，保持可预测性
+      noClass.sort((a, b) => Number(a.userId) - Number(b.userId));
+      return hasClass.concat(noClass);
+    }
+    // 默认按 QQ 号升序
+    return list.sort((a, b) => Number(a.userId) - Number(b.userId));
   }
 }
 export default GroupSchedulePlugin

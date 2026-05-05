@@ -1,4 +1,5 @@
 // 默认节次→时间映射
+import { ConfigManager } from "../components/ConfigManager.js";
 const DEFAULT_TIME_SLOTS = {
   1: { start: "08:00", end: "08:45" },
   2: { start: "08:50", end: "09:35" },
@@ -118,7 +119,10 @@ export async function fetchStarlinkSchedule(shareCode) {
   }
 
   const merged = mergeConsecutiveCourses(courses);
-  const semesterStart = data.startDate ? data.startDate.substring(0, 10) : null;
+  // 从配置读取默认学期开始日期
+  const config = ConfigManager.getConfig();
+  let semesterStart = data.startDate ? data.startDate.substring(0, 10) : null;
+  if(!semesterStart) semesterStart = config.defaultSemesterStart
   const tableName = data.tableName || data.name || '星链课表';
 
   return {

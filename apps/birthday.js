@@ -590,8 +590,7 @@ export class BirthdayReminder extends plugin {
         let birthdayRaw = null;
         if (targetUserId) {
             // 有@的情况：格式 "#添加生日 3月2日" 或 "#修改生日 3-2"
-            const match = msg.match(/^#(添加|修改)生日\s+(.+)$/);
-            if (match) birthdayRaw = match[2].trim();
+            birthdayRaw = msg.slice(5).trim();
         } else {
             // 无@的情况：格式 "#添加生日 123456 3-2"
             const match = msg.match(/^#(添加|修改)生日\s+(\d+)\s+(.+)$/);

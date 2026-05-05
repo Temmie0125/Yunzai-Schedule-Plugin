@@ -86,6 +86,19 @@ export const schemas = [
     },
     */
     {
+        field: "sortMode",
+        label: "群课表排序模式",
+        helpMessage: "默认按QQ号升序，可改为按上课状态排序",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "按QQ号(默认)", value: "userId" },
+                { label: "按上课状态", value: "courseStatus" }
+            ]
+        },
+        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。"
+    },
+    {
         component: 'Divider',
         label: '自动任务设置'
     },
