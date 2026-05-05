@@ -1,5 +1,5 @@
 // 默认节次→时间映射
-import { ConfigManager } from "../components/ConfigManager";
+import { ConfigManager } from "../components/ConfigManager.js";
 const DEFAULT_TIME_SLOTS = {
   1: { start: "08:00", end: "08:45" },
   2: { start: "08:50", end: "09:35" },

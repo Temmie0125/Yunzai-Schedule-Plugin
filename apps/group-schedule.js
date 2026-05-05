@@ -413,11 +413,11 @@ export class GroupSchedulePlugin extends plugin {
           noClass.push(m);
         }
       }
-      // 有课组：按当前课程的结束时间升序（时间格式 HH:MM 可直接字符串比较）
+      // 有课组：按当前课程的开始时间升序（时间格式 HH:MM 可直接字符串比较）
       hasClass.sort((a, b) => {
-        const endA = a.currentCourse?.endTime || '99:99';
-        const endB = b.currentCourse?.endTime || '99:99';
-        return endA.localeCompare(endB);
+        const startA = a.currentCourse?.startTime || '99:99';
+        const startB = b.currentCourse?.startTime || '99:99';
+        return startA.localeCompare(startB);
       });
       // 无课组：按 QQ 号升序，保持可预测性
       noClass.sort((a, b) => Number(a.userId) - Number(b.userId));
