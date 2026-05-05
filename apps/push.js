@@ -196,6 +196,7 @@ export class SchedulePush extends plugin {
         if (img) {
           replyMsg = segment.image(img);
         } else {
+          logger.warn(`[课表订阅] 用户 ${userId} 图片渲染失败，已回退到文本推送`);
           replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
           replyMsg = `======明日课程提醒======\n` + replyMsg;
         }
