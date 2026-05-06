@@ -160,18 +160,15 @@ export class GroupSchedulePlugin extends plugin {
     // 节假日处理
     const { shouldStop, notice: globalNotice } = await this._handleHoliday(now);
     if (shouldStop) return true;
-    // 获取群成员列表
+
     const groupMembers = await getGroupMembers(groupId)
-    // 收集有课表的成员信息
     const membersWithSchedule = []
-    // 在原循环位置
     for (const member of groupMembers) {
       const data = await this.getMemberScheduleData(member.user_id, member, currentDay, currentTime);
       if (data) {
         membersWithSchedule.push(data);
       }
     }
-    // 修改showGroupSchedule方法的最后部分
     if (membersWithSchedule.length === 0) {
       await this.reply("本群暂无成员设置课程表");
       return true;
@@ -189,7 +186,7 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     const now = new Date();
-    const currentWeek = calculateCurrentWeek();      // 需要从 timeUtils 导入
+    const currentWeek = calculateCurrentWeek();
     const currentDay = now.getDay() === 0 ? 7 : now.getDay();
     const currentTime = now.toTimeString().slice(0, 5);
     // 节假日处理
@@ -338,7 +335,7 @@ export class GroupSchedulePlugin extends plugin {
       newStatus = true
     }
     let autoCancelMsg = '';
-    // 在 toggleSkipClass 中，计算结束时间的代码块
+    // 计算结束时间
     let expireTime = null;
     if (newStatus) {
       const now = new Date();
