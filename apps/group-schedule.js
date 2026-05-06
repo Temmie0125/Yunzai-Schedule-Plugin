@@ -2,7 +2,7 @@
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { checkPermission, getGroupMembers, getAvatarUrl, getBotName } from '../components/common.js'
+import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
@@ -35,10 +35,10 @@ export class GroupSchedulePlugin extends plugin {
         }
       ]
     })
-    this.dataPath = 'plugins/schedule/data/'
-    this.skipStatusPath = 'plugins/schedule/skip-status.json'
+    // this.dataPath = 'plugins/schedule/data/'  数据目录
+    // this.skipStatusPath = 'plugins/schedule/skip-status.json'  翘课状态存储
   }
-  // ========== 核心方法：构建用户上课数据 ==========
+  // ========== 构建用户上课数据 ==========
   async _buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname = null) {
     const skipStatus = await DataManager.loadSkipStatus(userId);
     const signature = scheduleData.signature || "此人很懒，还没有设置个性签名~";
@@ -128,7 +128,7 @@ export class GroupSchedulePlugin extends plugin {
     }
     return { shouldStop: false, notice: null };
   }
-  // ========== 原有方法1：获取群成员数据（带自动过期和 memberInfo 备选昵称） ==========
+  // ========== 获取群成员数据（带自动过期和 memberInfo 备选昵称） ==========
   async getMemberScheduleData(userId, memberInfo, currentDay, currentTime) {
     // 先检查并自动过期翘课状态
     await this.checkAndAutoExpireSkip(userId);
@@ -138,7 +138,7 @@ export class GroupSchedulePlugin extends plugin {
     const fallbackNickname = memberInfo.card || memberInfo.nickname || null;
     return this._buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname);
   }
-  // ========== 原有方法2：获取任意用户数据（不带自动过期，由调用方决定） ==========
+  // ========== 获取任意用户数据（不带自动过期，由调用方决定） ==========
   async getUserScheduleData(userId, scheduleData, currentDay, currentTime) {
     return this._buildUserData(userId, scheduleData, currentDay, currentTime, null);
   }
@@ -246,7 +246,8 @@ export class GroupSchedulePlugin extends plugin {
       } else {
         // 降级为文本消息
         logger.error(`发送课表图片失败`);
-        this.reply(generateTextSchedule(members, currentWeek, currentDay));
+        let reply = makeForwardMsg(this.e, generateTextSchedule(members, currentWeek, currentDay), "群课表")
+        this.reply(reply);
         return false;
       }
     } catch (error) {
