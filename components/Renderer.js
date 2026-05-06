@@ -172,6 +172,7 @@ async function renderTemplate(templateName, data, options = {}) {
                 deviceScaleFactor: scale
             })
             await page.setContent(html, { waitUntil: 'networkidle0' })
+            /*
             // 等待所有图片加载 + 字体加载完成
             await page.evaluate(async () => {
                 // 等待图片
@@ -183,6 +184,7 @@ async function renderTemplate(templateName, data, options = {}) {
                 // 等待字体加载
                 await document.fonts.ready;
             });
+            */
             const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' })
             const result = Buffer.isBuffer(screenshotBuffer) ? screenshotBuffer : Buffer.from(screenshotBuffer)
             // 成功渲染后增加计数，并判断是否需要重启

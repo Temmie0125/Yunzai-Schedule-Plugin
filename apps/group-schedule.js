@@ -420,8 +420,19 @@ export class GroupSchedulePlugin extends plugin {
         const startB = b.currentCourse?.startTime || '99:99';
         return startA.localeCompare(startB);
       });
-      // 无课组：按 QQ 号升序，保持可预测性
-      noClass.sort((a, b) => Number(a.userId) - Number(b.userId));
+      // 无课组：按状态优先级排序 → 同类按 QQ 号升序
+      const statusOrder = ['已结束', '无课程', '学期结束'];
+      noClass.sort((a, b) => {
+        const idxA = statusOrder.indexOf(a.status);
+        const idxB = statusOrder.indexOf(b.status);
+        // 未知状态排在最后
+        const priorityA = idxA === -1 ? 999 : idxA;
+        const priorityB = idxB === -1 ? 999 : idxB;
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        return Number(a.userId) - Number(b.userId);
+      });
       return hasClass.concat(noClass);
     }
     // 默认按 QQ 号升序
