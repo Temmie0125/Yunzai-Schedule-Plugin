@@ -5,6 +5,136 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
 import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate } from '../utils/timeUtils.js'
 import ICalExpander from 'ical-expander';
+// 默认节次时间映射
+const DEFAULT_TIME_SLOTS = {
+  1: { start: "08:00", end: "08:45" },
+  2: { start: "08:50", end: "09:35" },
+  3: { start: "09:50", end: "10:35" },
+  4: { start: "10:40", end: "11:25" },
+  5: { start: "11:30", end: "12:15" },
+  6: { start: "14:00", end: "14:45" },
+  7: { start: "14:50", end: "15:35" },
+  8: { start: "15:40", end: "16:25" },
+  9: { start: "16:30", end: "17:15" },
+  10: { start: "19:00", end: "19:45" },
+  11: { start: "19:50", end: "20:35" },
+  12: { start: "20:40", end: "21:25" }
+};
+
+function timeToMinutes(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function mergeConsecutiveCourses(courses) {
+  if (!courses.length) return [];
+  courses.sort((a, b) =>
+    a.day - b.day ||
+    a.name.localeCompare(b.name) ||
+    a.teacher.localeCompare(b.teacher) ||
+    a.location.localeCompare(b.location) ||
+    JSON.stringify(a.weeks).localeCompare(JSON.stringify(b.weeks)) ||
+    a.startTime.localeCompare(b.startTime)
+  );
+  const result = [];
+  for (const cur of courses) {
+    if (result.length === 0) {
+      result.push({ ...cur });
+      continue;
+    }
+    const last = result[result.length - 1];
+    const isSame = last.day === cur.day &&
+      last.name === cur.name &&
+      last.teacher === cur.teacher &&
+      last.location === cur.location &&
+      JSON.stringify(last.weeks) === JSON.stringify(cur.weeks);
+    if (isSame) {
+      const lastEnd = timeToMinutes(last.endTime);
+      const curStart = timeToMinutes(cur.startTime);
+      if (curStart - lastEnd <= 10) {
+        last.endTime = cur.endTime;
+        continue;
+      }
+    }
+    result.push({ ...cur });
+  }
+  return result;
+}
+
+/**
+ * 将星链课表 JSON 转换为标准课表格式
+ * @param {object} jsonData - 星链原始 JSON
+ * @param {object} config - 全局配置
+ * @returns {object} 标准课表对象 { tableName, semesterStart, courses }
+ */
+function convertStarlinkJsonToStandard(jsonData, config) {
+  // 获取时间槽映射（优先使用 JSON 中的 timeSlots，否则默认）
+  let timeSlots = DEFAULT_TIME_SLOTS;
+  if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots)) {
+    const custom = {};
+    for (const ts of jsonData.timeSlots) {
+      custom[ts.section] = { start: ts.startTime, end: ts.endTime };
+    }
+    timeSlots = custom;
+  }
+
+  const courses = [];
+  for (const c of jsonData.courses) {
+    const teacher = (c.teacher && c.teacher !== '无') ? c.teacher : '';
+    const location = (c.location && c.location.replace(/^@/, '').trim()) || '';
+    const weeks = c.weeks || [];
+
+    let startTime = '', endTime = '';
+    if (c.startSection && c.endSection) {
+      const startSlot = timeSlots[c.startSection];
+      const endSlot = timeSlots[c.endSection];
+      if (!startSlot || !endSlot) {
+        logger.warn(`[课表导入] 星链格式：未找到节次 ${c.startSection} 或 ${c.endSection} 的时间定义，跳过课程 ${c.name}`);
+        continue;
+      }
+      startTime = startSlot.start;
+      endTime = endSlot.end;
+    } else if (c.startTime && c.endTime) {
+      startTime = c.startTime;
+      endTime = c.endTime;
+    } else {
+      logger.warn(`[课表导入] 星链格式：课程 ${c.name} 缺少时间信息，跳过`);
+      continue;
+    }
+
+    courses.push({
+      name: c.name,
+      teacher,
+      location,
+      day: c.weekday,      // 1-7，周一=1
+      startTime,
+      endTime,
+      weeks
+    });
+  }
+
+  const merged = mergeConsecutiveCourses(courses);
+  let semesterStart = jsonData.startDate ? jsonData.startDate.substring(0, 10) : null;
+  if (!semesterStart) {
+    semesterStart = config.defaultSemesterStart;
+  }
+  const tableName = jsonData.name || jsonData.tableName || '星链课表';
+
+  return { tableName, semesterStart, courses: merged };
+}
+
+/**
+ * 判断是否为星链课表 JSON 格式
+ */
+function isStarlinkJsonFormat(jsonData) {
+  if (!jsonData.courses || !Array.isArray(jsonData.courses) || jsonData.courses.length === 0) return false;
+  if (jsonData.timeSlots) return false; // 拾光格式优先
+  const sample = jsonData.courses[0];
+  // 星链格式特征：包含 startSection 或 weekday，且没有 startTime/day 字段
+  return (sample.hasOwnProperty('startSection') || sample.hasOwnProperty('weekday')) &&
+    !sample.hasOwnProperty('startTime') &&
+    !sample.hasOwnProperty('day');
+}
 /**
  * 通用：保存课表并保留用户原有昵称/签名
  */
@@ -123,8 +253,22 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     let courses = [];
     let semesterStart = null;
     let tableName = "导入的课表";
+    let isStarlink = false;
+    let missingSemesterStart = false;
+    // ---------- 星链格式识别与转换 ----------
+    if (isStarlinkJsonFormat(jsonData)) {
+      isStarlink = true;
+      const config = ConfigManager.getConfig();
+      const converted = convertStarlinkJsonToStandard(jsonData, config);
+      courses = converted.courses;
+      semesterStart = converted.semesterStart;
+      tableName = converted.tableName;
+      if (!semesterStart || semesterStart === config.defaultSemesterStart) {
+        missingSemesterStart = true;
+      }
+    }
     // 判断是否为拾光格式（包含 timeSlots 字段）
-    if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots) && jsonData.courses) {
+    else if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots) && jsonData.courses) {
       // 拾光格式转换
       const timeSlotMap = new Map();
       for (const ts of jsonData.timeSlots) {
@@ -186,9 +330,12 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     if (!courses.length) {
       return { success: false, message: "解析后没有有效的课程数据，请检查文件内容" };
     }
+    let replyMsg = ``;
     if (!semesterStart) {
-      // 如果没有学期开始日期，使用当前日期，并提示用户
-      semesterStart = getCurrentFullDate();
+      // 如果没有学期开始日期，使用默认值，并提示用户
+      const config = ConfigManager.getConfig();
+      semesterStart = config.defaultSemesterStart || getCurrentFullDate();
+      // replyMsg += `检测到您的JSON未提供学期开始日期，将使用默认值 ${semesterStart}，可使用#学期开始日期 命令更改\n`
       logger.warn(`[课表导入] 用户 ${userId} 的JSON未提供学期开始日期，使用默认值 ${semesterStart}`);
     }
     // 加载原有数据保留昵称和签名
@@ -208,16 +355,23 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     // 保存
     DataManager.saveSchedule(userId, scheduleData, nickname, signature);
     // 回复消息
-    let replyMsg = `✅ 课表导入成功！\n`;
+    // 构建回复消息
+    replyMsg += `✅ 课表导入成功！\n`;
+    if (isStarlink) {
+      replyMsg += `✨ 检测到星链课表格式，导入成功！\n`;
+    }
     replyMsg += `📚 课表名称：${tableName}\n`;
     replyMsg += `📅 学期开始：${semesterStart}\n`;
     replyMsg += `📖 课程数量：${courses.length} 门\n`;
     replyMsg += `👤 昵称：${nickname}`;
     if (signature) replyMsg += `\n💬 签名：${signature}`;
     replyMsg += `\n使用 #今日课表 查看今日课程。`;
-    if (!semesterStart) {
-      replyMsg += `\n 注意：未发现学期开始日期，已用今日日期代替，请检查导入数据是否有误`;
+
+    if (missingSemesterStart) {
+      replyMsg += `\n\n⚠️ 注意：本课表缺少学期开始日期，已使用默认值 ${semesterStart}。`;
+      replyMsg += `\n   您可以使用 #设置学期开始 YYYY-MM-DD 命令进行修正（例如 #设置学期开始 2026-03-02）。`;
     }
+
     return { success: true, message: replyMsg };
   } catch (err) {
     logger.error(`[课表导入] 处理JSON数据失败: ${err}`);

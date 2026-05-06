@@ -3,6 +3,7 @@ import path from 'node:path'
 import { getBotName, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { importScheduleFromCode, importScheduleFromStarlinkCode, importScheduleFromJsonData, importScheduleFromIcsData } from '../services/scheduleImporter.js'
+import { parseChineseDateToMD } from '../utils/timeUtils.js';
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -39,6 +40,10 @@ export class ScheduleManage extends plugin {
                 {
                     reg: "^#(课表设置签名|schedule setsign)(?:\\s+(.+))?$",
                     fnc: "setSignature"
+                },
+                {
+                    reg: "^#(设置|修改)?学期开始(日期)?\\s+(.+)$",
+                    fnc: "setSemesterStart"
                 },
                 // ===== 新增规则：直接识别包含「口令」的消息 =====
                 {
@@ -86,7 +91,7 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         let code = this.e.msg.trim();
         this.finish("waitingForCode");
-        if (code === "取消" || code.toLowerCase() === "cancel" ) return this.reply("已取消操作")
+        if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消操作")
         // ----- 尝试匹配星链课表分享格式 -----
         // 格式：输入：XXXXX （中文冒号或英文冒号）
         let starlinkCode = null;
@@ -173,7 +178,7 @@ export class ScheduleManage extends plugin {
         const userId = this.e.user_id;
         let raw = this.e.msg.trim();
         this.finish("waitingForStarlinkCode");
-        if (raw === "取消" || raw.toLowerCase() === "cancel" ) return this.reply("已取消操作")
+        if (raw === "取消" || raw.toLowerCase() === "cancel") return this.reply("已取消操作")
         // 提取分享码
         let code = raw.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/)?.[1];
         if (!code) {
@@ -330,7 +335,7 @@ export class ScheduleManage extends plugin {
         }
         // 确认后进入文件等待
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的JSON文件（支持本插件原生课表JSON或拾光课程表导出文件）", false, { at: true });
+        await this.reply("请发送你要导入的课表文件（支持本插件原生课表JSON、拾光课程表导出JSON和ICS文件）。星链用户请优先使用分享口令哦~", false, { at: true });
         return true;
     }
     async confirmExport() {
@@ -358,9 +363,9 @@ export class ScheduleManage extends plugin {
     async waitingForImportFile() {
         this.finish("waitingForImportFile");
         const e = this.e;
-        if (typeof e.msg === 'string'){
+        if (typeof e.msg === 'string') {
             const code = e.msg.trim();
-            if (code === "取消" || code.toLowerCase() === "cancel" ) return this.reply("已取消导入操作。");
+            if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消导入操作。");
         }
         const botName = getBotName(e);
         const fileInfo = getFileInfo(e);
@@ -535,6 +540,107 @@ export class ScheduleManage extends plugin {
             fs.unlink(filePath, () => { });
         }
         return true;
+    }
+    /**
+ * 设置学期开始日期
+ */
+    async setSemesterStart() {
+        const userId = this.e.user_id;
+        let dateInput = this.e.msg.match(/^#(?:设置|修改)?学期开始(?:日期)?\s+(.+)$/)?.[1];
+        if (!dateInput) {
+            await this.reply("请提供日期，格式如：2026-03-02 或 03-02");
+            return false;
+        }
+        dateInput = dateInput.trim();
+        // 1. 尝试中文日期转换（如“3月2日”）
+        let converted = null;
+        if (/[月日]/.test(dateInput)) {
+            converted = parseChineseDateToMD(dateInput);
+            if (converted) dateInput = converted;
+        }
+        // 2. 解析日期字符串（支持 YYYY-MM-DD 或 MM-DD）
+        const parsed = this._parseSemesterStartDate(dateInput);
+        if (!parsed.valid || !parsed.date) {
+            await this.reply(`日期格式无效，请使用 YYYY-MM-DD 或 MM-DD 格式\n例如：#设置学期开始 2026-03-02 或 #设置学期开始 03-02`);
+            return false;
+        }
+        // 3. 校验日期不能晚于今天
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (parsed.date > today) {
+            await this.reply(`学期开始日期不能晚于今天（${this._formatDate(today)}）`);
+            return false;
+        }
+        // 4. 保存日期
+        const dateStr = parsed.dateStr; // YYYY-MM-DD 格式
+        const success = await DataManager.updateSemesterStart(userId, dateStr);
+        if (success) {
+            let warnMsg = "";
+            const existingSchedule = DataManager.loadSchedule(userId);
+            if (existingSchedule && existingSchedule.courses && existingSchedule.courses.length > 0) {
+                warnMsg = "\n⚠️ 注意：修改学期开始日期不会自动调整已有课表的周次，请确认新日期与课表周数匹配。";
+            }
+            await this.reply(`✅ 学期开始日期已设置为 ${dateStr}${warnMsg}`);
+        } else {
+            await this.reply("❌ 保存失败，请稍后重试");
+        }
+        return true;
+    }
+    /**
+     * 解析学期开始日期字符串
+     * @param {string} input 输入如 "2026-03-02" 或 "03-02"
+     * @returns {{valid: boolean, date: Date|null, dateStr: string|null}}
+     */
+    _parseSemesterStartDate(input) {
+        // 支持 YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD, YY-MM-DD (自动补全年份)
+        const fullMatch = input.match(/^(\d{2,4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+        if (fullMatch) {
+            let year = parseInt(fullMatch[1]);
+            const month = parseInt(fullMatch[2]);
+            const day = parseInt(fullMatch[3]);
+            if (year < 100) year += 2000; // 如 26-03-02 -> 2026
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const date = new Date(year, month - 1, day);
+            if (this._isValidDate(date, year, month, day)) {
+                return { valid: true, date, dateStr };
+            }
+            return { valid: false, date: null, dateStr: null };
+        }
+
+        // 支持 MM-DD, MM/DD, MM.DD
+        const shortMatch = input.match(/^(\d{1,2})[-/.](\d{1,2})$/);
+        if (shortMatch) {
+            const month = parseInt(shortMatch[1]);
+            const day = parseInt(shortMatch[2]);
+            const year = new Date().getFullYear();
+            const date = new Date(year, month - 1, day);
+            if (!this._isValidDate(date, year, month, day)) {
+                return { valid: false, date: null, dateStr: null };
+            }
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            return { valid: true, date, dateStr };
+        }
+
+        return { valid: false, date: null, dateStr: null };
+    }
+
+    /**
+     * 验证日期是否有效（未被自动修正）
+     */
+    _isValidDate(date, expectedYear, expectedMonth, expectedDay) {
+        return date.getFullYear() === expectedYear &&
+            date.getMonth() + 1 === expectedMonth &&
+            date.getDate() === expectedDay;
+    }
+
+    /**
+     * 格式化日期为 YYYY-MM-DD
+     */
+    _formatDate(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
     }
 }
 export default ScheduleManage
