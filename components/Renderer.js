@@ -171,7 +171,9 @@ async function renderTemplate(templateName, data, options = {}) {
                 height: 100,
                 deviceScaleFactor: scale
             })
-            await page.setContent(html, { waitUntil: 'networkidle0' })
+            // 设置内容加载超时 10 秒，等待 load 事件
+            await page.setDefaultNavigationTimeout(10000);
+            await page.setContent(html, { waitUntil: 'load' });
             /*
             // 等待所有图片加载 + 字体加载完成
             await page.evaluate(async () => {
