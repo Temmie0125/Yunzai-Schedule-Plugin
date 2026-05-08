@@ -2,7 +2,7 @@
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { checkPermission, getGroupMembers, getAvatarUrl, getBotName } from '../components/common.js'
+import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
@@ -35,10 +35,10 @@ export class GroupSchedulePlugin extends plugin {
         }
       ]
     })
-    this.dataPath = 'plugins/schedule/data/'
-    this.skipStatusPath = 'plugins/schedule/skip-status.json'
+    // this.dataPath = 'plugins/schedule/data/'  数据目录
+    // this.skipStatusPath = 'plugins/schedule/skip-status.json'  翘课状态存储
   }
-  // ========== 核心方法：构建用户上课数据 ==========
+  // ========== 构建用户上课数据 ==========
   async _buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname = null) {
     const skipStatus = await DataManager.loadSkipStatus(userId);
     const signature = scheduleData.signature || "此人很懒，还没有设置个性签名~";
@@ -128,7 +128,7 @@ export class GroupSchedulePlugin extends plugin {
     }
     return { shouldStop: false, notice: null };
   }
-  // ========== 原有方法1：获取群成员数据（带自动过期和 memberInfo 备选昵称） ==========
+  // ========== 获取群成员数据（带自动过期和 memberInfo 备选昵称） ==========
   async getMemberScheduleData(userId, memberInfo, currentDay, currentTime) {
     // 先检查并自动过期翘课状态
     await this.checkAndAutoExpireSkip(userId);
@@ -138,7 +138,7 @@ export class GroupSchedulePlugin extends plugin {
     const fallbackNickname = memberInfo.card || memberInfo.nickname || null;
     return this._buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname);
   }
-  // ========== 原有方法2：获取任意用户数据（不带自动过期，由调用方决定） ==========
+  // ========== 获取任意用户数据（不带自动过期，由调用方决定） ==========
   async getUserScheduleData(userId, scheduleData, currentDay, currentTime) {
     return this._buildUserData(userId, scheduleData, currentDay, currentTime, null);
   }
@@ -160,18 +160,15 @@ export class GroupSchedulePlugin extends plugin {
     // 节假日处理
     const { shouldStop, notice: globalNotice } = await this._handleHoliday(now);
     if (shouldStop) return true;
-    // 获取群成员列表
+
     const groupMembers = await getGroupMembers(groupId)
-    // 收集有课表的成员信息
     const membersWithSchedule = []
-    // 在原循环位置
     for (const member of groupMembers) {
       const data = await this.getMemberScheduleData(member.user_id, member, currentDay, currentTime);
       if (data) {
         membersWithSchedule.push(data);
       }
     }
-    // 修改showGroupSchedule方法的最后部分
     if (membersWithSchedule.length === 0) {
       await this.reply("本群暂无成员设置课程表");
       return true;
@@ -189,7 +186,7 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     const now = new Date();
-    const currentWeek = calculateCurrentWeek();      // 需要从 timeUtils 导入
+    const currentWeek = calculateCurrentWeek();
     const currentDay = now.getDay() === 0 ? 7 : now.getDay();
     const currentTime = now.toTimeString().slice(0, 5);
     // 节假日处理
@@ -246,7 +243,8 @@ export class GroupSchedulePlugin extends plugin {
       } else {
         // 降级为文本消息
         logger.error(`发送课表图片失败`);
-        this.reply(generateTextSchedule(members, currentWeek, currentDay));
+        let reply = makeForwardMsg(this.e, generateTextSchedule(members, currentWeek, currentDay), "群课表")
+        this.reply(reply);
         return false;
       }
     } catch (error) {
@@ -337,7 +335,7 @@ export class GroupSchedulePlugin extends plugin {
       newStatus = true
     }
     let autoCancelMsg = '';
-    // 在 toggleSkipClass 中，计算结束时间的代码块
+    // 计算结束时间
     let expireTime = null;
     if (newStatus) {
       const now = new Date();
@@ -419,8 +417,19 @@ export class GroupSchedulePlugin extends plugin {
         const startB = b.currentCourse?.startTime || '99:99';
         return startA.localeCompare(startB);
       });
-      // 无课组：按 QQ 号升序，保持可预测性
-      noClass.sort((a, b) => Number(a.userId) - Number(b.userId));
+      // 无课组：按状态优先级排序 → 同类按 QQ 号升序
+      const statusOrder = ['已结束', '无课程', '学期结束'];
+      noClass.sort((a, b) => {
+        const idxA = statusOrder.indexOf(a.status);
+        const idxB = statusOrder.indexOf(b.status);
+        // 未知状态排在最后
+        const priorityA = idxA === -1 ? 999 : idxA;
+        const priorityB = idxB === -1 ? 999 : idxB;
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        return Number(a.userId) - Number(b.userId);
+      });
       return hasClass.concat(noClass);
     }
     // 默认按 QQ 号升序

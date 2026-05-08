@@ -8,3 +8,4 @@ config/config/
 # 其他可选忽略
 node_modules/
 *.log
+/CLAUDE.md

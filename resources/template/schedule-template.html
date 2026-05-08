@@ -252,7 +252,7 @@
         /* 课程信息区域 - 跨越两列 */
         .course-section {
             grid-column: 1 / -1;
-            margin-top: 0; 
+            margin-top: 0;
         }
 
         .course-info-row {
@@ -525,13 +525,20 @@
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
+
+                    {{else if member.status === '已结束'}}
+                    <!-- 已结束：今日课程已上完，不显示最后一节课 -->
+                    <div class="course-info" style="color: #999;">📅 今日课程已上完，好好休息~</div>
+                    {{if member.signature}}
+                    <div class="member-signature">💭 {{member.signature}}</div>
+                    {{/if}}
                     {{else}}
-                    <!-- 正常状态显示：课程名称行 -->
+                    <!-- 正常状态（进行中、翘课中、未开始、无课程 等） -->
                     <div class="course-info-row">
                         {{if member.currentCourse}}
                         <div class="course-info">📖 {{member.currentCourse.name}}</div>
                         {{else}}
-                        <div class="course-info" style="color: #aaa;">今日暂无课程安排</div>
+                        <div class="course-info" style="color: #aaa;">📅 今日暂无课程安排</div>
                         {{/if}}
                     </div>
 
@@ -555,13 +562,13 @@
                     {{/if}}
                     {{/if}}
 
-                    <!-- 无课程或已结束时的签名显示（改用嵌套 if 避免复杂表达式） -->
-                    {{if member.status === '无课程' || member.status === '已结束'}}
+                    <!-- 无课程时显示签名（已结束场景已在上方单独处理，此处不再包含） -->
+                    {{if member.status === '无课程'}}
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
                     {{/if}}
-                    {{/if}} <!-- 结束外层的 if member.status === '学期结束' 分支 -->
+                    {{/if}}
                 </div>
             </div>
             {{/each}}

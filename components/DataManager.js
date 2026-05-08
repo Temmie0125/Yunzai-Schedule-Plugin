@@ -587,4 +587,44 @@ export class DataManager {
         // 没有课程或最大周数为0时，默认学期未结束（避免误判）
         return maxWeek > 0 && weekNum > maxWeek;
     }
+    /**
+ * 更新用户的学期开始日期（保留其他所有字段）
+ * @param {string|number} userId 
+ * @param {string} semesterStart 格式 YYYY-MM-DD
+ * @returns {boolean}
+ */
+    static updateSemesterStart(userId, semesterStart) {
+        const filePath = path.join(DATA_PATH, `${userId}.json`);
+        let data = {};
+        if (fs.existsSync(filePath)) {
+            try {
+                data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (err) {
+                logger.error(`读取用户 ${userId} 数据失败: ${err}`);
+                return false;
+            }
+        } else {
+            // 如果文件不存在，创建基础结构
+            data = {
+                tableName: '未设置',
+                nickname: userId.toString(),
+                signature: '',
+                courses: [],
+                updateTime: new Date().toISOString()
+            };
+        }
+        // 更新学期开始日期
+        data.semesterStart = semesterStart;
+        data.updateTime = new Date().toISOString();
+        try {
+            const dir = path.dirname(filePath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+            logger.info(`用户 ${userId} 学期开始日期已更新为 ${semesterStart}`);
+            return true;
+        } catch (err) {
+            logger.error(`保存用户 ${userId} 学期开始日期失败: ${err}`);
+            return false;
+        }
+    }
 }

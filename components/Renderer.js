@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer'
 
 // 获取插件根目录
 const pluginRoot = path.join(process.cwd(), 'plugins', 'schedule')
-
+const maxRetry = 1;
 // 单例浏览器实例
 let browserInstance = null
 let browserLock = false
@@ -156,7 +156,7 @@ async function renderTemplate(templateName, data, options = {}) {
         logger.error(`[Schedule] 模板 ${templateName} 解析失败:`, err)
         return null
     }
-    const maxRetries = options.retries ?? 0
+    const maxRetries = options.retries ?? maxRetry
     let lastError = null
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         if (attempt > 0) {
@@ -172,6 +172,7 @@ async function renderTemplate(templateName, data, options = {}) {
                 deviceScaleFactor: scale
             })
             await page.setContent(html, { waitUntil: 'networkidle0' })
+            /*
             // 等待所有图片加载 + 字体加载完成
             await page.evaluate(async () => {
                 // 等待图片
@@ -183,6 +184,7 @@ async function renderTemplate(templateName, data, options = {}) {
                 // 等待字体加载
                 await document.fonts.ready;
             });
+            */
             const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' })
             const result = Buffer.isBuffer(screenshotBuffer) ? screenshotBuffer : Buffer.from(screenshotBuffer)
             // 成功渲染后增加计数，并判断是否需要重启
@@ -252,19 +254,21 @@ export async function generateHelpImage(helpData, options = {}) {
  * @param {Array} members - 成员数据
  * @param {number} currentWeek - 当前周（系统周）
  * @param {number} currentDay - 当前星期（1-7）
- * @returns Text
+ * @returns Text[]
  */
 export function generateTextSchedule(members, currentWeek, currentDay) {
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
     const weekday = weekdayMap[currentDay];
     const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    let text = `📚 群课表状态\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `第${currentWeek}周 星期${weekday} | 当前时间: ${now}\n`;
-    text += `有课表成员: ${members.length}人 | 上课中: ${members.filter(m => m.status === '进行中').length}人\n`;
-    text += `翘课中: ${members.filter(m => m.status === '翘课中').length}人 | 开启翘课: ${members.filter(m => m.skipStatus).length}人\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    let replymsg = []
+    replymsg.push(`📚 群课表状态`);
+    replymsg.push(
+        `第${currentWeek}周 星期${weekday} | 当前时间: ${now}\n`,
+        `有课表成员: ${members.length}人 | 上课中: ${members.filter(m => m.status === '进行中').length}人\n`,
+        `翘课中: ${members.filter(m => m.status === '翘课中').length}人 | 开启翘课: ${members.filter(m => m.skipStatus).length}人\n`
+    );
     members.forEach((member, index) => {
+        let text = ``
         text += `${index + 1}. ${member.nickname}`;
         if (member.skipStatus) text += ' [翘课模式]';
         text += `\n   状态: ${member.status}\n`;
@@ -288,12 +292,12 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
         } else {
             text += `   今日暂无课程安排\n`;
         }
-        text += '\n';
+        replymsg.push(text)
     });
-    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `使用 #翘课 或 #取消翘课 切换翘课状态\n`;
-    text += `更新时间: ${new Date().toLocaleString('zh-CN')}`;
-    return text;
+
+    replymsg.push(`使用 #翘课 或 #取消翘课 切换翘课状态\n`,
+        `更新时间: ${new Date().toLocaleString('zh-CN')}`);
+    return replymsg;
 }
 /**
  * 生成个人课表图片（用于今日、明日、查询）

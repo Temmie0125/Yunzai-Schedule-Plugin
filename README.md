@@ -2,7 +2,6 @@
 
 <p align="center">
   <img alt="Yunzai Version" src="https://img.shields.io/badge/Yunzai--V3-Plugin-blue?style=flat-square"/>
-  <img alt="GitHub release (latest by date)" src="https://img.shields.io/github/v/release/Temmie0125/Yunzai-Schedule-Plugin?style=flat-square"/>
   <img alt="GitHub issues" src="https://img.shields.io/github/issues/Temmie0125/Yunzai-Schedule-Plugin?style=flat-square"/>
   <img alt="GitHub license" src="https://img.shields.io/github/license/Temmie0125/Yunzai-Schedule-Plugin?style=flat-square"/>
   <img alt="GitHub stars" src="https://img.shields.io/github/stars/Temmie0125/Yunzai-Schedule-Plugin?style=social"/>
@@ -10,7 +9,7 @@
 
 ## 简介
 
-**Schedule 课程表插件** 是基于 [Yunzai-Bot V3](https://github.com/TimeRainStarSky/Yunzai) 的课程表管理插件。它支持通过~~WakeUP 课程表的口令~~、星链课表口令、JSON文件（支持本插件原生格式和[拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule)的导出文件）一键导入课表，并提供课表查询、群友上课状态围观、课表推送订阅、课表导出等实用功能。
+**Schedule 课程表插件** 是基于 [Yunzai-Bot V3](https://github.com/TimeRainStarSky/Yunzai) 的课程表管理插件。它支持通过~~WakeUP 课程表的口令~~、星链课表口令、JSON文件（支持本插件原生格式和[拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule)的导出文件）、ICS文件以及Wakeup备份文件等方式一键导入课表，并提供课表查询、群友上课状态围观、课表推送订阅、课表导出等实用功能。
 
 本插件还内置了一个生日模块，支持成员设定生日并自动收到祝福。生日模块支持群单独配置，自由控制哪些群可以进行推送。
 
@@ -31,6 +30,8 @@
 >
 > **为了你的使用体验和数据自主权，建议尽快迁移至其他课表软件，如 [拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule) 或 星链课表。**
 >
+> **迁移方法**：在WakeUp课程表分享，导出为日历文件或者备份文件，之后通过`#导入课表`命令导入课表数据。之后就可以通过`#导出拾光课表`命令导出支持拾光课程表的JSON文件。
+>
 > 本插件已紧急适配 JSON 导入（支持拾光导出格式）及星链课表口令导入，请放心使用。
 
 ---
@@ -50,6 +51,10 @@
 ---
 
 ## 📦 安装方法
+
+> **注意：**
+> 如果您直接在Guoba Plugin内安装本插件，请务必将本插件的文件夹重命名为`schedule`，否则会导致本插件无法正常工作。
+> 推荐按照下方方式使用git进行安装。
 
 ### 方式一：使用 Git（推荐，便于更新）
 

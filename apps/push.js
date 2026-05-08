@@ -163,10 +163,10 @@ export class SchedulePush extends plugin {
           }
           if (holidayInfo.isWorkdayOnWeekend) {
             // 调休上班（周末补班），发送提示，不推送课表
-            const weekNum = calculateWeekFromDate(schedule.semesterStart, tomorrow);
-            const weekNumText = weekNum !== null ? weekNum : '未知';
+            // const weekNum = calculateWeekFromDate(schedule.semesterStart, tomorrow);
+            // const weekNumText = weekNum !== null ? weekNum : '未知';
             await Bot.pickFriend(userId).sendMsg(
-              `⚠️ 明日需要调休补班，但由于各学校排课方案不同，请使用 #课表查询 ${weekNumText} <学校安排的上周几的课> 查询次日课表安排。例如#课表查询 ${weekNumText} 1`
+              `⚠️ 明日需要调休补班哦，但由于各学校排课方案不同，请使用【#课表查询】命令根据学校安排查询次日课表。\n例如#课表查询 本周四`
             );
             logger.info(`[课表订阅] 用户 ${userId} 明天为调休上班日，已发送提示`);
             await new Promise(resolve => setTimeout(resolve, 3000));
