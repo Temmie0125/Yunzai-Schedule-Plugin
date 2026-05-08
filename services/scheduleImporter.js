@@ -517,3 +517,109 @@ export async function importScheduleFromIcsData(userId, icsText, event) {
     return { success: false, message: `导入 ICS 文件失败：${err.message}` };
   }
 }
+/**
+ * 从 WakeUp 备份文本导入课表
+ * @param {string|number} userId
+ * @param {string} wakeupText - 文件原始文本
+ * @param {object} event
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function importScheduleFromWakeupData(userId, wakeupText, event) {
+  try {
+    // 按行分割，尝试解析 JSON（跳过空行和非法行）
+    const lines = wakeupText.split('\n').filter(line => line.trim() !== '');
+    const jsonObjects = [];
+    for (const line of lines) {
+      try {
+        jsonObjects.push(JSON.parse(line));
+      } catch { /* 忽略非 JSON 行 */ }
+    }
+    if (jsonObjects.length < 5) {
+      return { success: false, message: 'WakeUp 备份文件格式不正确，缺少必要的数据字段。' };
+    }
+    // WakeUp 文件固定顺序：时间元数据、节次时间表、课表元数据、课程列表、课程安排
+    const [timeMetadata, timeEntries, scheduleMetadata, courseEntries, classEntries] = jsonObjects;
+    // 基础校验
+    if (
+      !timeMetadata ||
+      !Array.isArray(timeEntries) ||
+      !scheduleMetadata?.startDate ||
+      !Array.isArray(courseEntries) ||
+      !Array.isArray(classEntries)
+    ) {
+      return { success: false, message: 'WakeUp 数据结构异常，请检查文件是否完整。' };
+    }
+    // 学期开始日期（格式转换：2026-3-2 → 2026-03-02）
+    let semesterStart = scheduleMetadata.startDate;
+    const dateParts = semesterStart.split('-');
+    if (dateParts.length === 3) {
+      semesterStart = `${dateParts[0]}-${String(dateParts[1]).padStart(2, '0')}-${String(dateParts[2]).padStart(2, '0')}`;
+    } else {
+      return { success: false, message: 'WakeUp 课表中学期开始日期格式异常。' };
+    }
+    // 构建节次时间映射：node -> { start, end }
+    const nodeTimeMap = new Map();
+    for (const entry of timeEntries) {
+      nodeTimeMap.set(entry.node, { start: entry.startTime, end: entry.endTime });
+    }
+    // 构建课程 ID -> 名称映射
+    const courseMap = new Map();
+    for (const c of courseEntries) {
+      courseMap.set(c.id, c.courseName);
+    }
+    // 转换课程为统一格式
+    const courses = [];
+    for (const cls of classEntries) {
+      if (cls.ownTime) continue; // 跳过自定义时间的项
+      const name = courseMap.get(cls.id) || '未知课程';
+      const teacher = cls.teacher || '';
+      const location = cls.room || '';
+      const day = cls.day;
+      const startNode = cls.startNode;
+      const endNode = startNode + cls.step - 1;
+      const startSlot = nodeTimeMap.get(startNode);
+      const endSlot = nodeTimeMap.get(endNode);
+      if (!startSlot || !endSlot) {
+        logger.warn(`[WakeUp导入] 无法找到节次 ${startNode} 或 ${endNode} 的时间定义，跳过课程 ${name}`);
+        continue;
+      }
+      // 生成周次列表（根据全周/单周/双周）
+      const weeks = [];
+      const startWeek = cls.startWeek;
+      const endWeek = cls.endWeek;
+      for (let w = startWeek; w <= endWeek; w++) {
+        if (cls.type === 0) weeks.push(w);                 // 全周
+        else if (cls.type === 1 && w % 2 !== 0) weeks.push(w); // 单周（奇数）
+        else if (cls.type === 2 && w % 2 === 0) weeks.push(w); // 双周（偶数）
+      }
+      if (weeks.length === 0) continue;
+      courses.push({
+        name,
+        teacher,
+        location,
+        day,
+        startTime: startSlot.start,
+        endTime: endSlot.end,
+        weeks,
+      });
+    }
+    if (courses.length === 0) {
+      return { success: false, message: 'WakeUp 文件中未找到有效的课程安排。' };
+    }
+    const tableName = scheduleMetadata.tableName || 'WakeUp课程表';
+    const scheduleData = {
+      tableName,
+      semesterStart,
+      courses,
+      updateTime: new Date().toISOString(),
+    };
+    // 保存课表并保留用户原有昵称/签名
+    const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
+    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, '📦 WakeUp', true, !!event.group);
+
+    return { success: true, message: replyMsg };
+  } catch (err) {
+    logger.error(`[WakeUp导入] 失败: ${err}`);
+    return { success: false, message: `导入 WakeUp 备份文件失败：${err.message}` };
+  }
+}

@@ -2,7 +2,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getBotName, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
-import { importScheduleFromCode, importScheduleFromStarlinkCode, importScheduleFromJsonData, importScheduleFromIcsData } from '../services/scheduleImporter.js'
+import {
+    importScheduleFromCode,
+    importScheduleFromStarlinkCode,
+    importScheduleFromJsonData,
+    importScheduleFromIcsData,
+    importScheduleFromWakeupData
+} from '../services/scheduleImporter.js'
 import { parseChineseDateToMD } from '../utils/timeUtils.js';
 export class ScheduleManage extends plugin {
     constructor() {
@@ -335,7 +341,7 @@ export class ScheduleManage extends plugin {
         }
         // 确认后进入文件等待
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件（支持本插件原生课表JSON、拾光课程表导出JSON和ICS文件）。星链用户请优先使用分享口令哦~", false, { at: true });
+        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。星链用户请优先使用分享口令哦~\n输入“取消”以取消操作。", false, { at: true });
         return true;
     }
     async confirmExport() {
@@ -357,7 +363,7 @@ export class ScheduleManage extends plugin {
             return await this.waitForConfirm('导入', 'confirmImport');
         }
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件（支持本插件原生课表JSON、拾光课程表导出JSON或者ICS文件）。\n输入“取消”以取消操作。", false, { at: true });
+        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。\n输入“取消”以取消操作。", false, { at: true });
         return true;
     }
     async waitingForImportFile() {
@@ -377,8 +383,8 @@ export class ScheduleManage extends plugin {
         const MAX_SIZE = 2 * 1024 * 1024;
         // 获取文件扩展名
         const ext = path.extname(fileName).toLowerCase();
-        if (ext !== '.json' && ext !== '.ics') {
-            await this.reply(`${botName}暂时只认识 JSON 和 ICS 格式的文件哦喵>_<`);
+        if (ext !== '.json' && ext !== '.ics' && ext !== '.wakeup_schedule') {
+            await this.reply(`${botName}暂时只认识 JSON、ICS 和 WakeUp备份文件(.wakeup_schedule)格式哦喵>_<`);
             return false;
         }
         if (fileSize > MAX_SIZE) {
@@ -408,8 +414,10 @@ export class ScheduleManage extends plugin {
                 return false;
             }
             result = await importScheduleFromJsonData(e.user_id, jsonData, e);
-        } else { // .ics
+        } else if (ext === '.ics') { // .ics
             result = await importScheduleFromIcsData(e.user_id, fileContent, e);
+        } else { // .wakeup_schedule
+            result = await importScheduleFromWakeupData(e.user_id, fileContent, e);
         }
         await this.reply(result.message);
         return true;
@@ -463,8 +471,8 @@ export class ScheduleManage extends plugin {
                 const filePath = data.file;
                 // 获取文件扩展名
                 const ext = path.extname(filePath).toLowerCase();
-                if (!ext || (ext !== '.json' && ext !== '.ics')) {
-                    logger.warn(`[课表导入] 文件扩展名不是 .json或 .ics: ${filePath}`);
+                if (!ext || (ext !== '.json' && ext !== '.ics' && ext !== '.wakeup_schedule')) {
+                    logger.warn(`[课表导入] 文件扩展名不是.json、.ics或.wakeup_schedule: ${filePath}`);
                     return null;
                 }
                 if (fs.existsSync(filePath)) {
