@@ -46,6 +46,52 @@ export const schemas = [
         bottomHelpMessage: "选择生成图片时使用的字体。需确保 resources/fonts/ 目录下存在对应的字体文件。"
     },
     {
+        field: "maxRenderRetry",
+        label: "渲染重试次数",
+        component: "InputNumber",
+        helpMessage: "图像渲染超时或者失败时，允许的最大重试次数。",
+        required: true,
+        componentProps: {
+            min: 0,
+            max: 3,
+            step: 1,
+            placeholder: '请输入重试次数'
+        },
+        defaultValue: 1,
+        bottomHelpMessage: "图像渲染超时或者失败时，允许的最大重试次数。"
+    },
+    {
+        field: "renderRestartCount",
+        label: "渲染重启阈值",
+        component: "InputNumber",
+        helpMessage: "累计渲染多少张图片之后自动重启Puppeteer, 避免可能出现的渲染越来越慢",
+        required: true,
+        componentProps: {
+            min: 20,
+            max: 200,
+            step: 1,
+            placeholder: '请输入重启阈值'
+        },
+        defaultValue: 100,
+        bottomHelpMessage: "累计渲染多少张图片之后自动重启Puppeteer, 避免可能出现的渲染越来越慢。"
+    },
+    {
+        field: "renderTimeOut",
+        label: "渲染超时时间",
+        component: "InputNumber",
+        helpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms",
+        required: true,
+        componentProps: {
+            min: 5000,
+            max: 30000,
+            step: 100,
+            placeholder: '请输入超时时间',
+            addonAfter: 'ms'
+        },
+        defaultValue: 10000,
+        bottomHelpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms。"
+    },
+    {
         component: 'Divider',
         label: '其他设置'
     },

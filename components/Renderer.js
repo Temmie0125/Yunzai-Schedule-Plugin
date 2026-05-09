@@ -7,7 +7,6 @@ import puppeteer from 'puppeteer'
 
 // 获取插件根目录
 const pluginRoot = path.join(process.cwd(), 'plugins', 'schedule')
-const maxRetry = 1;
 // 单例浏览器实例
 let browserInstance = null
 let browserLock = false
@@ -67,7 +66,7 @@ async function getBrowser() {
         // 从配置中读取重启阈值（如果 ConfigManager 支持）
         const config = ConfigManager.getConfig()
         if (config.renderRestartCount && typeof config.renderRestartCount === 'number') {
-            restartThreshold = config.renderRestartCount
+            restartThreshold = config.renderRestartCount;
         }
         browserInstance = await puppeteer.launch({
             headless: 'new',
@@ -119,8 +118,12 @@ function getDesignWidth(tplFile) {
  */
 async function renderTemplate(templateName, data, options = {}) {
     const start = Date.now()
-    const scale = options.scale ?? 1.0
     const tplFile = path.join(pluginRoot, 'resources', 'template', `${templateName}.html`)
+    const config = ConfigManager.getConfig();
+    const scale = config.renderScale ?? options.scale ?? 1.0
+    const maxRenderTime = config.renderTimeOut || 10000;
+    // 从配置读取默认重试次数，优先使用配置
+    const maxRetries = config.maxRenderRetry ?? options.retries ?? 1;
     if (!fs.existsSync(tplFile)) {
         logger.error(`[Schedule] 模板文件不存在: ${tplFile}`)
         return null
@@ -130,8 +133,7 @@ async function renderTemplate(templateName, data, options = {}) {
         const { fontFile, formatType } = getFontFileInfo()
         data._fontFile = fontFile
         data._fontFormat = formatType
-        // 构造完整的 file:// URL
-        // 在 renderTemplate 函数内，获取字体文件后添加 Base64 转换
+        // 获取字体文件后添加 Base64 转换
         const fontFilePath = path.join(pluginRoot, 'resources', 'fonts', fontFile)
         if (fs.existsSync(fontFilePath)) {
             const fontBuffer = fs.readFileSync(fontFilePath)
@@ -156,7 +158,6 @@ async function renderTemplate(templateName, data, options = {}) {
         logger.error(`[Schedule] 模板 ${templateName} 解析失败:`, err)
         return null
     }
-    const maxRetries = options.retries ?? maxRetry
     let lastError = null
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         if (attempt > 0) {
@@ -171,22 +172,9 @@ async function renderTemplate(templateName, data, options = {}) {
                 height: 100,
                 deviceScaleFactor: scale
             })
-            // 设置内容加载超时 10 秒，等待 load 事件
-            await page.setDefaultNavigationTimeout(10000);
+            // 设置内容加载超时，等待 load 事件
+            await page.setDefaultNavigationTimeout(maxRenderTime);
             await page.setContent(html, { waitUntil: 'load' });
-            /*
-            // 等待所有图片加载 + 字体加载完成
-            await page.evaluate(async () => {
-                // 等待图片
-                await Promise.all(
-                    Array.from(document.images)
-                        .filter(img => !img.complete)
-                        .map(img => new Promise(resolve => { img.onload = img.onerror = resolve; }))
-                );
-                // 等待字体加载
-                await document.fonts.ready;
-            });
-            */
             const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' })
             const result = Buffer.isBuffer(screenshotBuffer) ? screenshotBuffer : Buffer.from(screenshotBuffer)
             // 成功渲染后增加计数，并判断是否需要重启
@@ -215,9 +203,6 @@ async function renderTemplate(templateName, data, options = {}) {
  * 生成群课表图片
  */
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
-    const config = ConfigManager.getConfig()
-    const scale = config.renderScale ?? 1.0
-    const mergedOptions = { ...options, scale }
     const now = new Date()
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
     const templateData = {
@@ -234,22 +219,18 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
             signature: m.signature || ''
         }))
     }
-    return await renderTemplate('schedule-template', templateData, mergedOptions)
+    return await renderTemplate('schedule-template', templateData, options)
 }
 /**
  * 生成帮助图片
  */
 export async function generateHelpImage(helpData, options = {}) {
-    const config = ConfigManager.getConfig()
-    const scale = config.renderScale ?? 1.0
-    const mergedOptions = { ...options, scale }
-
     const now = new Date()
     const templateData = {
         ...helpData,
         updateTime: now.toLocaleString('zh-CN')
     }
-    return await renderTemplate('help-template', templateData, mergedOptions)
+    return await renderTemplate('help-template', templateData, options)
 }
 /**
  * 生成文本格式课表（备用）
@@ -313,9 +294,6 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
  * @returns {Promise<Buffer|null>}
  */
 export async function generateUserScheduleImage(userData, targetDate = null, options = {}) {
-    const config = ConfigManager.getConfig()
-    const scale = config.renderScale ?? 1.0
-    const mergedOptions = { retries: 1, ...options, scale }
     let dateStr = '';
     if (targetDate) {
         dateStr = targetDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
@@ -339,7 +317,7 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
         })),
         updateTime: new Date().toLocaleString('zh-CN')
     };
-    return await renderTemplate('user-schedule-template', templateData, mergedOptions);
+    return await renderTemplate('user-schedule-template', templateData, options);
 }
 
 /**
@@ -358,14 +336,9 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
  * @returns {Promise<Buffer|null>}
  */
 export async function generateUserInfoImage(userId, userInfoData, options = {}) {
-    const config = ConfigManager.getConfig();
-    const scale = config.renderScale ?? 1.0;
-    const mergedOptions = { ...options, scale };
-
     const avatar = `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`;
     const now = new Date();
     const currentTime = now.toLocaleString('zh-CN');
-
     const templateData = {
         avatar,
         nickname: userInfoData.nickname || `用户${userId}`,
@@ -379,8 +352,7 @@ export async function generateUserInfoImage(userId, userInfoData, options = {}) 
         currentTime,
         tips: '使用 #今日课表 等命令查看每日课程'
     };
-
-    return await renderTemplate('user-info-template', templateData, mergedOptions);
+    return await renderTemplate('user-info-template', templateData, options);
 }
 
 /**
@@ -390,16 +362,12 @@ export async function generateUserInfoImage(userId, userInfoData, options = {}) 
  * @returns {Promise<Buffer|null>}
  */
 export async function renderBirthdayList(data, options = {}) {
-    const config = ConfigManager.getConfig()
-    const scale = config.renderScale ?? 1.0
-    const mergedOptions = { ...options, scale }
-
     const now = new Date()
     const templateData = {
         ...data,
         updateTime: now.toLocaleString('zh-CN')
     }
-    return await renderTemplate('birthday-list', templateData, mergedOptions)
+    return await renderTemplate('birthday-list', templateData, options)
 }
 /**
  *  获取字体映射
