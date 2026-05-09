@@ -9,6 +9,7 @@ export const schemas = [
         field: "botName",
         label: "Bot名称",
         component: "Input",
+        helpMessage: "本插件中自定义的Bot名称",
         placeholder: "请输入自定义名称",
         bottomHelpMessage: "请输入要在本插件显示的自定义Bot名称。留空默认使用Bot昵称"
     },
@@ -20,6 +21,7 @@ export const schemas = [
         field: "renderScale",
         label: "图片渲染精度",
         component: "InputNumber",
+        helpMessage: "越大的图像越清晰，但会略微影响性能。",
         required: true,
         componentProps: {
             min: 0.8,
@@ -42,6 +44,52 @@ export const schemas = [
             ]
         },
         bottomHelpMessage: "选择生成图片时使用的字体。需确保 resources/fonts/ 目录下存在对应的字体文件。"
+    },
+    {
+        field: "maxRenderRetry",
+        label: "渲染重试次数",
+        component: "InputNumber",
+        helpMessage: "图像渲染超时或者失败时，允许的最大重试次数。",
+        required: true,
+        componentProps: {
+            min: 0,
+            max: 3,
+            step: 1,
+            placeholder: '请输入重试次数'
+        },
+        defaultValue: 1,
+        bottomHelpMessage: "图像渲染超时或者失败时，允许的最大重试次数。"
+    },
+    {
+        field: "renderRestartCount",
+        label: "渲染重启阈值",
+        component: "InputNumber",
+        helpMessage: "累计渲染多少张图片之后自动重启Puppeteer, 避免可能出现的渲染越来越慢",
+        required: true,
+        componentProps: {
+            min: 20,
+            max: 200,
+            step: 1,
+            placeholder: '请输入重启阈值'
+        },
+        defaultValue: 100,
+        bottomHelpMessage: "累计渲染多少张图片之后自动重启Puppeteer, 避免可能出现的渲染越来越慢。"
+    },
+    {
+        field: "renderTimeOut",
+        label: "渲染超时时间",
+        component: "InputNumber",
+        helpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms",
+        required: true,
+        componentProps: {
+            min: 5000,
+            max: 30000,
+            step: 100,
+            placeholder: '请输入超时时间',
+            addonAfter: 'ms'
+        },
+        defaultValue: 10000,
+        bottomHelpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms。"
     },
     {
         component: 'Divider',
@@ -84,27 +132,15 @@ export const schemas = [
         placeholder: "请输入Token",
         bottomHelpMessage: "请输入用于访问课表服务的Token。可联系插件作者获取。"
     },
-    */
-    {
-        field: "sortMode",
-        label: "群课表排序模式",
-        helpMessage: "默认按QQ号升序，可改为按上课状态排序",
-        component: "RadioGroup",
-        componentProps: {
-            options: [
-                { label: "按QQ号(默认)", value: "userId" },
-                { label: "按上课状态", value: "courseStatus" }
-            ]
-        },
-        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。"
-    },
+    */ 
     {
         component: 'Divider',
         label: '自动任务设置'
     },
     {
         field: "pushHour",
-        label: "推送时间（小时）",
+        label: "推送时间",
+        helpMessage: "只需要填写一个整数就行，每天对应时间会自动推送",
         component: "InputNumber",
         required: true,
         componentProps: {
@@ -145,15 +181,30 @@ export const schemas = [
         label: '群聊相关设置'
     },
     {
+        field: "sortMode",
+        label: "课表排序模式",
+        helpMessage: "默认按QQ号升序，可改为按上课状态排序",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "按QQ号(默认)", value: "userId" },
+                { label: "按上课状态", value: "courseStatus" }
+            ]
+        },
+        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。"
+    },
+    {
         field: "showTableName",
-        label: "群聊显示课表名称",
+        label: "显示课表名称",
+        helpMessage: "针对群内设置课表、查看个人课表等功能，可以隐藏课表名称",
         component: "Switch",
         defaultValue: true,
         bottomHelpMessage: "关闭后，在群内设置课表以及查看个人信息将不显示课表名称，保护隐私"
     },
     {
         field: "autoRecallCode",
-        label: "自动撤回课表口令",
+        label: "自动撤回口令",
+        helpMessage: "仅针对口令类导入生效，对文件导入无效",
         component: "Switch",
         defaultValue: false,
         bottomHelpMessage: "开启后，在群内且Bot有管理员权限时，将自动撤回用户发送的口令消息"
@@ -169,8 +220,9 @@ export const schemas = [
     },
     {
         field: "birthdayPushHour",
-        label: "生日推送时间",
+        label: "推送时间",
         component: "InputNumber",
+        helpMessage: "设置每天几点推送生日提醒",
         required: true,
         componentProps: {
             min: 0,
@@ -184,7 +236,8 @@ export const schemas = [
     },
     {
         field: "allowSelfModify",
-        label: "允许自行修改生日",
+        label: "允许修改生日",
+        helpMessage: "是否允许成员重新设置生日",
         component: "Switch",
         defaultValue: true,
         bottomHelpMessage: "开启后，成员可以自行重新设置或清除生日以进行修改"
@@ -195,7 +248,8 @@ export const schemas = [
     },
     {
         field: "birthdayWhitelistGroups",
-        label: "生日推送白名单群",
+        label: "白名单群",
+        helpMessage: "填写时仅对这些群生效",
         component: "GSelectGroup",
         componentProps: {
             placeholder: "选择需要推送生日提醒的群（留空则推送所有群）",
@@ -206,7 +260,8 @@ export const schemas = [
     },
     {
         field: "birthdayBlacklistGroups",
-        label: "生日推送黑名单群",
+        label: "黑名单群",
+        helpMessage: "填写时跳过这些群聊。会被白名单覆盖。",
         component: "GSelectGroup",
         componentProps: {
             placeholder: "选择不推送生日提醒的群",

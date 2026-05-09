@@ -36,7 +36,10 @@ export class ConfigManager {
             pushHour: 20,
             showTableName: true,
             autoRecallCode: false,
-            renderScale: 1.0,
+            renderScale: 1.0,         // 渲染精度
+            renderRestartCount: 100,  // 渲染重启计数
+            maxRenderRetry: 1,        // 最大重试次数
+            renderTimeOut: 10000,     // 渲染超时时间（ms）
             autoCancelCheckEnabled: false,
             autoCancelCheckInterval: 60,
             // 生日配置
@@ -102,7 +105,8 @@ export class ConfigManager {
         }
         // 仅提取需要保存的字段
         const {
-            pushHour, showTableName, autoRecallCode, renderScale,
+            pushHour, showTableName, autoRecallCode,
+            renderScale, renderRestartCount, maxRenderRetry, renderTimeOut,
             autoCancelCheckEnabled, autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
@@ -115,7 +119,7 @@ export class ConfigManager {
             pushHour,
             showTableName,
             autoRecallCode,
-            renderScale,
+            renderScale, renderRestartCount, maxRenderRetry, renderTimeOut,
             autoCancelCheckEnabled,
             autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,

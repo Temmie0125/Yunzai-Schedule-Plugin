@@ -284,10 +284,18 @@ export class DataManager {
         // 按时间排序
         courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
+        const hasRescheduled = courses.some(c => c.rescheduled === true);
         let reply = `${displayName} 的第${week}周 星期${day} 课程安排\n`;
+        if (hasRescheduled) {
+            reply += `⚠️ 含调课课程\n`;
+        }
         reply += "=".repeat(25) + "\n";
         courses.forEach((course, index) => {
-            reply += `${index + 1}. ${course.name}\n`;
+            reply += `${index + 1}. `;
+            if (course.rescheduled) {
+                reply += `🔄 [调课·原${course.originalDate}] `;
+            }
+            reply += `${course.name}\n`;
             reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
             reply += `   🕐 ${course.startTime} - ${course.endTime}\n`;
             reply += `   📍 ${course.location || '未知地点'}\n`;
@@ -587,9 +595,231 @@ export class DataManager {
         // 没有课程或最大周数为0时，默认学期未结束（避免误判）
         return maxWeek > 0 && weekNum > maxWeek;
     }
+    // ========== 调课功能 ==========
+
+    /**
+     * 检查课表是否包含调课课程（任意日期）
+     * @param {object} schedule - 用户课表数据
+     * @returns {boolean}
+     */
+    static hasRescheduledCourses(schedule) {
+        if (!schedule || !schedule.courses) return false;
+        return schedule.courses.some(c => c.rescheduled === true);
+    }
+
+    /**
+     * 检查指定日期是否有调课课程
+     * @param {object} schedule - 用户课表数据
+     * @param {number} week - 周数
+     * @param {number} day - 星期（1-7）
+     * @returns {boolean}
+     */
+    static hasRescheduledCoursesForDate(schedule, week, day) {
+        if (!schedule || !schedule.courses) return false;
+        return schedule.courses.some(c =>
+            c.rescheduled === true &&
+            parseInt(c.day) === day &&
+            c.weeks.includes(week)
+        );
+    }
+
+    /**
+     * 调课：将原日期课程移至新日期
+     * @param {string|number} userId
+     * @param {Date} originalDate - 原日期
+     * @param {Date} newDate - 新日期
+     * @returns {{ success: boolean, hasConflict?: boolean, origCourses?: Array, newCourses?: Array, error?: string }}
+     */
+    static rescheduleCourses(userId, originalDate, newDate) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule) return { success: false, error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
+
+        const origWeek = calculateWeekFromDate(schedule.semesterStart, originalDate);
+        const origDay = originalDate.getDay() === 0 ? 7 : originalDate.getDay();
+        const newWeek = calculateWeekFromDate(schedule.semesterStart, newDate);
+        const newDay = newDate.getDay() === 0 ? 7 : newDate.getDay();
+
+        if (origWeek === null || newWeek === null) {
+            return { success: false, error: "日期早于学期开始日期，无法调课" };
+        }
+
+        // 查找原日期的课程（仅非调课课程，即原始课程）
+        const origCourses = schedule.courses.filter(c =>
+            parseInt(c.day) === origDay && c.weeks.includes(origWeek) && !c.rescheduled
+        );
+
+        if (origCourses.length === 0) {
+            return { success: false, error: `原日期（${originalDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}）没有课程，无法调课` };
+        }
+
+        // 查找新日期已有的非调课课程（冲突检测）
+        const existingNewCourses = schedule.courses.filter(c =>
+            parseInt(c.day) === newDay && c.weeks.includes(newWeek) && !c.rescheduled
+        );
+
+        const hasConflict = existingNewCourses.length > 0;
+
+        if (hasConflict) {
+            return {
+                success: false,
+                hasConflict: true,
+                origCourses: [...origCourses],
+                newCourses: [...existingNewCourses],
+                origWeek,
+                origDay,
+                newWeek,
+                newDay
+            };
+        }
+
+        // 无冲突，直接执行调课
+        this._moveCourses(schedule, origCourses, origWeek, origDay, newWeek, newDay, originalDate, newDate);
+        this.saveSchedule(userId, schedule);
+        return { success: true, hasConflict: false };
+    }
+
+    /**
+     * 调换两天的课程安排
+     * @param {string|number} userId
+     * @param {Date} date1
+     * @param {Date} date2
+     * @returns {{ success: boolean, error?: string }}
+     */
+    static swapDayCourses(userId, date1, date2) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule) return { success: false, error: "你还没有设置课程表" };
+
+        const week1 = calculateWeekFromDate(schedule.semesterStart, date1);
+        const day1 = date1.getDay() === 0 ? 7 : date1.getDay();
+        const week2 = calculateWeekFromDate(schedule.semesterStart, date2);
+        const day2 = date2.getDay() === 0 ? 7 : date2.getDay();
+
+        if (week1 === null || week2 === null) {
+            return { success: false, error: "日期早于学期开始日期" };
+        }
+
+        // 找到两天的课程（排除已调课的）
+        const courses1 = schedule.courses.filter(c =>
+            parseInt(c.day) === day1 && c.weeks.includes(week1) && !c.rescheduled
+        );
+        const courses2 = schedule.courses.filter(c =>
+            parseInt(c.day) === day2 && c.weeks.includes(week2) && !c.rescheduled
+        );
+
+        if (courses1.length === 0 && courses2.length === 0) {
+            return { success: false, error: "两个日期都没有课程" };
+        }
+
+        // date1 的课程移到 date2
+        this._moveCourses(schedule, courses1, week1, day1, week2, day2, date1, date2);
+        // date2 的课程移到 date1
+        this._moveCourses(schedule, courses2, week2, day2, week1, day1, date2, date1);
+
+        this.saveSchedule(userId, schedule);
+        return { success: true };
+    }
+
+    /**
+     * 内部方法：将课程从指定日期移动到新日期
+     */
+    static _moveCourses(schedule, courses, fromWeek, fromDay, toWeek, toDay, fromDate, toDate) {
+        for (const course of courses) {
+            // 从原课程 weeks 中移除该周
+            const weekIdx = course.weeks.indexOf(fromWeek);
+            if (weekIdx !== -1) {
+                course.weeks.splice(weekIdx, 1);
+            }
+
+            // 创建新课程条目（调课标记）
+            const newCourse = {
+                name: course.name,
+                teacher: course.teacher || '',
+                location: course.location || '',
+                day: toDay,
+                startTime: course.startTime,
+                endTime: course.endTime,
+                weeks: [toWeek],
+                rescheduled: true,
+                originalDay: fromDay,
+                originalWeek: fromWeek,
+                originalDate: fromDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+            };
+            schedule.courses.push(newCourse);
+        }
+
+        // 清理 weeks 为空的课程
+        schedule.courses = schedule.courses.filter(c => c.weeks.length > 0);
+    }
+
+    /**
+     * 撤销指定日期的调课
+     * @param {string|number} userId
+     * @param {Date} date - 要撤销调课的日期（调课目标日期）
+     * @returns {{ success: boolean, count?: number, error?: string }}
+     */
+    static undoReschedule(userId, date) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule) return { success: false, error: "你还没有设置课程表" };
+
+        const week = calculateWeekFromDate(schedule.semesterStart, date);
+        const day = date.getDay() === 0 ? 7 : date.getDay();
+
+        if (week === null) return { success: false, error: "日期早于学期开始日期" };
+
+        // 找到该日期的调课课程
+        const rescheduledCourses = schedule.courses.filter(c =>
+            c.rescheduled === true &&
+            parseInt(c.day) === day &&
+            c.weeks.includes(week)
+        );
+
+        if (rescheduledCourses.length === 0) {
+            return { success: false, error: `该日期（${date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}）没有调课记录` };
+        }
+
+        for (const rc of rescheduledCourses) {
+            // 查找原始课程（同名同教师同地点同originalDay）
+            const origCourse = schedule.courses.find(c =>
+                !c.rescheduled &&
+                c.name === rc.name &&
+                (c.teacher || '') === (rc.teacher || '') &&
+                (c.location || '') === (rc.location || '') &&
+                parseInt(c.day) === rc.originalDay
+            );
+
+            if (origCourse) {
+                // 把原周数加回去
+                if (!origCourse.weeks.includes(rc.originalWeek)) {
+                    origCourse.weeks.push(rc.originalWeek);
+                    origCourse.weeks.sort((a, b) => a - b);
+                }
+            } else {
+                // 原始课程已被完全删除，重建
+                const restoredCourse = {
+                    name: rc.name,
+                    teacher: rc.teacher || '',
+                    location: rc.location || '',
+                    day: rc.originalDay,
+                    startTime: rc.startTime,
+                    endTime: rc.endTime,
+                    weeks: [rc.originalWeek]
+                };
+                schedule.courses.push(restoredCourse);
+            }
+        }
+
+        // 移除调课课程
+        schedule.courses = schedule.courses.filter(c =>
+            !(c.rescheduled === true && parseInt(c.day) === day && c.weeks.includes(week))
+        );
+
+        this.saveSchedule(userId, schedule);
+        return { success: true, count: rescheduledCourses.length };
+    }
+
     /**
  * 更新用户的学期开始日期（保留其他所有字段）
- * @param {string|number} userId 
+ * @param {string|number} userId
  * @param {string} semesterStart 格式 YYYY-MM-DD
  * @returns {boolean}
  */

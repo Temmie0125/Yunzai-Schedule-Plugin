@@ -2,6 +2,9 @@ pushHour: 20
 showTableName: true
 autoRecallCode: false
 renderScale: 1.0
+renderRestartCount: 100
+maxRenderRetry: 1
+renderTimeOut: 10000
 autoCancelCheckEnabled: false    
 autoCancelCheckInterval: 60
 birthdayPushHour: 0

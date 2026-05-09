@@ -119,6 +119,31 @@
             gap: 5px;
         }
 
+        .reschedule-notice {
+            margin: 10px 30px 10px;
+            font-size: 16px;
+            color: #c05621;
+            background: #fffaf0;
+            padding: 8px 20px;
+            border-radius: 30px;
+            text-align: center;
+            border: 1px solid #fbd38d;
+        }
+        .rescheduled-item {
+            border-left: 4px solid #ed8936;
+            background: #fffaf0;
+        }
+        .reschedule-badge {
+            display: inline-block;
+            font-size: 16px;
+            background: #ed8936;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            margin-left: 8px;
+            vertical-align: middle;
+            font-weight: normal;
+        }
         .no-course {
             text-align: center;
             font-size: 24px;
@@ -178,10 +203,18 @@
         <div class="user-signature">💭 {{signature}}</div>
         {{/if}}
 
+        {{if hasRescheduled}}
+        <div class="reschedule-notice">⚠️ 本日课表含调课课程，请注意查看标记</div>
+        {{/if}}
         <div class="courses-list">
             {{each courses course}}
-            <div class="course-item">
-                <div class="course-name">{{course.name}}</div>
+            <div class="course-item {{if course.rescheduled}}rescheduled-item{{/if}}">
+                <div class="course-name">
+                    {{if course.rescheduled}}🔄 {{/if}}{{course.name}}
+                    {{if course.rescheduled}}
+                    <span class="reschedule-badge">调课 · 原 {{course.originalDate}}</span>
+                    {{/if}}
+                </div>
                 <div class="course-detail">
                     <span>👨‍🏫 {{course.teacher}}</span>
                     <span>🕐 {{course.startTime}} - {{course.endTime}}</span>

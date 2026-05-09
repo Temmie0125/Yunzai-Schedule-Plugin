@@ -26,6 +26,11 @@ function timeToMinutes(timeStr) {
   return h * 60 + m;
 }
 
+/**
+ * 合并连续课程：名称地点教师相同且间隔小于10分钟
+ * @param {*} courses 
+ * @returns 合并后的课程
+ */
 function mergeConsecutiveCourses(courses) {
   if (!courses.length) return [];
   courses.sort((a, b) =>
@@ -451,22 +456,41 @@ export async function importScheduleFromIcsData(userId, icsText, event) {
       if (typeof startDate.toJSDate === 'function') startDate = startDate.toJSDate();
       if (typeof endDate.toJSDate === 'function') endDate = endDate.toJSDate();
 
-      const item = occ.item;
-      const summary = item.summary || '未知课程';
+      // 统一从 occ.item（Occurrence）或 occ 自身（Event）取详情
+      const ev = occ.item || occ;
+
+      const summary = ev.summary || '未知课程';
+
+      let rawLocation = (ev.location || '').trim();
+      const description = (ev.description || '').trim();
 
       let location = '';
       let teacher = '';
-      const rawLocation = (item.location || '').trim();
+
+      // 1. 尝试从 location 中分割“地点 教师”（WakeUp 格式）
       if (rawLocation) {
         const parts = rawLocation.split(/\s+/);
         if (parts.length >= 2) {
           teacher = parts.pop();
           location = parts.join(' ');
         } else {
-          location = rawLocation;
+          location = rawLocation; // 只有地点，没有教师
         }
       }
 
+      // 2. 若 location 中没拿到教师，尝试从 description 提取（新 ICS 格式）
+      if (!teacher && description) {
+        // 取最后一行作为可能的教师名，并去掉末尾句号
+        const lines = description.split('\n').filter(l => l.trim());
+        if (lines.length > 0) {
+          teacher = lines[lines.length - 1].replace(/[。.]$/, '').trim();
+        }
+      }
+
+      // 若仍无教师则置空
+      if (!teacher) teacher = '';
+
+      // 后面的星期、时间、周次计算保持不变
       const weekday = startDate.getDay() || 7;
       const startTime = [startDate.getHours(), startDate.getMinutes()]
         .map(n => String(n).padStart(2, '0')).join(':');
@@ -493,10 +517,12 @@ export async function importScheduleFromIcsData(userId, icsText, event) {
       if (!course.teacher && teacher) course.teacher = teacher;
     }
 
-    const courses = Array.from(courseMap.values()).map(c => ({
+    const rawCourses = Array.from(courseMap.values()).map(c => ({
       ...c,
       weeks: Array.from(c.weeks).sort((a, b) => a - b)
     }));
+    // 合并名称、教师、地点相同且时间连续（间隔≤10分钟）的相邻课程
+    const courses = mergeConsecutiveCourses(rawCourses);
 
     if (courses.length === 0) {
       return { success: false, message: '未能解析出有效的课程数据' };
