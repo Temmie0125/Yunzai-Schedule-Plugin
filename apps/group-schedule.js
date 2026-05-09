@@ -4,7 +4,7 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -115,18 +115,20 @@ export class GroupSchedulePlugin extends plugin {
  *   - shouldStop: true 表示遇到法定节假日，调用方应直接返回（已经发送了回复）
  *   - notice: 非空字符串表示调休上班日的提示信息，需要附加到最终消息中
  */
-  async _handleHoliday(now, currentWeek = 1) {
+  async _handleHoliday(now, currentWeek = 1, skipHolidayReply = false) {
     const holidayInfo = DataManager.getHolidayInfoForDate(now);
-    if (!holidayInfo) return { shouldStop: false, notice: null };
+    if (!holidayInfo) return { shouldStop: false, notice: null, holidayName: null, isHoliday: false };
     if (holidayInfo.isHoliday) {
-      await this.reply(`今日是【${holidayInfo.name}】，法定节假日，无课程安排~`);
-      return { shouldStop: true, notice: null };
+      if (!skipHolidayReply) {
+        await this.reply(`今日是【${holidayInfo.name}】，法定节假日，无课程安排~`);
+      }
+      return { shouldStop: true, notice: null, holidayName: holidayInfo.name, isHoliday: true };
     }
     if (holidayInfo.isWorkdayOnWeekend) {
       const notice = `⚠️ 今日为调休上班日（${holidayInfo.name}），实际课程安排请以学校通知为准。\n可使用 #课表查询 <你的周数> <星期几> 查询对应课表。\n例如 #课表查询 ${currentWeek} 1 可以查询第${currentWeek}周的周一课程。`;
-      return { shouldStop: false, notice };
+      return { shouldStop: false, notice, holidayName: null, isHoliday: false };
     }
-    return { shouldStop: false, notice: null };
+    return { shouldStop: false, notice: null, holidayName: null, isHoliday: false };
   }
   // ========== 获取群成员数据（带自动过期和 memberInfo 备选昵称） ==========
   async getMemberScheduleData(userId, memberInfo, currentDay, currentTime) {
@@ -157,18 +159,37 @@ export class GroupSchedulePlugin extends plugin {
     const currentWeek = calculateCurrentWeek()
     const currentDay = now.getDay() === 0 ? 7 : now.getDay()
     const currentTime = now.toTimeString().slice(0, 5) // HH:MM
-    // 节假日处理
-    const { shouldStop, notice: globalNotice } = await this._handleHoliday(now);
-    if (shouldStop) return true;
+    // 节假日处理（先跳过自动回复，待检测调课后再决定）
+    const { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, currentWeek, true);
 
     const groupMembers = await getGroupMembers(groupId)
     const membersWithSchedule = []
+    let hasAnyRescheduled = false;
     for (const member of groupMembers) {
       const data = await this.getMemberScheduleData(member.user_id, member, currentDay, currentTime);
       if (data) {
         membersWithSchedule.push(data);
       }
+      // 检查是否有调课课程
+      if (isHoliday && !hasAnyRescheduled) {
+        const schedule = DataManager.loadSchedule(member.user_id);
+        if (schedule && schedule.semesterStart) {
+          const memberWeek = calculateWeekFromDate(schedule.semesterStart, now);
+          if (memberWeek !== null && DataManager.hasRescheduledCoursesForDate(schedule, memberWeek, currentDay)) {
+            hasAnyRescheduled = true;
+          }
+        }
+      }
     }
+    // 节假日：只有存在调课成员时才继续渲染
+    if (isHoliday && !hasAnyRescheduled) {
+      await this.reply(`今日是【${holidayName}】，法定节假日，无课程安排~`);
+      return true;
+    }
+    if (isHoliday && hasAnyRescheduled) {
+      globalNotice = `⚠️ 今日为法定节假日（${holidayName}），以下显示含调课成员的课程安排，请注意甄别。`;
+    }
+    if (shouldStop && !hasAnyRescheduled) return true;
     if (membersWithSchedule.length === 0) {
       await this.reply("本群暂无成员设置课程表");
       return true;
@@ -189,17 +210,18 @@ export class GroupSchedulePlugin extends plugin {
     const currentWeek = calculateCurrentWeek();
     const currentDay = now.getDay() === 0 ? 7 : now.getDay();
     const currentTime = now.toTimeString().slice(0, 5);
-    // 节假日处理
-    const { shouldStop, notice: globalNotice } = await this._handleHoliday(now);
-    if (shouldStop) return true;
+    // 节假日处理（先跳过自动回复，待检测调课后再决定）
+    const { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, currentWeek, true);
     // 获取所有用户课表
     const allUsers = DataManager.getAllUserSchedules();
     if (allUsers.length === 0) {
-      await this.reply("暂无任何用户设置课程表");
+      if (!isHoliday) await this.reply("暂无任何用户设置课程表");
+      else await this.reply(`今日是【${holidayName}】，法定节假日，无课程安排~`);
       return true;
     }
     // 收集每个用户的上课状态
     const allUsersData = [];
+    let hasAnyRescheduled = false;
     for (const { userId, schedule } of allUsers) {
       // 自动过期翘课状态
       await this.checkAndAutoExpireSkip(userId);
@@ -207,10 +229,25 @@ export class GroupSchedulePlugin extends plugin {
       if (userData) {
         allUsersData.push(userData);
       }
+      // 检查是否有调课课程
+      if (isHoliday && !hasAnyRescheduled && schedule.semesterStart) {
+        const memberWeek = calculateWeekFromDate(schedule.semesterStart, now);
+        if (memberWeek !== null && DataManager.hasRescheduledCoursesForDate(schedule, memberWeek, currentDay)) {
+          hasAnyRescheduled = true;
+        }
+      }
     }
-    if (allUsersData.length === 0) {
+    if (allUsersData.length === 0 && !isHoliday) {
       await this.reply("所有用户的课程表均为空或已结束");
       return true;
+    }
+    // 节假日：只有存在调课成员时才继续渲染
+    if (isHoliday && !hasAnyRescheduled) {
+      await this.reply(`今日是【${holidayName}】，法定节假日，无课程安排~`);
+      return true;
+    }
+    if (isHoliday && hasAnyRescheduled) {
+      globalNotice = `⚠️ 今日为法定节假日（${holidayName}），以下显示含调课成员的课程安排，请注意甄别。`;
     }
     /*
     // 限制显示数量
@@ -290,14 +327,30 @@ export class GroupSchedulePlugin extends plugin {
     const now = new Date();
     const currentDay = now.getDay() === 0 ? 7 : now.getDay();
     const currentTime = now.toTimeString().slice(0, 5);
-    // 节假日处理
-    const { shouldStop, notice: globalNotice } = await this._handleHoliday(now);
-    if (shouldStop) return true;
+    // 节假日处理（先跳过自动回复，待检测调课后再决定）
+    const { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, calculateCurrentWeek(), true);
     // 获取该成员的上课状态数据
     const memberData = await this.getMemberScheduleData(targetId, targetMember, currentDay, currentTime);
     if (!memberData) {
-      await this.reply(`用户 ${targetMember.card || targetMember.nickname || targetId} 还未设置课程表`);
+      if (isHoliday) {
+        await this.reply(`今日是【${holidayName}】，法定节假日，无课程安排~`);
+      } else {
+        await this.reply(`用户 ${targetMember.card || targetMember.nickname || targetId} 还未设置课程表`);
+      }
       return true;
+    }
+    // 节假日：检查该成员是否有调课课程
+    if (isHoliday) {
+      const schedule = DataManager.loadSchedule(targetId);
+      let week = null;
+      if (schedule && schedule.semesterStart) {
+        week = calculateWeekFromDate(schedule.semesterStart, now);
+      }
+      if (!schedule || week === null || !DataManager.hasRescheduledCoursesForDate(schedule, week, currentDay)) {
+        await this.reply(`今日是【${holidayName}】，法定节假日，该成员无课程安排~`);
+        return true;
+      }
+      globalNotice = `⚠️ 今日为法定节假日（${holidayName}），以下显示为调课后的课程安排。`;
     }
     // 发送图片（仅包含该成员）
     await this.sendScheduleMessage([memberData], calculateCurrentWeek(), currentDay, globalNotice);

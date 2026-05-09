@@ -123,23 +123,34 @@ export class ScheduleQuery extends plugin {
         // 获取当天的节假日/调休信息
         const holidayInfo = DataManager.getHolidayInfoForDate(today);
         let globalNotice = null;
+        let isReschedule = false
+        const schedule = DataManager.loadSchedule(userId);
+        const todayWeek = result.week;
+        const todayDay = result.day;
+        isReschedule = DataManager.hasRescheduledCoursesForDate(schedule, todayWeek, todayDay)
         if (holidayInfo) {
             if (holidayInfo.isHoliday) {
-                globalNotice = `今日是【${holidayInfo.name}】，法定节假日，无课程安排~`;
-                // 节假日直接返回，跳过渲染
-                return e.reply(globalNotice);
+                // 检查是否有调课课程，有则继续渲染
+               //  const schedule = DataManager.loadSchedule(userId);
+                if (schedule && isReschedule) {
+                    globalNotice = `⚠️ 今日为法定节假日（${holidayInfo.name}），已为你显示调课后的课程安排。`;
+                } else {
+                    return this.reply(`今日是【${holidayInfo.name}】，法定节假日，无课程安排~`);
+                }
             } else if (holidayInfo.isWorkdayOnWeekend) {
-                globalNotice = `⚠️ 今日为调休上班日（${holidayInfo.name}），实际课程安排请以学校通知为准。\n可使用 #课表查询 命令查询对应课表。`;
+                // 仅当没有调课时才给出提示
+                if (!isReschedule) {
+                    globalNotice = `⚠️ 今日为调休上班日（${holidayInfo.name}），实际课程安排请以学校通知为准。\n可使用 #课表查询 命令查询对应课表。`;
+                }
             }
         }
         // 尝试生成图片
-        const schedule = DataManager.loadSchedule(userId);
-        await this._sendScheduleReply(userId, today, result, schedule);
+        await this._sendScheduleReply(userId, today, result, schedule, globalNotice);
         return true;
     }
     /**
      * 明日课表
-     * @returns 
+     * @returns
      */
     async showTomorrowSchedule() {
         const userId = this.e.user_id;
@@ -292,14 +303,18 @@ export class ScheduleQuery extends plugin {
      * @param {Object} result - getCoursesForDate 返回的结果
      * @param {Object} schedule - 用户课表数据
      */
-    async _sendScheduleReply(userId, targetDate, result, schedule) {
+    async _sendScheduleReply(userId, targetDate, result, schedule, globalNotice = null) {
         const userData = {
             nickname: result.displayName,
             week: result.week,
             day: result.day,
             signature: schedule?.signature || '',
-            courses: result.courses
+            courses: result.courses,
+            hasRescheduled: result.courses.some(c => c.rescheduled === true)
         };
+        if (globalNotice) {
+            await this.reply(globalNotice);
+        }
         await this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
         const img = await generateUserScheduleImage(userData, targetDate, { e: this.e });
         if (img) {

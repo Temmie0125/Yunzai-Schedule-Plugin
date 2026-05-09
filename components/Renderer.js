@@ -327,12 +327,15 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
         weekday: weekdayMap[userData.day],
         date: dateStr,
         signature: userData.signature || '',
+        hasRescheduled: userData.hasRescheduled || false,
         courses: userData.courses.map(c => ({
             name: c.name,
             teacher: c.teacher || '未知教师',
             startTime: c.startTime,
             endTime: c.endTime,
-            location: c.location || '未知地点'
+            location: c.location || '未知地点',
+            rescheduled: c.rescheduled || false,
+            originalDate: c.originalDate || ''
         })),
         updateTime: new Date().toLocaleString('zh-CN')
     };

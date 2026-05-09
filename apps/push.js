@@ -4,6 +4,7 @@ import { checkFriend, getBotName } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { generateUserScheduleImage } from '../components/Renderer.js'
+import { calculateWeekFromDate } from '../utils/timeUtils.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePush extends plugin {
@@ -148,35 +149,50 @@ export class SchedulePush extends plugin {
           );
           continue;
         }
-        // 3. 节假日/调休判断
+        // 3. 计算明日周数和星期
+        const tomorrowWeek = calculateWeekFromDate(schedule.semesterStart, tomorrow);
+        const tomorrowDay = tomorrowWeekday === 0 ? 7 : tomorrowWeekday;
+        const hasRescheduledTomorrow = tomorrowWeek !== null && DataManager.hasRescheduledCoursesForDate(schedule, tomorrowWeek, tomorrowDay);
+
+        // 节假日/调休判断
         const holidayInfo = DataManager.getHolidayInfoForDate(tomorrow);
         if (holidayInfo) {
           if (holidayInfo.isHoliday) {
-            // 节假日放假，不推送课表，发送友好提示
-            const holidayName = holidayInfo.name;
-            await Bot.pickFriend(userId).sendMsg(
-              `🎉 明天是【${holidayName}】，休息日，无课程安排~ 祝您假期愉快！`
-            );
-            logger.info(`[课表订阅] 用户 ${userId} 明天是节假日 ${holidayName}，跳过推送`);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            continue;
+            // 节假日放假，检查是否有调课
+            if (hasRescheduledTomorrow) {
+              logger.info(`[课表订阅] 用户 ${userId} 明天是节假日但存在调课，继续推送`);
+              // 继续推送流程（不跳过）
+            } else {
+              const holidayName = holidayInfo.name;
+              await Bot.pickFriend(userId).sendMsg(
+                `🎉 明天是【${holidayName}】，休息日，无课程安排~ 祝您假期愉快！`
+              );
+              logger.info(`[课表订阅] 用户 ${userId} 明天是节假日 ${holidayName}，跳过推送`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              continue;
+            }
+          } else if (holidayInfo.isWorkdayOnWeekend) {
+            // 调休上班（周末补班），如果有调课则推送
+            if (!hasRescheduledTomorrow) {
+              await Bot.pickFriend(userId).sendMsg(
+                `⚠️ 明日需要调休补班哦，但由于各学校排课方案不同，请使用【#课表查询】命令根据学校安排查询次日课表。\n例如#课表查询 本周四`
+              );
+              logger.info(`[课表订阅] 用户 ${userId} 明天为调休上班日，已发送提示`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              continue;
+            }
+            logger.info(`[课表订阅] 用户 ${userId} 明天为调休上班日但存在调课，继续推送`);
           }
-          if (holidayInfo.isWorkdayOnWeekend) {
-            // 调休上班（周末补班），发送提示，不推送课表
-            // const weekNum = calculateWeekFromDate(schedule.semesterStart, tomorrow);
-            // const weekNumText = weekNum !== null ? weekNum : '未知';
-            await Bot.pickFriend(userId).sendMsg(
-              `⚠️ 明日需要调休补班哦，但由于各学校排课方案不同，请使用【#课表查询】命令根据学校安排查询次日课表。\n例如#课表查询 本周四`
-            );
-            logger.info(`[课表订阅] 用户 ${userId} 明天为调休上班日，已发送提示`);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            continue;
+        } else {
+          // 4. 周末且非调休上班（普通周末），检查调课
+          if (tomorrowWeekday === 0 || tomorrowWeekday === 6) {
+            if (hasRescheduledTomorrow) {
+              logger.info(`[课表订阅] 用户 ${userId} 明天是周末但存在调课，继续推送`);
+            } else {
+              logger.info(`[课表订阅] 用户 ${userId} 明天是普通周末，不推送`);
+              continue;
+            }
           }
-        }
-        // 4. 周末且非调休上班（普通周末），不推送
-        if (tomorrowWeekday === 0 || tomorrowWeekday === 6) {
-          logger.info(`[课表订阅] 用户 ${userId} 明天是普通周末，不推送`);
-          continue;
         }
         // 5. 正常推送明日课表
         const result = await DataManager.getCoursesForDate(userId, tomorrow);
