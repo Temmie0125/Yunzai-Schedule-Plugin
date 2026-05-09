@@ -129,7 +129,7 @@ export class ScheduleQuery extends plugin {
                 // 节假日直接返回，跳过渲染
                 return e.reply(globalNotice);
             } else if (holidayInfo.isWorkdayOnWeekend) {
-                globalNotice = `⚠️ 今日为调休上班日（${holidayInfo.name}），实际课程安排请以学校通知为准。\n可使用 #课表查询 ${currentWeek} <星期几> 查询对应课表（例如 #课表查询 ${currentWeek} 1 查询周一课程）。`;
+                globalNotice = `⚠️ 今日为调休上班日（${holidayInfo.name}），实际课程安排请以学校通知为准。\n可使用 #课表查询 命令查询对应课表。`;
             }
         }
         // 尝试生成图片
