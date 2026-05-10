@@ -499,22 +499,14 @@ export async function importScheduleFromIcsData(userId, icsText, event) {
       const week = calculateWeekFromDate(semesterStart, startDate);
       if (week === null) continue;
 
-      const key = `${summary}|${weekday}|${startTime}|${endTime}`;
+      const key = `${summary}|${weekday}|${startTime}|${endTime}|${location}|${teacher}`;
       if (!courseMap.has(key)) {
         courseMap.set(key, {
-          name: summary,
-          day: weekday,
-          startTime,
-          endTime,
-          weeks: new Set(),
-          location,
-          teacher
+          name: summary, day: weekday, startTime, endTime,
+          weeks: new Set(), location, teacher
         });
       }
-      const course = courseMap.get(key);
-      course.weeks.add(week);
-      if (!course.location && location) course.location = location;
-      if (!course.teacher && teacher) course.teacher = teacher;
+      courseMap.get(key).weeks.add(week);
     }
 
     const rawCourses = Array.from(courseMap.values()).map(c => ({
