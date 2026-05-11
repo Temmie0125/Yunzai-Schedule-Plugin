@@ -460,35 +460,62 @@ export class ScheduleManage extends plugin {
                 return null;
             }
             const data = fileInfo.data;
-            // 优先使用 url 下载
-            if (data.url && data.url.startsWith('http')) {
+            // 1. 优先处理 HTTP/HTTPS 下载链接
+            if (data.url && (data.url.startsWith('http://') || data.url.startsWith('https://'))) {
                 const response = await fetch(data.url);
                 if (!response.ok) return null;
                 return await response.text();
             }
-            // 尝试读取本地文件（私聊可能返回本地路径）
-            if (data.file && typeof data.file === 'string') {
-                const filePath = data.file;
-                // 获取文件扩展名
-                const ext = path.extname(filePath).toLowerCase();
-                if (!ext || (ext !== '.json' && ext !== '.ics' && ext !== '.wakeup_schedule')) {
-                    logger.warn(`[课表导入] 文件扩展名不是.json、.ics或.wakeup_schedule: ${filePath}`);
-                    return null;
-                }
+            // 2. 处理 file:// 本地链接（Linux 下常出现）
+            if (data.url && data.url.startsWith('file://')) {
+                let filePath = data.url.replace('file://', '');
+                // 如果路径被编码，尝试解码
+                try { filePath = decodeURIComponent(filePath); } catch { }
                 if (fs.existsSync(filePath)) {
                     const stats = fs.statSync(filePath);
-                    const MAX_SIZE = 2 * 1024 * 1024;
-                    if (stats.size > MAX_SIZE) {
+                    if (stats.size > 2 * 1024 * 1024) {
                         logger.warn(`[课表导入] 文件大小超限: ${stats.size} bytes`);
                         return null;
                     }
                     const content = fs.readFileSync(filePath, 'utf-8');
-                    logger.info(`[课表导入] 成功读取本地文件: ${filePath}`);
-                    fs.unlink(filePath, (err) => {
-                        if (err) logger.warn(`删除临时文件失败: ${filePath}`, err);
-                        else logger.info(`已删除临时文件: ${filePath}`);
-                    });
+                    logger.info(`[课表导入] 成功读取本地文件(file://): ${filePath}`);
+                    // 注意：通过 file:// 获取的文件通常由框架管理，不应删除，避免影响框架后续处理
                     return content;
+                } else {
+                    logger.warn(`[课表导入] file:// 路径不存在: ${filePath}`);
+                }
+            }
+            // 3. 使用 data.file 字段（直接本地路径）
+            const localPath = data.file || data.path;
+            if (localPath && typeof localPath === 'string') {
+                // 过滤扩展名
+                const ext = path.extname(localPath).toLowerCase();
+                if (!ext || ![".json", ".ics", ".wakeup_schedule"].includes(ext)) {
+                    logger.warn(`[课表导入] 文件扩展名不匹配: ${localPath}`);
+                    // 不直接 return，继续尝试，因为有些实现可能没有扩展名
+                }
+                if (fs.existsSync(localPath)) {
+                    const stats = fs.statSync(localPath);
+                    if (stats.size > 2 * 1024 * 1024) {
+                        logger.warn(`[课表导入] 文件大小超限: ${stats.size} bytes`);
+                        return null;
+                    }
+                    const content = fs.readFileSync(localPath, 'utf-8');
+                    logger.info(`[课表导入] 成功读取本地文件: ${localPath}`);
+                    // 如果文件是临时上传的（由框架生成），可尝试删除；这里稳妥起见暂时保留
+                    // 若需要清理，可判断是否位于系统临时目录再删，这里保持之前行为
+                    return content;
+                } else {
+                    logger.warn(`[课表导入] 本地路径不存在: ${localPath}`);
+                }
+            }
+            // 4. 如果 URL 不是标准协议但也不是空，尝试直接 fetch（某些内网地址）
+            if (data.url && !data.url.startsWith('file://')) {
+                try {
+                    const response = await fetch(data.url);
+                    if (response.ok) return await response.text();
+                } catch (err) {
+                    logger.warn(`[课表导入] 尝试 fetch URL 失败: ${data.url}, ${err}`);
                 }
             }
             logger.error("[课表导入] 无法获取文件内容");
