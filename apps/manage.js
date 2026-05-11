@@ -479,7 +479,11 @@ export class ScheduleManage extends plugin {
                     }
                     const content = fs.readFileSync(filePath, 'utf-8');
                     logger.info(`[课表导入] 成功读取本地文件(file://): ${filePath}`);
-                    // 注意：通过 file:// 获取的文件通常由框架管理，不应删除，避免影响框架后续处理
+                    setTimeout(() => {
+                        fs.promises.unlink(filePath)
+                            .then(() => logger.mark(`[课表导入] 已删除临时文件: ${filePath}`))
+                            .catch(err => logger.warn(`[课表导入] 删除临时文件失败: ${filePath}`, err));
+                    }, 2000);
                     return content;
                 } else {
                     logger.warn(`[课表导入] file:// 路径不存在: ${filePath}`);
@@ -502,8 +506,11 @@ export class ScheduleManage extends plugin {
                     }
                     const content = fs.readFileSync(localPath, 'utf-8');
                     logger.info(`[课表导入] 成功读取本地文件: ${localPath}`);
-                    // 如果文件是临时上传的（由框架生成），可尝试删除；这里稳妥起见暂时保留
-                    // 若需要清理，可判断是否位于系统临时目录再删，这里保持之前行为
+                    setTimeout(() => {
+                        fs.promises.unlink(localPath)
+                            .then(() => logger.mark(`[课表导入] 已删除临时文件: ${localPath}`))
+                            .catch(err => logger.warn(`[课表导入] 删除临时文件失败: ${localPath}`, err));
+                    }, 2000);
                     return content;
                 } else {
                     logger.warn(`[课表导入] 本地路径不存在: ${localPath}`);
@@ -565,12 +572,12 @@ export class ScheduleManage extends plugin {
             await this.e.reply(segment.file(filePath, fileName));
             setTimeout(() => {
                 fs.unlink(filePath, (err) => {
-                    if (err) logger.warn(`删除临时文件失败: ${filePath}`, err);
-                    else logger.debug(`已删除临时文件: ${filePath}`);
+                    if (err) logger.warn(`[课表导出] 删除临时文件失败: ${filePath}`, err);
+                    else logger.mark(`[课表导出] 已删除临时文件: ${filePath}`);
                 });
             }, 5000);
         } catch (err) {
-            logger.error(`发送文件失败: ${err}`);
+            logger.error(`[课表导出] 发送文件失败: ${err}`);
             await this.reply("生成文件失败，请稍后重试");
             fs.unlink(filePath, () => { });
         }
