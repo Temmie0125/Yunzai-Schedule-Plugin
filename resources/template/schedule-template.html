@@ -269,7 +269,14 @@
         }
 
         .course-info-row {
+            display: flex;
             margin-bottom: 6px;
+            flex-wrap: wrap;
+            gap: 8px 18px;
+        }
+
+        .course-icon {
+            font-size: 20px;
         }
 
         .course-info {
@@ -287,6 +294,10 @@
             flex-wrap: wrap;
             align-items: baseline;
             gap: 10px 20px;
+        }
+
+        .location-icon {
+            font-size: 20px;
         }
 
         .remaining-time {
@@ -532,15 +543,21 @@
                 <!-- 课程信息区域 -->
                 <div class="course-section">
                     {{if member.status === '学期结束'}}
-                    <!-- 学期结束专用显示 -->
-                    <div class="course-info" style="color: #999;">📅 本学期课程已结束，请重新更新课表</div>
+                    <!-- 学期结束专用显示：图标+文本同行 -->
+                    <div class="course-info-row">
+                        <span class="course-icon" style="color: #999;">📅</span>
+                        <span class="course-info" style="color: #999;">本学期课程已结束，请重新更新课表</span>
+                    </div>
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
 
                     {{else if member.status === '已结束'}}
-                    <!-- 已结束：今日课程已上完，不显示最后一节课 -->
-                    <div class="course-info" style="color: #999;">📅 今日课程已上完，好好休息~</div>
+                    <!-- 已结束：图标+文本同行 -->
+                    <div class="course-info-row">
+                        <span class="course-icon" style="color: #999;">📅</span>
+                        <span class="course-info" style="color: #999;">今日课程已上完，好好休息~</span>
+                    </div>
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
@@ -548,9 +565,11 @@
                     <!-- 正常状态（进行中、翘课中、未开始、无课程 等） -->
                     <div class="course-info-row">
                         {{if member.currentCourse}}
-                        <div class="course-info">📖 {{member.currentCourse.name}}</div>
+                        <span class="course-icon">📖</span>
+                        <div class="course-info">{{member.currentCourse.name}}</div>
                         {{else}}
-                        <div class="course-info" style="color: #aaa;">📅 今日暂无课程安排</div>
+                        <span class="course-icon" style="color: #aaa;">📅</span>
+                        <span class="course-info" style="color: #aaa;">今日暂无课程安排</span>
                         {{/if}}
                     </div>
 
