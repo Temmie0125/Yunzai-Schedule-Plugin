@@ -65,13 +65,9 @@ export class ScheduleUpdate extends plugin {
 
     async runUpdate(isForce) {
         await this.ensureGitignore();
-
-        // 1. 保存旧版 package.json
         const oldPkg = await this.getPackageJsonContent();
-
         const branch = await this.getCurrentBranch();
         const repoPath = PLUGIN_PATH;
-
         let command;
         if (isForce) {
             command = [
@@ -84,46 +80,47 @@ export class ScheduleUpdate extends plugin {
             command = `git -C "${repoPath}" pull --no-rebase`;
             await this.reply('开始更新课程表插件...');
         }
-
         const oldCommit = await this.getCommitId();
         const { error, stdout, stderr } = await this.execAsync(command);
-
         if (error) {
             logger.error(`git 命令执行失败: ${error}`);
             await this.handleGitError(error, stdout, stderr);
             return false;
         }
-
         if (/(Already up[ -]to[ -]date|已经是最新的)/.test(stdout)) {
             await this.reply('课程表插件已经是最新版本');
             return true;
         }
-
-        // 2. 获取新版 package.json
         const newPkg = await this.getPackageJsonContent();
         const depsChanged = this.isDependenciesChanged(oldPkg, newPkg);
-
-        // 3. 获取更新日志
         const logs = await this.getUpdateLogs(oldCommit);
         if (logs && logs.length > 0) {
             await this.reply(await common.makeForwardMsg(this.e, logs, '课程表插件更新日志'));
         } else {
             await this.reply('课程表插件更新完成');
         }
+        // ==== 新增变更检测 ====
+        const filesChanged = await this.getChangedFiles(oldCommit);
+        const onlyResourceOrConfig = filesChanged.length > 0 &&
+            filesChanged.every(file => file.startsWith('config/') || file.startsWith('resources/'));
 
-        // 4. 依赖变化处理
+        // 依赖变化 → 必须安装并重启
         if (depsChanged) {
             await this.reply(
                 '⚠️ 检测到插件依赖项发生变化，' +
                 '必须安装新依赖才能正常运行。是否立即自动运行 `pnpm install` ？(回复 y/n)'
             );
             this.setContext('waitForInstallDeps');
-            // 保存后续重启所需的标志
             this.pluginUpdateContext = { shouldRestartAfterInstall: true };
             return true;
         }
-
-        // 5. 无依赖变化，直接询问重启
+        // 仅资源/配置变更 → 无需重启
+        if (onlyResourceOrConfig) {
+            await this.reply('更新完成，本次更新不需要进行重启。');
+            return true;
+        }
+    
+        // 其他代码变更 → 询问重启
         await this.reply('更新完成，是否现在重启 Yunzai 以应用更新？(回复 y/n)');
         this.setContext('waitRestart');
         return true;
@@ -274,5 +271,12 @@ export class ScheduleUpdate extends plugin {
             fs.writeFileSync(gitignorePath, content, 'utf8');
             logger.info('[课程表插件] 已更新 .gitignore，添加 data/ 和 config/ 忽略规则');
         }
+    }
+    // 获取从 oldCommit 到当前 HEAD 的变更文件列表
+    async getChangedFiles(oldCommit) {
+        const cmd = `git -C "${PLUGIN_PATH}" diff --name-only ${oldCommit}..HEAD`
+        const { stdout, error } = await this.execAsync(cmd)
+        if (error || !stdout) return []
+        return stdout.split('\n').map(f => f.trim()).filter(Boolean)
     }
 }
