@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { ConfigManager } from '../components/ConfigManager.js'
 import { getBotName, getFileInfo } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import {
@@ -429,103 +430,111 @@ export class ScheduleManage extends plugin {
     async getFileContent(fileId, busid = null) {
         const e = this.e;
         try {
-            let fileInfo = null;
+            // ========== 1. 私聊：优先用 get_private_file_url 获取 http 地址 ==========
+            if (!e.isGroup) {
+                try {
+                    const urlRes = await Bot.sendApi('get_private_file_url', { file_id: fileId });
+                    if (urlRes?.data?.url && (urlRes.data.url.startsWith('http://') || urlRes.data.url.startsWith('https://'))) {
+                        const response = await fetch(urlRes.data.url);
+                        if (response.ok) {
+                            logger.mark(`[课表导入] 私聊文件HTTP下载成功`)
+                            return await response.text();
+                        }
+                        logger.warn(`[课表导入] 私聊文件下载失败，状态码: ${response.status}`);
+                    }
+                } catch (apiErr) {
+                    logger.warn(`[课表导入] 调用 get_private_file_url 失败，回退通用方式: ${apiErr}`);
+                }
+            }
+            // ========== 2. 群聊：尝试 get_group_file_url（可能返回 file:// 或 http）==========
             if (e.isGroup) {
-                // 群聊：使用 get_group_file_url
-                if (typeof Bot.sendApi === 'function') {
-                    fileInfo = await Bot.sendApi('get_group_file_url', {
+                let groupUrlInfo = null;
+                try {
+                    groupUrlInfo = await Bot.sendApi('get_group_file_url', {
                         group_id: e.group_id,
                         file_id: fileId,
                         busid: busid
                     });
-                } else {
-                    logger.error("[课表导入] 无法找到调用 OneBot API 的方法");
-                    return null;
+                } catch (apiErr) {
+                    logger.warn(`[课表导入] 调用 get_group_file_url 失败: ${apiErr}`);
                 }
-            } else {
-                // 私聊：使用 get_file
-                if (typeof Bot.sendApi === 'function') {
+                if (groupUrlInfo?.data?.url) {
+                    const url = groupUrlInfo.data.url;
+                    // 如果是 http 地址，直接下载
+                    if (url.startsWith('http://') || url.startsWith('https://')) {
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            logger.mark(`[课表导入] 群文件HTTP下载成功`)
+                            return await response.text();
+                        }
+                        logger.warn(`[课表导入] 群文件HTTP下载失败，状态码: ${response.status}`);
+                    }
+                    // 如果是 file:// 地址，尝试本地读取（Docker 中大概率失败）
+                    if (url.startsWith('file://')) {
+                        let filePath = url.replace('file://', '');
+                        try { filePath = decodeURIComponent(filePath); } catch {}
+                        if (fs.existsSync(filePath)) {
+                            // 注意：容器内路径很少能用，但保留以兼容非容器环境
+                            const content = fs.readFileSync(filePath, 'utf-8');
+                            logger.mark(`[课表导入] 群文件本地读取成功: ${filePath}`);
+                            setTimeout(() => fs.promises.unlink(filePath).catch(() => {}), 2000);
+                            return content;
+                        }
+                        logger.warn("[课表导入] file:// 路径不存在 (可能是容器隔离)，尝试其他方式...");
+                    }
+                }
+            }
+            // ========== 3. 通用方式：调用 get_file 并优先处理 base64 ==========
+            let fileInfo = null;
+            try {
+                // 统一使用 get_file
+                if (!e.isGroup) {
+                    // 私聊 get_file 可能会返回 base64:// 数据
                     fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
-                } else if (Bot.api && typeof Bot.api.get_file === 'function') {
-                    fileInfo = await Bot.api.get_file({ file_id: fileId });
-                } else if (e.friend && typeof e.friend.sendApi === 'function') {
-                    fileInfo = await e.friend.sendApi('get_file', { file_id: fileId });
                 } else {
-                    logger.error("[课表导入] 无法找到调用 OneBot API 的方法");
-                    return null;
-                }
-            }
-            if (!fileInfo || !fileInfo.data) {
-                logger.error("[课表导入] 获取文件信息失败:", fileInfo);
-                return null;
-            }
-            const data = fileInfo.data;
-            // 1. 优先处理 HTTP/HTTPS 下载链接
-            if (data.url && (data.url.startsWith('http://') || data.url.startsWith('https://'))) {
-                const response = await fetch(data.url);
-                if (!response.ok) return null;
-                return await response.text();
-            }
-            // 2. 处理 file:// 本地链接（Linux 下常出现）
-            if (data.url && data.url.startsWith('file://')) {
-                let filePath = data.url.replace('file://', '');
-                // 如果路径被编码，尝试解码
-                try { filePath = decodeURIComponent(filePath); } catch { }
-                if (fs.existsSync(filePath)) {
-                    const stats = fs.statSync(filePath);
-                    if (stats.size > 2 * 1024 * 1024) {
-                        logger.warn(`[课表导入] 文件大小超限: ${stats.size} bytes`);
-                        return null;
+                    if (groupUrlInfo?.data) {
+                        fileInfo = groupUrlInfo;
                     }
-                    const content = fs.readFileSync(filePath, 'utf-8');
-                    logger.info(`[课表导入] 成功读取本地文件(file://): ${filePath}`);
-                    setTimeout(() => {
-                        fs.promises.unlink(filePath)
-                            .then(() => logger.mark(`[课表导入] 已删除临时文件: ${filePath}`))
-                            .catch(err => logger.warn(`[课表导入] 删除临时文件失败: ${filePath}`, err));
-                    }, 2000);
-                    return content;
-                } else {
-                    logger.warn(`[课表导入] file:// 路径不存在: ${filePath}`);
                 }
+            } catch (err) {
+                logger.error("[课表导入] 获取 fileInfo 异常:", err);
             }
-            // 3. 使用 data.file 字段（直接本地路径）
-            const localPath = data.file || data.path;
-            if (localPath && typeof localPath === 'string') {
-                // 过滤扩展名
-                const ext = path.extname(localPath).toLowerCase();
-                if (!ext || ![".json", ".ics", ".wakeup_schedule"].includes(ext)) {
-                    logger.warn(`[课表导入] 文件扩展名不匹配: ${localPath}`);
-                    // 不直接 return，继续尝试，因为有些实现可能没有扩展名
+    
+            if (fileInfo?.data) {
+                const data = fileInfo.data;
+                // 优先 base64
+                if (data.file && typeof data.file === 'string' && data.file.startsWith('base64://')) {
+                    const base64 = data.file.replace('base64://', '');
+                    return Buffer.from(base64, 'base64').toString('utf-8');
                 }
-                if (fs.existsSync(localPath)) {
-                    const stats = fs.statSync(localPath);
-                    if (stats.size > 2 * 1024 * 1024) {
-                        logger.warn(`[课表导入] 文件大小超限: ${stats.size} bytes`);
-                        return null;
-                    }
-                    const content = fs.readFileSync(localPath, 'utf-8');
-                    logger.info(`[课表导入] 成功读取本地文件: ${localPath}`);
-                    setTimeout(() => {
-                        fs.promises.unlink(localPath)
-                            .then(() => logger.mark(`[课表导入] 已删除临时文件: ${localPath}`))
-                            .catch(err => logger.warn(`[课表导入] 删除临时文件失败: ${localPath}`, err));
-                    }, 2000);
-                    return content;
-                } else {
-                    logger.warn(`[课表导入] 本地路径不存在: ${localPath}`);
-                }
-            }
-            // 4. 如果 URL 不是标准协议但也不是空，尝试直接 fetch（某些内网地址）
-            if (data.url && !data.url.startsWith('file://')) {
-                try {
+                // 如果 data.url 是有效的 http 地址（可能在 get_file 中也返回 url）
+                if (data.url && (data.url.startsWith('http://') || data.url.startsWith('https://'))) {
                     const response = await fetch(data.url);
                     if (response.ok) return await response.text();
-                } catch (err) {
-                    logger.warn(`[课表导入] 尝试 fetch URL 失败: ${data.url}, ${err}`);
+                }
+                // 本地路径兜底（仅在非严格隔离的环境有效）
+                const localPath = data.file || data.path;
+                if (localPath && typeof localPath === 'string' && fs.existsSync(localPath)) {
+                    const content = fs.readFileSync(localPath, 'utf-8');
+                    logger.mark(`[课表导入] 本地读取成功: ${filePath}`);
+                    setTimeout(() => fs.promises.unlink(localPath).catch(() => {}), 2000);
+                    return content;
                 }
             }
-            logger.error("[课表导入] 无法获取文件内容");
+            // ========== 4. 如果配置了 NapCat HTTP 文件服务，拼接 URL ==========
+            // 需要用户在 napcat 配置中设置 http.enableFile = true，这里优先读取配置->环境变量->默认值
+            const config = ConfigManager.getConfig();
+            const fileBaseUrl = config.napcatURL || process.env.NAPCAT_FILE_BASE_URL || "http://napcat:6099"; // 例如 "http://napcat:6099"
+            if (fileBaseUrl && fileId) {
+                try {
+                    const url = `${fileBaseUrl}/file?file_id=${encodeURIComponent(fileId)}`;
+                    const response = await fetch(url);
+                    if (response.ok) return await response.text();
+                } catch (e) {
+                    logger.warn("[课表导入] 通过 NapCat HTTP 文件服务下载失败:", e);
+                }
+            }
+            logger.error("[课表导入] 无法获取文件内容（已尝试所有方式）");
             return null;
         } catch (err) {
             logger.error(`[课表导入] 获取文件内容失败: ${err}`);
