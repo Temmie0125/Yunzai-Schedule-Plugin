@@ -243,6 +243,14 @@ export const schemas = [
         bottomHelpMessage: "开启后，成员可以自行重新设置或清除生日以进行修改"
     },
     {
+        field: "showQQ",
+        label: "展示QQ号",
+        helpMessage: "是否在生日列表卡片中展示成员QQ号。",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "开启后，会在生日列表卡片的头像下方显示QQ号。"
+    },
+    {
         component: 'Divider',
         label: '群单独设置'
     },

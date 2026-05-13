@@ -24,3 +24,5 @@ botName: ""
 font: "像素"
 # 群课表排序方式 userId：按QQ号；courseStatus：按上课状态
 sortMode: "userId"
+# 生日列表是否展示QQ号
+showQQ: true

@@ -53,7 +53,8 @@ export class ConfigManager {
             defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
             botName: "",    // bot自定义名称，默认取机器人昵称
             font: "像素",    // 字体风格，默认为像素字体
-            sortMode: "userId"    // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态
+            sortMode: "userId",    // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态
+            showQQ: true    // 生日列表是否展示QQ号。默认开启
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
@@ -113,7 +114,7 @@ export class ConfigManager {
             proxyUrl, apiToken,
             defaultSemesterStart,
             botName, font,
-            sortMode
+            sortMode, showQQ
         } = data;
         const configToSave = {
             pushHour,
@@ -127,7 +128,7 @@ export class ConfigManager {
             proxyUrl, apiToken,
             defaultSemesterStart,
             botName, font,
-            sortMode
+            sortMode, showQQ
         };
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {

@@ -276,6 +276,8 @@ export class BirthdayReminder extends plugin {
         const total = Object.keys(groupBirthdays).length
         const todayCount = birthdaysWithDays.filter(b => b.days === 0).length
         const upcomingCount = birthdaysWithDays.filter(b => b.days > 0 && b.days <= 30).length
+        const config = ConfigManager.getConfig();
+        const showQQ = config.showQQ ?? true;
         const templateData = {
             isRecent10: r10,
             currentTime: getCurrentDate(),
@@ -284,7 +286,7 @@ export class BirthdayReminder extends plugin {
             upcomingCount,
             birthdays: finaldata.map(item => ({
                 name: item.name,
-                qq: item.userId,
+                qq: showQQ ? item.userId : null,
                 birthday: item.birthday,
                 days: item.days,
                 avatar: `https://q1.qlogo.cn/g?b=qq&s=0&nk=${item.userId}`
