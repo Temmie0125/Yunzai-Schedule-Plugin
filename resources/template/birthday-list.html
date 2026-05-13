@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>群生日列表</title>
     <style>
-        /* 与课程表模板一致的字体和基础样式 */
+        /* ========== 字体与基础样式 (与课程表模板保持一致) ========== */
         @font-face {
             font-family: 'ScheduleFont';
             src: url('{{_fontInlineUrl}}') format('{{_fontFormat}}');
@@ -33,6 +33,7 @@
             overflow: hidden;
             position: relative;
         }
+        /* 头部区域 */
         .header {
             padding: 40px 30px 20px;
             text-align: center;
@@ -42,7 +43,7 @@
             font-weight: normal;
             color: #333;
             display: inline-block;
-            background: rgba(255, 105, 180, 0.2); /* 粉色主题 */
+            background: rgba(255, 105, 180, 0.2);
             padding: 10px 40px;
             border-radius: 60px;
             margin-bottom: 20px;
@@ -60,6 +61,7 @@
             border-radius: 30px;
             margin: 0 4px;
         }
+        /* 统计徽章 */
         .stats {
             display: flex;
             justify-content: center;
@@ -89,80 +91,116 @@
             font-size: 16px;
             color: #495057;
         }
+        /* 生日列表网格布局 — 保证两列等宽且紧凑 */
         .birthday-list {
             padding: 20px 30px;
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
-        /* 确保卡片宽度严格遵循父网格约束，避免内容撑开导致两列宽度不均 */
+        /* 卡片等宽约束 + 紧凑布局 */
         .birthday-card {
             display: grid;
             grid-template-columns: auto 1fr;
-            grid-template-rows: auto auto;
-            gap: 15px;
-            padding: 20px 15px 20px 50px;
+            grid-template-rows: auto auto;   /* 两行: 右侧昵称行 + 右侧生日信息行 */
+            gap: 12px 15px;                  /* 行间距减小使其更紧凑 */
+            padding: 18px 15px 18px 48px;    /* 上下内边距减少，高度降低 */
             background: white;
             border-radius: 20px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.05);
             position: relative;
             border: 1px solid #edf2f7;
-            /* 强制卡片等宽 */
             width: 100%;
-            min-width: 0;          /* 允许内容溢出时收缩，防止撑开父容器 */
+            min-width: 0;
             box-sizing: border-box;
         }
-        /* 左侧双箭头装饰，与课程表一致 */
+        /* 左侧双蛋糕装饰 (保持风格) */
         .birthday-card::before,
         .birthday-card::after {
             content: "🎂";
             position: absolute;
-            left: 10px;
-            font-size: 48px;
+            left: 12px;
+            font-size: 42px;
             line-height: 1;
             font-weight: bold;
             opacity: 0.3;
             color: #FF69B4;
+            pointer-events: none;
         }
         .birthday-card::before {
-            top: 30px;
+            top: 28px;
         }
         .birthday-card::after {
-            top: 60px;
+            top: 58px;
             opacity: 0.2;
-            font-size: 56px;
+            font-size: 50px;
         }
+        /* ========= 头像容器: 支持QQ标签绝对定位在底部 ========= */
         .avatar {
+            position: relative;       /* 为qq标签提供定位基准 */
             width: 90px;
             height: 90px;
             border-radius: 25%;
-            overflow: hidden;
+            overflow: visible;       /* 让下方标签不被裁剪 */
             flex-shrink: 0;
             background: #f0f0f0;
             border: 3px solid white;
             box-shadow: 0 5px 10px rgba(0,0,0,0.1);
-            grid-row: span 2;
+            grid-row: span 2;        /* 头像占据左右两侧两行高度 */
+            align-self: start;       /* 避免额外拉伸 */
         }
         .avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
             border-radius: 25%;
+            display: block;
         }
-        /* 右侧信息区域：防止昵称过长撑开父容器，限制溢出 */
+        /* ---- QQ号标签 (类似翘课模式标签, 位于头像下方) ---- */
+        .qq-tag {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 80%;
+            margin-top: 6px;         /* 与头像间距 */
+            background: rgba(55, 55, 55, 0.5);
+            backdrop-filter: blur(2px);
+            color: white;
+            font-size: 10px;
+            font-weight: 400;
+            padding: 5px 12px;
+            border-radius: 40px;
+            white-space: nowrap;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            letter-spacing: 0.5px;
+            z-index: 2;
+            transition: all 0.1s ease;
+        }
+        /* 如果QQ号特别长, 适配移动端小屏 */
+        @media (max-width: 700px) {
+            .qq-tag {
+                max-width: 80px;
+                font-size: 12px;
+                padding: 4px 8px;
+                margin-top: 5px;
+            }
+        }
+        /* 右侧信息区域: 昵称 + 生日日期与剩余时间(第二行) */
         .info {
             grid-column: 2;
             grid-row: 1 / 2;
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            align-self: start;
-            /* 防止内容溢出导致宽度异常 */
-            min-width: 0;      /* 允许子元素收缩 */
+            align-self: center;
+            min-width: 0;
             overflow: hidden;
             width: 100%;
         }
-        /* 昵称样式：长昵称强制单行截断并显示省略号，确保两列宽度严格相等 */
+        /* 昵称样式 + 截断保证两列等宽 */
         .name {
             font-size: 28px;
             color: #1a202c;
@@ -171,48 +209,70 @@
             overflow: hidden;
             text-overflow: ellipsis;
             width: 100%;
-            /* 保留原始伪元素装饰，但截断时emoji也会隐藏，视觉可接受且保证卡片等宽 */
-        }
-        .name::before {
-            content: "";
-            margin-right: 8px;
-            font-size: 28px;
-        }
-        .qq {
-            font-size: 18px;
-            color: #718096;
-            margin-top: 8px;
-        }
-        .birthday-info {
-            grid-column: 1 / -1;
-            margin-top: 8px;
-            font-size: 24px;
-            color: #2d3748;
             font-weight: 500;
-            word-break: break-word;
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            flex-wrap: wrap;
+            line-height: 1.3;
         }
+        /* 昵称前小彩蛋爱心 (与生日风格匹配) */
+        .name::before {
+            content: "🎂";
+            margin-right: 8px;
+            font-size: 26px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        /* 右侧第二行: 生日详细 (原生日日期+剩余天数) 紧凑显示 */
+        .birthday-meta {
+            grid-column: 2;
+            grid-row: 2 / 3;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 12px;
+            margin-top: 2px;
+            min-width: 0;
+        }
+        /* 复用原生日标签样式 */
         .birthday-date {
             background: #FFF0F5;
-            padding: 4px 12px;
-            border-radius: 30px;
-            font-size: 20px;
+            padding: 4px 14px;
+            border-radius: 40px;
+            font-size: 18px;
+            font-weight: 500;
             color: #FF69B4;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .birthday-date::before {
+            content: "📅";
+            font-size: 18px;
         }
         .days-left {
             background: #E6F7FF;
-            padding: 4px 12px;
-            border-radius: 30px;
-            font-size: 20px;
+            padding: 4px 14px;
+            border-radius: 40px;
+            font-size: 18px;
+            font-weight: 500;
             color: #1890ff;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
         }
         .days-left.today {
             background: #FFE7E7;
             color: #f5222d;
         }
+        .days-left::before {
+            content: "⏳";
+            font-size: 18px;
+        }
+        .days-left.today::before {
+            content: "🎉";
+        }
+        /* 针对明日生日的特殊微调可保留原逻辑 */
+        /* 页脚区域 */
         .footer {
             padding: 30px 30px 40px;
             background: #f8fafc;
@@ -246,20 +306,49 @@
             right: 60px;
             opacity: 0.2;
         }
+        /* 移动端单列布局微调 */
         @media (max-width: 700px) {
             .birthday-list {
                 grid-template-columns: 1fr;
             }
             .birthday-card {
-                padding: 25px 20px 25px 60px;
+                padding: 18px 15px 18px 48px;
             }
             .avatar {
                 width: 80px;
                 height: 80px;
             }
             .name {
-                font-size: 28px;
+                font-size: 24px;
             }
+            .birthday-date, .days-left {
+                font-size: 17px;
+                padding: 3px 10px;
+            }
+            .qq-tag {
+                max-width: 75px;
+                font-size: 11px;
+            }
+        }
+        /* 小屏幕且内容过多时折行友好 */
+        @media (max-width: 500px) {
+            .birthday-meta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 6px;
+            }
+            .birthday-date, .days-left {
+                white-space: normal;
+                word-break: keep-all;
+            }
+        }
+        /* 当没有生日额外信息时的占位保留一致性 */
+        .birthday-meta:empty {
+            display: none;
+        }
+        /* 头像不带qq标签的老旧兼容保留标签显示完好 */
+        .avatar .qq-tag:only-child {
+            display: flex;
         }
     </style>
 </head>
@@ -272,10 +361,11 @@
             <h1>🎂 群成员生日列表</h1>
             {{/if}}
             <div class="subtitle">
-                当前时间 <span>{{currentTime}}</span>
+                当前日期 <span>{{currentTime}}</span>
             </div>
         </div>
 
+        <!-- 统计区域 -->
         <div class="stats">
             <div class="stat-item">
                 <span class="stat-value">{{totalCount}}</span>
@@ -291,30 +381,33 @@
             </div>
         </div>
 
+        <!-- 生日卡片列表 -->
         <div class="birthday-list">
             {{each birthdays item}}
             <div class="birthday-card">
                 <div class="avatar">
                     <img src="{{item.avatar}}" alt="{{item.name}}">
+                    <div class="qq-tag">{{item.qq}}</div>
                 </div>
+                <!-- 右侧第一行：昵称 -->
                 <div class="info">
-                    <div class="name">🎉 {{item.name}}</div>
-                    <div class="qq">{{item.qq}}</div>
+                    <div class="name">{{item.name}}</div>
                 </div>
-                <div class="birthday-info">
-                    <span class="birthday-date">📅 {{item.birthday}}</span>
+                <!-- 右侧第二行：生日日期 & 剩余天数 -->
+                <div class="birthday-meta">
+                    <span class="birthday-date">{{item.birthday}}</span>
                     {{if item.days === 0}}
-                        <span class="days-left today">🎉 今天生日！</span>
+                        <span class="days-left today">今天生日！</span>
                     {{else if item.days === 1}}
-                        <span class="days-left">🎈 明天生日</span>
+                        <span class="days-left">明天生日</span>
                     {{else}}
-                        <span class="days-left">⏳ 还有 {{item.days}} 天</span>
+                        <span class="days-left">还有 {{item.days}} 天</span>
                     {{/if}}
                 </div>
             </div>
             {{/each}}
         </div>
-
+        <!-- 底部提示区 -->
         <div class="footer">
             <div class="tips">使用 #设置生日 月-日 设置你的生日<br>使用 #生日修改昵称 新昵称 修改显示昵称</div>
             {{if isRecent10}}

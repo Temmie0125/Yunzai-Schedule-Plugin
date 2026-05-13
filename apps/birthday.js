@@ -278,7 +278,7 @@ export class BirthdayReminder extends plugin {
         const upcomingCount = birthdaysWithDays.filter(b => b.days > 0 && b.days <= 30).length
         const templateData = {
             isRecent10: r10,
-            currentTime: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            currentTime: getCurrentDate(),
             totalCount: total,
             todayCount,
             upcomingCount,
