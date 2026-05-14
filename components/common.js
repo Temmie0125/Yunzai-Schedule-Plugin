@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { ConfigManager } from "./ConfigManager.js"
 /**
  *
@@ -111,6 +113,123 @@ export function getFileInfo(e) {
         return null;
     }
     return { fileName, fileSize, fileId, busid };
+}
+/**
+   * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）
+   * @returns {Promise<string|null>}
+   */
+export async function getFileContent(e, fileId, busid = null) {
+    try {
+        // ========== 1. 私聊：优先用 get_private_file_url 获取 http 地址 ==========
+        if (!e.isGroup) {
+            try {
+                const urlRes = await Bot.sendApi('get_private_file_url', { file_id: fileId });
+                if (urlRes?.data?.url && (urlRes.data.url.startsWith('http://') || urlRes.data.url.startsWith('https://'))) {
+                    const response = await fetch(urlRes.data.url);
+                    if (response.ok) {
+                        logger.mark(`[课表管理] 私聊文件HTTP下载成功`)
+                        return await response.text();
+                    }
+                    logger.warn(`[课表管理] 私聊文件下载失败，状态码: ${response.status}`);
+                }
+            } catch (apiErr) {
+                logger.warn(`[课表管理] 调用 get_private_file_url 失败，回退通用方式: ${apiErr}`);
+            }
+        }
+        // ========== 2. 群聊：尝试 get_group_file_url（可能返回 file:// 或 http）==========
+        if (e.isGroup) {
+            let groupUrlInfo = null;
+            try {
+                groupUrlInfo = await Bot.sendApi('get_group_file_url', {
+                    group_id: e.group_id,
+                    file_id: fileId,
+                    busid: busid
+                });
+            } catch (apiErr) {
+                logger.warn(`[课表管理] 调用 get_group_file_url 失败: ${apiErr}`);
+            }
+            if (groupUrlInfo?.data?.url) {
+                const url = groupUrlInfo.data.url;
+                // 如果是 http 地址，直接下载
+                if (url.startsWith('http://') || url.startsWith('https://')) {
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        logger.mark(`[课表管理] 群文件HTTP下载成功`)
+                        return await response.text();
+                    }
+                    logger.warn(`[课表管理] 群文件HTTP下载失败，状态码: ${response.status}`);
+                }
+                // 如果是 file:// 地址，尝试本地读取（Docker 中大概率失败）
+                if (url.startsWith('file://')) {
+                    let filePath = url.replace('file://', '');
+                    try { filePath = decodeURIComponent(filePath); } catch {}
+                    if (fs.existsSync(filePath)) {
+                        // 注意：容器内路径很少能用，但保留以兼容非容器环境
+                        const content = fs.readFileSync(filePath, 'utf-8');
+                        logger.mark(`[课表管理] 群文件本地读取成功: ${filePath}`);
+                        setTimeout(() => fs.promises.unlink(filePath).catch(() => {}), 2000);
+                        return content;
+                    }
+                    logger.warn("[课表管理] file:// 路径不存在 (可能是容器隔离)，尝试其他方式...");
+                }
+            }
+        }
+        // ========== 3. 通用方式：调用 get_file 并优先处理 base64 ==========
+        let fileInfo = null;
+        try {
+            // 统一使用 get_file
+            if (!e.isGroup) {
+                // 私聊 get_file 可能会返回 base64:// 数据
+                fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
+            } else {
+                if (groupUrlInfo?.data) {
+                    fileInfo = groupUrlInfo;
+                }
+            }
+        } catch (err) {
+            logger.error("[课表管理] 获取 fileInfo 异常:", err);
+        }
+
+        if (fileInfo?.data) {
+            const data = fileInfo.data;
+            // 优先 base64
+            if (data.file && typeof data.file === 'string' && data.file.startsWith('base64://')) {
+                const base64 = data.file.replace('base64://', '');
+                return Buffer.from(base64, 'base64').toString('utf-8');
+            }
+            // 如果 data.url 是有效的 http 地址（可能在 get_file 中也返回 url）
+            if (data.url && (data.url.startsWith('http://') || data.url.startsWith('https://'))) {
+                const response = await fetch(data.url);
+                if (response.ok) return await response.text();
+            }
+            // 本地路径兜底（仅在非严格隔离的环境有效）
+            const localPath = data.file || data.path;
+            if (localPath && typeof localPath === 'string' && fs.existsSync(localPath)) {
+                const content = fs.readFileSync(localPath, 'utf-8');
+                logger.mark(`[课表管理] 本地读取成功: ${filePath}`);
+                setTimeout(() => fs.promises.unlink(localPath).catch(() => {}), 2000);
+                return content;
+            }
+        }
+        // ========== 4. 如果配置了 NapCat HTTP 文件服务，拼接 URL ==========
+        // 需要用户在 napcat 配置中设置 http.enableFile = true，这里优先读取配置->环境变量->默认值
+        const config = ConfigManager.getConfig();
+        const fileBaseUrl = config.napcatURL || process.env.NAPCAT_FILE_BASE_URL || "http://napcat:6099"; // 例如 "http://napcat:6099"
+        if (fileBaseUrl && fileId) {
+            try {
+                const url = `${fileBaseUrl}/file?file_id=${encodeURIComponent(fileId)}`;
+                const response = await fetch(url);
+                if (response.ok) return await response.text();
+            } catch (e) {
+                logger.warn("[课表管理] 通过 NapCat HTTP 文件服务下载失败:", e);
+            }
+        }
+        logger.error("[课表管理] 无法获取文件内容（已尝试所有方式）");
+        return null;
+    } catch (err) {
+        logger.error(`[课表管理] 获取文件内容失败: ${err}`);
+        return null;
+    }
 }
 /**
  * 获取群成员列表
