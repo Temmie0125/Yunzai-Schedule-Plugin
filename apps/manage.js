@@ -96,8 +96,14 @@ export class ScheduleManage extends plugin {
      */
     async waitingForCode() {
         const userId = this.e.user_id;
-        let code = this.e.msg.trim();
         this.finish("waitingForCode");
+        const msg = this.e.msg;
+        // 对于非文本消息直接返回
+        if (typeof msg !== 'string'){
+            logger.warn("[设置课表] 非文本消息")
+            return this.reply("请发送分享口令而不是其他内容哦~")
+        }
+        let code = this.e.msg.trim();
         if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消操作")
         // ----- 尝试匹配星链课表分享格式 -----
         // 格式：输入：XXXXX （中文冒号或英文冒号）
@@ -166,7 +172,7 @@ export class ScheduleManage extends plugin {
     async setStarlinkSchedule() {
         const userId = this.e.user_id;
         const message = this.e.msg;
-        let code = message.match(/^#星链设置课表\s+(.+)$/)?.[1];
+        let code = message.match(/^#(星链设置课表|设置星链课表)\s+(.+)$/)?.[1];
         if (!code) {
             this.setContext("waitingForStarlinkCode");
             await this.reply("请发送你的星链课程表分享码（或包含分享码的文案）。\n输入“取消”以取消操作。", false, { at: true });
@@ -183,8 +189,14 @@ export class ScheduleManage extends plugin {
 
     async waitingForStarlinkCode() {
         const userId = this.e.user_id;
-        let raw = this.e.msg.trim();
         this.finish("waitingForStarlinkCode");
+        const msg = this.e.msg;
+        // 对于非文本消息直接返回
+        if (typeof msg !== 'string'){
+            logger.warn("[设置课表] 非文本消息")
+            return this.reply("请发送分享口令而不是其他内容哦~")
+        }
+        let raw = this.e.msg.trim();
         if (raw === "取消" || raw.toLowerCase() === "cancel") return this.reply("已取消操作")
         // 提取分享码
         let code = raw.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/)?.[1];
