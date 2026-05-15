@@ -11,7 +11,7 @@ import {
     importScheduleFromWakeupData
 } from '../services/scheduleImporter.js'
 import { parseTimeTableJson } from '../services/timeTableParser.js'
-import { 
+import {
     parseChineseDateToMD,
     parseSemesterStartDate,
     formatDate
@@ -108,7 +108,7 @@ export class ScheduleManage extends plugin {
         this.finish("waitingForCode");
         const msg = this.e.msg;
         // 对于非文本消息直接返回
-        if (typeof msg !== 'string'){
+        if (typeof msg !== 'string') {
             logger.warn("[设置课表] 非文本消息")
             return this.reply("请发送分享口令而不是其他内容哦~")
         }
@@ -201,7 +201,7 @@ export class ScheduleManage extends plugin {
         this.finish("waitingForStarlinkCode");
         const msg = this.e.msg;
         // 对于非文本消息直接返回
-        if (typeof msg !== 'string'){
+        if (typeof msg !== 'string') {
             logger.warn("[设置课表] 非文本消息")
             return this.reply("请发送分享口令而不是其他内容哦~")
         }
@@ -333,13 +333,6 @@ export class ScheduleManage extends plugin {
             await this.reply('你还没有设置课程表，请先导入课表后再更新时间表。');
             return true;
         }
-        const hasSectionData = schedule.courses.some(c => c.startNode !== undefined && c.step !== undefined);
-        if (!hasSectionData) {
-            await this.reply('⚠️ 你的课程缺少课程节次数据，无法更新时间表。\n' +
-                '如果你的课表来自 ICS 文件导入，通常无需更新，因为时间配置一般是正确的。\n' +
-                '如果需要更新，请尝试重新导入。');
-            return true;
-        }
         if (this.e.group_id) {
             return await this.waitForConfirm('更新时间表', 'confirmUpdateTimeTable', '更新时间表');
         }
@@ -417,7 +410,7 @@ export class ScheduleManage extends plugin {
             return false;
         }
         let timeSlotResult = parseTimeTableJson(jsonData)
-        if(!timeSlotResult.success){
+        if (!timeSlotResult.success) {
             return this.reply(timeSlotResult.reply);
         }
         const timeSlotMap = timeSlotResult.timeSlotMap;
@@ -427,10 +420,35 @@ export class ScheduleManage extends plugin {
             await this.reply(`❌ 更新时间表失败：${result.error || '未知错误'}`);
             return true;
         }
+        // 同时保存用户的时间表配置到数据文件
+        const timeSlots = []
+        for (const [number, { start, end }] of timeSlotMap) {
+            timeSlots.push({ number, startTime: start, endTime: end })
+        }
+        timeSlots.sort((a, b) => a.number - b.number)
+        DataManager.saveUserTimeSlots(userId, timeSlots)
+        // 尝试重建节次信息
+        let schedule = DataManager.loadSchedule(userId);
+        if (schedule && schedule.courses) {
+            // 清除所有课程的旧节次信息，以便根据新时间表重新匹配
+            for (const course of schedule.courses) {
+                delete course.startNode;
+                delete course.step;
+            }
+        }
+        const reconResult = DataManager.reconstructCourseSections(schedule);
+        // 保存更新后的课表（包含重建的节次和时间表配置）
+        DataManager.saveSchedule(userId, schedule);
         let reply = `✅ 时间表更新完成！\n`;
         reply += `📝 更新了 ${result.updatedCount} 门课程的时间\n`;
+        reply += `💾 已保存你的时间表配置，共 ${timeSlots.length} 个时间段\n`;
         if (result.skippedCount > 0) {
-            reply += `⏭️ 跳过了 ${result.skippedCount} 门课程（缺少节次数据或新时间表中未找到对应节次）`;
+            reply += `⏭️ 跳过了 ${result.skippedCount} 门课程（缺少节次数据或新时间表中未找到对应节次）\n`;
+        }
+        if (reconResult.reconstructed > 0) {
+            reply += `🔄 根据新时间表重建了 ${reconResult.reconstructed} 门课程的节次信息`;
+        } else if (reconResult.skipped > 0) {
+            reply += `⚠️ 有 ${reconResult.skipped} 门课程未能匹配到节次，请检查时间表配置`;
         }
         await this.reply(reply);
         return true;
@@ -552,7 +570,7 @@ export class ScheduleManage extends plugin {
             result = await importScheduleFromJsonData(e.user_id, jsonData, e);
         } else if (ext === '.ics') { // .ics
             result = await importScheduleFromIcsData(e.user_id, fileContent, e);
-        } else if (ext === '.wakeup_schedule'){ // .wakeup_schedule
+        } else if (ext === '.wakeup_schedule') { // .wakeup_schedule
             result = await importScheduleFromWakeupData(e.user_id, fileContent, e);
         }
         await this.reply(result.message);

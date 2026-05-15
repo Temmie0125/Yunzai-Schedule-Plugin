@@ -270,6 +270,7 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     let tableName = "导入的课表";
     let isStarlink = false;
     let missingSemesterStart = false;
+    let importedTimeSlots = null;  // 原生格式导入时携带的时间表配置
     // ---------- 星链格式识别与转换 ----------
     if (isStarlinkJsonFormat(jsonData)) {
       isStarlink = true;
@@ -326,17 +327,29 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     }
     else if (jsonData.courses && Array.isArray(jsonData.courses)) {
       // 原生格式（期望包含 courses, semesterStart, tableName 等）
-      courses = jsonData.courses.map(c => ({
-        name: c.name,
-        teacher: c.teacher || "",
-        location: c.location || "",
-        day: c.day,
-        startTime: c.startTime,
-        endTime: c.endTime,
-        weeks: c.weeks || []
-      }));
+      courses = jsonData.courses.map(c => {
+        const course = {
+          name: c.name,
+          teacher: c.teacher || "",
+          location: c.location || "",
+          day: c.day,
+          startTime: c.startTime,
+          endTime: c.endTime,
+          weeks: c.weeks || []
+        };
+        // 保留节次数据（如果有）
+        if (c.startNode != null && !isNaN(Number(c.startNode))) {
+          course.startNode = Number(c.startNode);
+        }
+        if (c.step != null && !isNaN(Number(c.step))) {
+          course.step = Number(c.step);
+        }
+        return course;
+      });
       semesterStart = jsonData.semesterStart || null;
       tableName = jsonData.tableName || "导入的课表";
+      // 保留用户时间表配置（如果有）
+      importedTimeSlots = jsonData.timeSlots || null;
     }
     else {
       return { success: false, message: "无法识别的JSON格式，缺少必要的courses字段或timeSlots字段" };
@@ -369,6 +382,10 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     };
     // 保存
     DataManager.saveSchedule(userId, scheduleData, nickname, signature);
+    // 如果导入的数据包含时间表配置，同步保存
+    if (importedTimeSlots && Array.isArray(importedTimeSlots)) {
+      DataManager.saveUserTimeSlots(userId, importedTimeSlots);
+    }
     // 回复消息
     // 构建回复消息
     replyMsg += `✅ 课表导入成功！\n`;
