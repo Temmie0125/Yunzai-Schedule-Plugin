@@ -968,29 +968,50 @@ export class DataManager {
      */
     static reconstructCourseSections(schedule) {
         if (!schedule || !schedule.courses || !schedule.timeSlots) {
-            return { reconstructed: 0, skipped: 0 }
+            return { reconstructed: 0, skipped: 0 };
         }
-        const timeSlots = schedule.timeSlots
-        let reconstructed = 0
-        let skipped = 0
+        const timeSlots = schedule.timeSlots;
+        let reconstructed = 0;
+        let skipped = 0;
+        // 辅助函数：将 "HH:MM" 或 "H:MM" 转换为分钟数
+        const toMinutes = (timeStr) => {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        };
+        // 查找与目标时间最接近且时间差 <= 5 分钟的时间槽
+        // getSlotTime: 从时间槽中提取要比较的时间字段的函数 (slot) => string
+        const findBestMatch = (targetTime, getSlotTime) => {
+            const targetMin = toMinutes(targetTime);
+            let bestSlot = null;
+            let bestDiff = Infinity;
+            for (const slot of timeSlots) {
+                const slotMin = toMinutes(getSlotTime(slot));
+                const diff = Math.abs(slotMin - targetMin);
+                if (diff <= 5 && diff < bestDiff) {
+                    bestDiff = diff;
+                    bestSlot = slot;
+                }
+            }
+            return bestSlot;
+        };
         for (const course of schedule.courses) {
             // 已有节次数据的跳过
             if (course.startNode != null && course.step != null) {
-                skipped++
-                continue
+                skipped++;
+                continue;
             }
-            // 尝试从时间表中匹配 startTime 和 endTime
-            const startMatch = timeSlots.find(ts => ts.startTime === course.startTime)
-            const endMatch = timeSlots.find(ts => ts.endTime === course.endTime)
+            // 宽匹配开始时间和结束时间
+            const startMatch = findBestMatch(course.startTime, slot => slot.startTime);
+            const endMatch = findBestMatch(course.endTime, slot => slot.endTime);
             if (startMatch && endMatch && startMatch.number <= endMatch.number) {
-                course.startNode = startMatch.number
-                course.step = endMatch.number - startMatch.number + 1
-                reconstructed++
+                course.startNode = startMatch.number;
+                course.step = endMatch.number - startMatch.number + 1;
+                reconstructed++;
             } else {
-                skipped++
+                skipped++;
             }
         }
-        return { reconstructed, skipped }
+        return { reconstructed, skipped };
     }
 
     static updateSemesterStart(userId, semesterStart) {
