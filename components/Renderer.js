@@ -321,6 +321,29 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
 }
 
 /**
+ * 生成周课表图片
+ * @param {Object} weeklyData - 包含以下字段：
+ *   - nickname {string} 显示昵称
+ *   - week {number} 周数
+ *   - dateRange {string} 日期范围，如 "4/14 - 4/20"
+ *   - signature {string} 个性签名
+ *   - days {Array<{label, date, isToday, courses}>} 每天的数据
+ * @param {Object} options - 额外选项
+ * @returns {Promise<Buffer|null>}
+ */
+export async function generateWeeklyScheduleImage(weeklyData, options = {}) {
+    const templateData = {
+        nickname: weeklyData.nickname,
+        week: weeklyData.week,
+        dateRange: weeklyData.dateRange,
+        signature: weeklyData.signature || '',
+        days: weeklyData.days,
+        updateTime: new Date().toLocaleString('zh-CN')
+    };
+    return await renderTemplate('weekly-schedule-template', templateData, options);
+}
+
+/**
  * 生成个人课表信息卡片（用于 #我的课表）
  * @param {number|string} userId - 用户QQ号（用于获取头像）
  * @param {Object} userInfoData - 包含以下字段：

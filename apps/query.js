@@ -9,7 +9,7 @@ import {
     getDateByRelativeWeek,
     parseChineseDateToMD
 } from '../utils/timeUtils.js';
-import { generateUserScheduleImage, generateUserInfoImage } from '../components/Renderer.js'
+import { generateUserScheduleImage, generateUserInfoImage, generateWeeklyScheduleImage } from '../components/Renderer.js'
 
 export class ScheduleQuery extends plugin {
     constructor() {
@@ -35,6 +35,14 @@ export class ScheduleQuery extends plugin {
                 {
                     reg: "^#(我的课表|schedule info)$",
                     fnc: "showUserInfo"
+                },
+                {
+                    reg: "^#(本周课表|下周课表|上周课表|这周课表)$",
+                    fnc: "showWeeklyScheduleShortcut"
+                },
+                {
+                    reg: "^#(第\\d+周课表)$",
+                    fnc: "showWeeklyScheduleByNumber"
                 }
             ]
         })
@@ -186,9 +194,15 @@ export class ScheduleQuery extends plugin {
             await this.reply(
                 `请指定查询条件：\n` +
                 `1. 周数 + 星期（如 #课表查询 ${currentWeek} 1）\n` +
-                `2. 日期（如 #课表查询 10-1，自动识别学期年份）`
+                `2. 日期（如 #课表查询 10-1，自动识别学期年份）\n` +
+                `3. 整周查询（如 #课表查询 本周、下周、第${currentWeek}周）`
             );
             return true;
+        }
+        // 0. 先检测整周查询模式
+        const weeklyResult = this._parseWeeklyQuery(param, schedule);
+        if (weeklyResult) {
+            return await this._showWeeklySchedule(userId, schedule, weeklyResult.week, weeklyResult.label);
         }
         // 1. 尝试匹配原有格式：周数 + 星期
         const weekDayMatch = msg.match(/^#(?:课表查询|schedule query)\s+(\d+)\s+(\d+)$/);
@@ -323,6 +337,172 @@ export class ScheduleQuery extends plugin {
             const replyMsg = DataManager.formatCourses(result.courses, result.week, result.day, result.displayName);
             await this.reply(replyMsg);
         }
+    }
+
+    // ========== 周课表查询功能 ==========
+
+    /**
+     * #本周课表 / #下周课表 / #上周课表 快捷命令
+     */
+    async showWeeklyScheduleShortcut() {
+        const userId = this.e.user_id;
+        const schedule = DataManager.loadSchedule(userId);
+        if (!schedule) {
+            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            return true;
+        }
+        const msg = this.e.msg;
+        let weekOffset = 0;
+        let label = '本周';
+        if (/^#下周课表$/.test(msg)) { weekOffset = 1; label = '下周'; }
+        else if (/^#上周课表$/.test(msg)) { weekOffset = -1; label = '上周'; }
+        // 本周/这周 → offset=0
+
+        const currentWeek = calculateCurrentWeek(schedule.semesterStart);
+        const targetWeek = currentWeek + weekOffset;
+        return await this._showWeeklySchedule(userId, schedule, targetWeek, label);
+    }
+
+    /**
+     * #第N周课表 快捷命令
+     */
+    async showWeeklyScheduleByNumber() {
+        const userId = this.e.user_id;
+        const schedule = DataManager.loadSchedule(userId);
+        if (!schedule) {
+            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            return true;
+        }
+        const match = this.e.msg.match(/^#第(\d+)周课表$/);
+        if (!match) return true;
+        const week = parseInt(match[1]);
+        return await this._showWeeklySchedule(userId, schedule, week, `第${week}周`);
+    }
+
+    /**
+     * 解析整周查询参数
+     * @param {string} param - 用户输入的参数
+     * @param {Object} schedule - 用户课表
+     * @returns {{week: number, label: string}|null}
+     */
+    _parseWeeklyQuery(param, schedule) {
+        if (!param) return null;
+        // 匹配：本周 / 这周 / 下周 / 上周
+        if (/^(本周|这周)$/.test(param)) {
+            const week = calculateCurrentWeek(schedule.semesterStart);
+            return { week, label: '本周' };
+        }
+        if (/^下周$/.test(param)) {
+            const week = calculateCurrentWeek(schedule.semesterStart) + 1;
+            return { week, label: '下周' };
+        }
+        if (/^上周$/.test(param)) {
+            const week = calculateCurrentWeek(schedule.semesterStart) - 1;
+            return { week, label: '上周' };
+        }
+        // 匹配：第N周 / 第N个周
+        const weekNumMatch = param.match(/^第(\d+)周$/);
+        if (weekNumMatch) {
+            const week = parseInt(weekNumMatch[1]);
+            return { week, label: `第${week}周` };
+        }
+        return null;
+    }
+
+    /**
+     * 核心：渲染并发送周课表图片
+     * @param {string} userId
+     * @param {Object} schedule - 用户课表
+     * @param {number} week - 目标周数
+     * @param {string} label - 显示标签（如"第7周"）
+     */
+    async _showWeeklySchedule(userId, schedule, week, label) {
+        // 校验周数有效性
+        if (week < 1) {
+            await this.reply("周数不能小于1，请输入正确的周数");
+            return true;
+        }
+        const maxWeek = Math.max(...schedule.courses.flatMap(c => c.weeks), 0);
+        if (maxWeek > 0 && week > maxWeek) {
+            await this.reply(`第${week}周已超出本学期课程周数（最大第${maxWeek}周）`);
+            return true;
+        }
+
+        // 构建7天数据
+        const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const days = [];
+
+        for (let d = 1; d <= 7; d++) {
+            const targetDate = calculateDateFromWeekAndDay(schedule.semesterStart, week, d);
+            const dateStr = targetDate
+                ? targetDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+                : '--';
+            const isToday = targetDate && targetDate.getTime() === today.getTime();
+
+            // 筛选该天的课程
+            const dayCourses = schedule.courses.filter(c =>
+                parseInt(c.day) === d && c.weeks.includes(week)
+            );
+            dayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+            days.push({
+                label: weekdayLabels[d - 1],
+                date: dateStr,
+                isToday,
+                courses: dayCourses.map(c => ({
+                    name: c.name,
+                    teacher: c.teacher || '',
+                    startTime: c.startTime,
+                    endTime: c.endTime,
+                    location: c.location || '',
+                    rescheduled: c.rescheduled || false,
+                    originalDate: c.originalDate || ''
+                }))
+            });
+        }
+
+        // 计算日期范围（周一~周日）
+        const monDate = calculateDateFromWeekAndDay(schedule.semesterStart, week, 1);
+        const sunDate = calculateDateFromWeekAndDay(schedule.semesterStart, week, 7);
+        let dateRange = '';
+        if (monDate && sunDate) {
+            dateRange = `${monDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} - ${sunDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`;
+        }
+
+        await this.reply("正在渲染周课表，请稍等一下哦~>_<~", false, { recallMsg: 5 });
+        const img = await generateWeeklyScheduleImage({
+            nickname: schedule.nickname || `用户${userId}`,
+            week,
+            dateRange,
+            signature: schedule.signature || '',
+            days
+        }, { e: this.e });
+
+        if (img) {
+            await this.reply(segment.image(img));
+        } else {
+            // 降级为文本
+            let textReply = `📅 ${schedule.nickname || userId} 的第${week}周课表\n`;
+            textReply += `${dateRange ? `📆 ${dateRange}\n` : ''}`;
+            textReply += "=".repeat(25) + "\n";
+            for (const day of days) {
+                textReply += `\n📌 ${day.label} (${day.date})${day.isToday ? ' [今天]' : ''}\n`;
+                if (day.courses.length === 0) {
+                    textReply += "   无课程\n";
+                } else {
+                    for (const c of day.courses) {
+                        const prefix = c.rescheduled ? '🔄 ' : '';
+                        textReply += `   ${prefix}${c.name} | ${c.startTime}-${c.endTime}\n`;
+                        const detail = [c.teacher, c.location].filter(Boolean).join(' | ');
+                        if (detail) textReply += `      ${detail}\n`;
+                    }
+                }
+            }
+            await this.reply(textReply);
+        }
+        return true;
     }
 }
 export default ScheduleQuery
