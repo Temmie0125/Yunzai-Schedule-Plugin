@@ -173,6 +173,8 @@ schedule
       "day": 1,
       "startTime": "08:00",
       "endTime": "09:35",
+      "startNode": 1,
+      "step": 2,
       "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     }
   ]
@@ -201,6 +203,8 @@ schedule
 | `startTime` | string | 是 | 开始时间，格式 `HH:MM`（24小时制） |
 | `endTime` | string | 是 | 结束时间，格式 `HH:MM` |
 | `weeks` | array | 是 | 上课周数列表，如 `[1,3,5]` 表示第1、3、5周上课 |
+| `startNode` | number | 否 | 课程起始节次 |
+| `step` | number | 否 | 课程持续节次，例如startNode, step=2表示课程为第1、2节 |
 
 ---
 
@@ -217,6 +221,8 @@ schedule
       "teacher": "张教授",
       "position": "教101",
       "day": 1,
+      "startSection": 1,
+      "endSection": 2,
       "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       "color": 9,
       "isCustomTime": true,
@@ -246,13 +252,15 @@ schedule
   - `teacher`：教师姓名（可选）
   - `position`：上课地点（可选）
   - `day`：星期几，1=周一 ... 7=周日（必填）
+  - `startSection`: 课程开始节次（选择性必填，当`isCustomTime`为`false`或者未定义时必填）
+  - `endSection` : 课程结束节次（同上）
   - `weeks`：上课周数数组（必填）
   - `color`：颜色标记（整数，忽略）
   - `isCustomTime`：是否使用自定义时间（布尔值，建议设为 `true`）
   - `customStartTime`：自定义开始时间，格式 `HH:MM`（当 `isCustomTime=true` 时必填）
   - `customEndTime`：自定义结束时间，格式 `HH:MM`
 
-- **`timeSlots`**：预设节次表（可选，导入时仅用于参考，插件会根据课程实际时间处理）
+- **`timeSlots`**：预设节次表（可选，导入时用于参考，插件会优先根据课程自定义时间处理）
   - `number`：节次编号
   - `startTime`：开始时间
   - `endTime`：结束时间
