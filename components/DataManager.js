@@ -132,8 +132,9 @@ export class DataManager {
      * @param {object} scheduleData - 从API获取的课表数据
      * @param {string} [nickname] - 昵称（若未传则保留原有或userId）
      * @param {string} [signature] - 签名（若未传则保留原有）
+     * @param {Array} [timeSlots] - 时间表配置（若未传则保留原有）
      */
-    static saveSchedule(userId, scheduleData, nickname = null, signature = null) {
+    static saveSchedule(userId, scheduleData, nickname = null, signature = null, timeSlots = undefined) {
         const filePath = path.join(DATA_PATH, `${userId}.json`)
         const existing = this.loadSchedule(userId) || {}
 
@@ -144,6 +145,13 @@ export class DataManager {
             nickname: nickname || existing.nickname || userId.toString(),
             signature: signature !== null ? signature : (existing.signature || ''),
             courses: scheduleData.courses
+        }
+
+        // 保留用户已有的时间表配置（若未显式传入新的 timeSlots）
+        if (timeSlots !== undefined) {
+            fullData.timeSlots = timeSlots
+        } else if (existing.timeSlots && Array.isArray(existing.timeSlots)) {
+            fullData.timeSlots = existing.timeSlots
         }
 
         // 确保目录存在
@@ -442,22 +450,45 @@ export class DataManager {
        * 转换为原生格式
        */
     static convertToNativeFormat(scheduleData) {
-        return {
+        // 导出前尝试从用户时间表重建缺失的节次信息
+        const reconResult = this.reconstructCourseSections(scheduleData)
+        if (reconResult.reconstructed > 0) {
+            logger.info(`[课表导出(原生)] 从用户时间表重建了 ${reconResult.reconstructed} 门课程的节次信息`)
+        }
+
+        const result = {
             tableName: scheduleData.tableName,
             semesterStart: scheduleData.semesterStart,
             updateTime: scheduleData.updateTime,
             nickname: scheduleData.nickname,
             signature: scheduleData.signature,
-            courses: scheduleData.courses.map(c => ({
-                name: c.name,
-                teacher: c.teacher,
-                location: c.location,
-                day: c.day,
-                startTime: c.startTime,
-                endTime: c.endTime,
-                weeks: c.weeks
-            }))
+            courses: scheduleData.courses.map(c => {
+                const course = {
+                    name: c.name,
+                    teacher: c.teacher,
+                    location: c.location,
+                    day: Number(c.day),
+                    startTime: c.startTime,
+                    endTime: c.endTime,
+                    weeks: c.weeks
+                };
+                // 课程节次：只有存在且有效时才添加
+                if (c.startNode != null && !isNaN(Number(c.startNode))) {
+                    course.startNode = Number(c.startNode);
+                }
+                if (c.step != null && !isNaN(Number(c.step))) {
+                    course.step = Number(c.step);
+                }
+                return course;
+            })
         };
+
+        // 保留用户时间表配置（如果有）
+        if (scheduleData.timeSlots && Array.isArray(scheduleData.timeSlots)) {
+            result.timeSlots = scheduleData.timeSlots
+        }
+
+        return result;
     }
     /**
      * 转换为拾光JSON
@@ -465,13 +496,25 @@ export class DataManager {
      * @returns Shiguang JSON
      */
     static convertToShiguangFormat(scheduleData) {
-        const defaultTimeSlots = this.getDefaultTimeSlots();
+        // 导出前尝试从用户时间表重建缺失的节次信息
+        const reconResult = this.reconstructCourseSections(scheduleData)
+        if (reconResult.reconstructed > 0) {
+            logger.info(`[课表导出] 从用户时间表重建了 ${reconResult.reconstructed} 门课程的节次信息`)
+        }
+
+        // 优先使用用户时间表，否则使用默认时间表
+        const timeSlots = (scheduleData.timeSlots && Array.isArray(scheduleData.timeSlots) && scheduleData.timeSlots.length > 0)
+            ? scheduleData.timeSlots
+            : this.getDefaultTimeSlots();
+
         const courses = scheduleData.courses.map((course) => ({
             id: this.generateShortUuid(),
             name: course.name,
             teacher: course.teacher || '',
             position: course.location || '',
             day: Number(course.day),           // 确保为数字
+            startSection: Number(course.startNode),
+            endSection: Number(course.startNode) + Number(course.step) - 1,
             weeks: course.weeks,
             color: 9,
             isCustomTime: true,
@@ -493,7 +536,7 @@ export class DataManager {
 
         return {
             courses,
-            timeSlots: defaultTimeSlots,
+            timeSlots: timeSlots,
             config: { semesterStartDate: semesterStart }
         };
     }
@@ -868,6 +911,107 @@ export class DataManager {
         }
 
         return { success: true, updatedCount, skippedCount, hasSectionData };
+    }
+
+    // ---------- 用户时间表配置 ----------
+
+    /**
+     * 获取用户自定义的时间表配置
+     * @param {string|number} userId
+     * @returns {Array|null} timeSlots 数组 [{ number, startTime, endTime }] 或 null
+     */
+    static getUserTimeTable(userId) {
+        const schedule = this.loadSchedule(userId)
+        if (!schedule || !schedule.timeSlots || !Array.isArray(schedule.timeSlots)) {
+            return null
+        }
+        return schedule.timeSlots
+    }
+
+    /**
+     * 保存用户时间表配置到用户数据文件
+     * @param {string|number} userId
+     * @param {Array} timeSlots - [{ number, startTime, endTime }] 格式的时间段数组
+     * @returns {boolean}
+     */
+    static saveUserTimeSlots(userId, timeSlots) {
+        const filePath = path.join(DATA_PATH, `${userId}.json`)
+        if (!fs.existsSync(filePath)) {
+            logger.warn(`[时间表保存] 用户 ${userId} 数据文件不存在，无法保存时间表`)
+            return false
+        }
+        try {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+            data.timeSlots = timeSlots
+            data.updateTime = new Date().toISOString()
+            const dir = path.dirname(filePath)
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
+            logger.info(`用户 ${userId} 时间表配置已保存，共 ${timeSlots.length} 个时间段`)
+            return true
+        } catch (err) {
+            logger.error(`保存用户 ${userId} 时间表配置失败: ${err}`)
+            return false
+        }
+    }
+
+    /**
+     * 尝试从用户时间表配置中重建课程的节次信息（startNode / step）
+     *
+     * 仅当课程缺少 startNode 或 step 时尝试匹配；仅使用用户自己的时间表配置，
+     * 不使用默认时间表。
+     *
+     * @param {object} schedule - 用户课表数据（含 courses 与可选的 timeSlots）
+     * @returns {{ reconstructed: number, skipped: number }}
+     *   reconstructed: 成功重建的课程数量
+     *   skipped: 被跳过的课程数量（已有节次数据 或 无法匹配）
+     */
+    static reconstructCourseSections(schedule) {
+        if (!schedule || !schedule.courses || !schedule.timeSlots) {
+            return { reconstructed: 0, skipped: 0 };
+        }
+        const timeSlots = schedule.timeSlots;
+        let reconstructed = 0;
+        let skipped = 0;
+        // 辅助函数：将 "HH:MM" 或 "H:MM" 转换为分钟数
+        const toMinutes = (timeStr) => {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        };
+        // 查找与目标时间最接近且时间差 <= 5 分钟的时间槽
+        // getSlotTime: 从时间槽中提取要比较的时间字段的函数 (slot) => string
+        const findBestMatch = (targetTime, getSlotTime) => {
+            const targetMin = toMinutes(targetTime);
+            let bestSlot = null;
+            let bestDiff = Infinity;
+            for (const slot of timeSlots) {
+                const slotMin = toMinutes(getSlotTime(slot));
+                const diff = Math.abs(slotMin - targetMin);
+                if (diff <= 5 && diff < bestDiff) {
+                    bestDiff = diff;
+                    bestSlot = slot;
+                }
+            }
+            return bestSlot;
+        };
+        for (const course of schedule.courses) {
+            // 已有节次数据的跳过
+            if (course.startNode != null && course.step != null) {
+                skipped++;
+                continue;
+            }
+            // 宽匹配开始时间和结束时间
+            const startMatch = findBestMatch(course.startTime, slot => slot.startTime);
+            const endMatch = findBestMatch(course.endTime, slot => slot.endTime);
+            if (startMatch && endMatch && startMatch.number <= endMatch.number) {
+                course.startNode = startMatch.number;
+                course.step = endMatch.number - startMatch.number + 1;
+                reconstructed++;
+            } else {
+                skipped++;
+            }
+        }
+        return { reconstructed, skipped };
     }
 
     static updateSemesterStart(userId, semesterStart) {

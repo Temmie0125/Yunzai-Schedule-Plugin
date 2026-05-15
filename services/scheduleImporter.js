@@ -143,7 +143,7 @@ function convertStarlinkJsonToStandard(jsonData, config) {
  */
 function isStarlinkJsonFormat(jsonData) {
   if (!jsonData.courses || !Array.isArray(jsonData.courses) || jsonData.courses.length === 0) return false;
-  if (jsonData.timeSlots) return false; // 拾光格式优先
+  if (jsonData.timeSlots) return false; // 星链格式不含 timeSlots，排除原生/拾光
   const sample = jsonData.courses[0];
   // 星链格式特征：包含 startSection 或 weekday，且没有 startTime/day 字段
   return (sample.hasOwnProperty('startSection') || sample.hasOwnProperty('weekday')) &&
@@ -270,6 +270,20 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     let tableName = "导入的课表";
     let isStarlink = false;
     let missingSemesterStart = false;
+    let importedTimeSlots = null;  // 原生格式导入时携带的时间表配置
+    // ---------- 辅助：检测课程格式类型 ----------
+    const sampleCourse = (jsonData.courses && Array.isArray(jsonData.courses) && jsonData.courses.length > 0)
+      ? jsonData.courses[0] : null;
+
+    // 原生格式特征：课程直接包含 startTime/endTime 时间字符串
+    const isNativeCourseFormat = sampleCourse &&
+      sampleCourse.hasOwnProperty('startTime') && sampleCourse.hasOwnProperty('endTime');
+
+    // 拾光格式特征：课程使用节次（startSection/endSection）或 isCustomTime
+    const isShiguangCourseFormat = sampleCourse &&
+      ((sampleCourse.hasOwnProperty('startSection') && sampleCourse.hasOwnProperty('endSection')) ||
+       sampleCourse.hasOwnProperty('isCustomTime'));
+
     // ---------- 星链格式识别与转换 ----------
     if (isStarlinkJsonFormat(jsonData)) {
       isStarlink = true;
@@ -282,9 +296,34 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
         missingSemesterStart = true;
       }
     }
-    // 判断是否为拾光格式（包含 timeSlots 字段）
-    else if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots) && jsonData.courses) {
-      // 拾光格式转换
+    // ---------- 原生格式（支持附带 timeSlots 时间表配置）----------
+    else if (isNativeCourseFormat) {
+      courses = jsonData.courses.map(c => {
+        const course = {
+          name: c.name,
+          teacher: c.teacher || "",
+          location: c.location || "",
+          day: c.day,
+          startTime: c.startTime,
+          endTime: c.endTime,
+          weeks: c.weeks || []
+        };
+        // 保留节次数据（如果有）
+        if (c.startNode != null && !isNaN(Number(c.startNode))) {
+          course.startNode = Number(c.startNode);
+        }
+        if (c.step != null && !isNaN(Number(c.step))) {
+          course.step = Number(c.step);
+        }
+        return course;
+      });
+      semesterStart = jsonData.semesterStart || null;
+      tableName = jsonData.tableName || "导入的课表";
+      // 保留用户时间表配置（如果有）
+      importedTimeSlots = jsonData.timeSlots || null;
+    }
+    // ---------- 拾光格式 ----------
+    else if (isShiguangCourseFormat && jsonData.timeSlots && Array.isArray(jsonData.timeSlots)) {
       const timeSlotMap = new Map();
       for (const ts of jsonData.timeSlots) {
         timeSlotMap.set(ts.number, { start: ts.startTime, end: ts.endTime });
@@ -315,31 +354,46 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
           day: course.day,  // 1-7
           startTime: startTime,
           endTime: endTime,
-          weeks: course.weeks || []
+          weeks: course.weeks || [],
+          // 保留节次数据
+          startNode: course.startSection || undefined,
+          step: (course.startSection && course.endSection) ? (course.endSection - course.startSection + 1) : undefined
         };
       }).filter(c => c !== null);
       // 学期开始日期
       if (jsonData.config && jsonData.config.semesterStartDate) {
         semesterStart = jsonData.config.semesterStartDate;
       }
-      tableName = "拾光课表导入";
+      tableName = jsonData.tableName || "拾光课表导入";
+      // 拾光格式也保留时间表配置
+      importedTimeSlots = jsonData.timeSlots || null;
     }
-    else if (jsonData.courses && Array.isArray(jsonData.courses)) {
-      // 原生格式（期望包含 courses, semesterStart, tableName 等）
-      courses = jsonData.courses.map(c => ({
-        name: c.name,
-        teacher: c.teacher || "",
-        location: c.location || "",
-        day: c.day,
-        startTime: c.startTime,
-        endTime: c.endTime,
-        weeks: c.weeks || []
-      }));
+    // ---------- 兜底：通用 courses 数组（无明确的格式特征）----------
+    else if (jsonData.courses && Array.isArray(jsonData.courses) && jsonData.courses.length > 0) {
+      courses = jsonData.courses.map(c => {
+        const course = {
+          name: c.name,
+          teacher: c.teacher || "",
+          location: c.location || c.position || "",
+          day: c.day,
+          startTime: c.startTime,
+          endTime: c.endTime,
+          weeks: c.weeks || []
+        };
+        if (c.startNode != null && !isNaN(Number(c.startNode))) {
+          course.startNode = Number(c.startNode);
+        }
+        if (c.step != null && !isNaN(Number(c.step))) {
+          course.step = Number(c.step);
+        }
+        return course;
+      });
       semesterStart = jsonData.semesterStart || null;
       tableName = jsonData.tableName || "导入的课表";
+      importedTimeSlots = jsonData.timeSlots || null;
     }
     else {
-      return { success: false, message: "无法识别的JSON格式，缺少必要的courses字段或timeSlots字段" };
+      return { success: false, message: "无法识别的JSON格式，缺少必要的courses字段" };
     }
     // 校验数据完整性
     if (!courses.length) {
@@ -369,6 +423,10 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     };
     // 保存
     DataManager.saveSchedule(userId, scheduleData, nickname, signature);
+    // 如果导入的数据包含时间表配置，同步保存
+    if (importedTimeSlots && Array.isArray(importedTimeSlots)) {
+      DataManager.saveUserTimeSlots(userId, importedTimeSlots);
+    }
     // 回复消息
     // 构建回复消息
     replyMsg += `✅ 课表导入成功！\n`;

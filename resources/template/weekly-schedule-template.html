@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每周课表</title>
+    <style>
+        @font-face {
+            font-family: 'ScheduleFont';
+            src: url('{{_fontInlineUrl}}') format('{{_fontFormat}}');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'ScheduleFont', 'Unifont', 'Microsoft YaHei', sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .header {
+            padding: 36px 30px 16px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 42px;
+            font-weight: normal;
+            color: #333;
+            display: inline-block;
+            background: rgba(0, 137, 123, 0.35);
+            padding: 8px 36px;
+            border-radius: 60px;
+            margin-bottom: 14px;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            font-size: 20px;
+            color: #666;
+            margin-top: 8px;
+        }
+        .subtitle span {
+            background: #00897B;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            margin: 0 4px;
+        }
+
+        .user-signature {
+            margin: 8px 30px 16px;
+            font-size: 18px;
+            color: #718096;
+            background: #f7fafc;
+            padding: 10px 20px;
+            border-radius: 40px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+
+        .week-grid {
+            padding: 0 24px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .day-block {
+            background: white;
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid #edf2f7;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.04);
+        }
+
+        .day-header {
+            background: #f0fdfa;
+            padding: 12px 20px;
+            font-size: 22px;
+            color: #0d6b61;
+            border-bottom: 1px solid #ccfbf1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .day-header .day-label {
+            font-weight: 500;
+        }
+        .day-header .day-date {
+            font-size: 18px;
+            color: #5a9e96;
+        }
+        .day-header.today {
+            background: #e6fffa;
+            border-bottom-color: #5eead4;
+        }
+        .day-header.today .day-label {
+            color: #0f766e;
+        }
+        .day-header.today::after {
+            content: "今天";
+            font-size: 16px;
+            background: #14b8a6;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            margin-left: auto;
+        }
+
+        .day-courses {
+            padding: 4px 0;
+        }
+
+        .course-item {
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 18px;
+            color: #2d3748;
+            border-bottom: 1px solid #f7fafc;
+        }
+        .course-item:last-child {
+            border-bottom: none;
+        }
+        .course-name {
+            flex: 0 0 200px;
+            font-size: 20px;
+            font-weight: 500;
+            color: #1a202c;
+        }
+        .course-time {
+            flex: 0 0 140px;
+            color: #4a5568;
+        }
+        .course-info {
+            flex: 1;
+            color: #718096;
+            font-size: 17px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .rescheduled-item {
+            background: #fffaf0;
+            border-left: 3px solid #ed8936;
+            padding-left: 17px;
+        }
+        .reschedule-badge {
+            display: inline-block;
+            font-size: 14px;
+            background: #ed8936;
+            color: white;
+            padding: 1px 8px;
+            border-radius: 10px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .no-courses {
+            padding: 14px 20px;
+            font-size: 17px;
+            color: #a0aec0;
+            text-align: center;
+        }
+
+        .footer {
+            padding: 18px 30px 24px;
+            background: #f8fafc;
+            border-top: 1px solid #e9edf2;
+            text-align: center;
+            position: relative;
+        }
+        .footer .update-time {
+            font-size: 16px;
+            color: #718096;
+            margin-bottom: 8px;
+        }
+        .footer .tips {
+            font-size: 18px;
+            color: #2d3748;
+        }
+
+        .footer::after {
+            content: "";
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 40px;
+            height: 40px;
+            background: #00897B;
+            opacity: 0.2;
+            clip-path: polygon(0 0, 0% 100%, 100% 100%);
+        }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 32px; }
+            .course-name { font-size: 18px; flex: 0 0 140px; }
+            .course-time { flex: 0 0 110px; font-size: 16px; }
+            .course-info { font-size: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{nickname}} 的每周课表</h1>
+            <div class="subtitle">
+                第<span>{{week}}</span>周 · <span>{{dateRange}}</span>
+            </div>
+        </div>
+
+        {{if signature}}
+        <div class="user-signature">💭 {{signature}}</div>
+        {{/if}}
+
+        <div class="week-grid">
+            {{each days day}}
+            <div class="day-block">
+                <div class="day-header {{if day.isToday}}today{{/if}}">
+                    <span class="day-label">{{day.label}}</span>
+                    <span class="day-date">{{day.date}}</span>
+                </div>
+                <div class="day-courses">
+                    {{each day.courses course}}
+                    <div class="course-item {{if course.rescheduled}}rescheduled-item{{/if}}">
+                        <span class="course-name">
+                            {{if course.rescheduled}}🔄 {{/if}}{{course.name}}
+                            {{if course.rescheduled}}
+                            <span class="reschedule-badge">调课·{{course.originalDate}}</span>
+                            {{/if}}
+                        </span>
+                        <span class="course-time">🕐 {{course.startTime}}-{{course.endTime}}</span>
+                        <span class="course-info">
+                            {{if course.teacher}}👨‍🏫 {{course.teacher}}{{/if}}
+                            {{if course.location}} 📍 {{course.location}}{{/if}}
+                        </span>
+                    </div>
+                    {{/each}}
+                    {{if day.courses.length === 0}}
+                    <div class="no-courses">—— 无课程 ——</div>
+                    {{/if}}
+                </div>
+            </div>
+            {{/each}}
+        </div>
+
+        <div class="footer">
+            <div class="update-time">更新时间: {{updateTime}}</div>
+            <div class="tips">Generated By @Temmie Schedule-Plugin · 使用 #课表查询 可以查看单日详情</div>
+        </div>
+    </div>
+</body>
+</html>

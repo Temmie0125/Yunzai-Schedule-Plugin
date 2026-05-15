@@ -114,9 +114,11 @@ pnpm install
 | `#调课 <原日期> <新日期>` | 将某日课程调至另一天 |
 | `#撤销调课 <日期>` | 撤销某日的调课 |
 | `#今日课表` / `#明日课表` | 查看今日/明日课程表 |
+| `#本周课表` / `#下周课表` | 查看本周/下周/上周课表 |
 | `#课表查询 <周数 星期>` | 按周数和星期查询（例：`#课表查询 5 2`） |
 | `#课表查询 <月-日>` | 按日期查询（例：`#课表查询 10-1`） |
 | `#课表查询 <自然语言日期>` | 按日期查询（支持：本周x、下星期x等星期格式，以及x月x日等自然语言日期） |
+| `#课表查询 <本周\|下周\|第x周>` | 按星期查询课表 |
 | `#我的课表` | 查看个人信息及课表概览 |
 | `#clstb` 或 `#课程表` | 查看本群群友上课状态。也可以使用`群友在上什么课` |
 | `@某人 在上什么课` | 视奸指定成员的上课状态 |
@@ -173,7 +175,21 @@ schedule
       "day": 1,
       "startTime": "08:00",
       "endTime": "09:35",
+      "startNode": 1,
+      "step": 2,
       "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    }
+  ],
+  "timeSlots": [
+    {
+      "number": 1,
+      "startTime": "08:00",
+      "endTime": "08:45"
+    },
+    {
+      "number": 2,
+      "startTime": "08:55",
+      "endTime": "09:35"
     }
   ]
 }
@@ -189,6 +205,7 @@ schedule
 | `nickname` | string | 否 | 用户昵称（显示用） |
 | `signature` | string | 否 | 个性签名 |
 | `courses` | array | 是 | 课程数组，每个元素为课程对象 |
+| `timeSlots` | array | 否 | 时间表数组，每个元素为时间表对象 |
 
 #### 课程对象 (`courses[]`)
 
@@ -201,6 +218,8 @@ schedule
 | `startTime` | string | 是 | 开始时间，格式 `HH:MM`（24小时制） |
 | `endTime` | string | 是 | 结束时间，格式 `HH:MM` |
 | `weeks` | array | 是 | 上课周数列表，如 `[1,3,5]` 表示第1、3、5周上课 |
+| `startNode` | number | 否 | 课程起始节次 |
+| `step` | number | 否 | 课程持续节次，例如startNode, step=2表示课程为第1、2节 |
 
 ---
 
@@ -217,6 +236,8 @@ schedule
       "teacher": "张教授",
       "position": "教101",
       "day": 1,
+      "startSection": 1,
+      "endSection": 2,
       "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       "color": 9,
       "isCustomTime": true,
@@ -246,13 +267,15 @@ schedule
   - `teacher`：教师姓名（可选）
   - `position`：上课地点（可选）
   - `day`：星期几，1=周一 ... 7=周日（必填）
+  - `startSection`: 课程开始节次（选择性必填，当`isCustomTime`为`false`或者未定义时必填）
+  - `endSection` : 课程结束节次（同上）
   - `weeks`：上课周数数组（必填）
   - `color`：颜色标记（整数，忽略）
   - `isCustomTime`：是否使用自定义时间（布尔值，建议设为 `true`）
   - `customStartTime`：自定义开始时间，格式 `HH:MM`（当 `isCustomTime=true` 时必填）
   - `customEndTime`：自定义结束时间，格式 `HH:MM`
 
-- **`timeSlots`**：预设节次表（可选，导入时仅用于参考，插件会根据课程实际时间处理）
+- **`timeSlots`**：预设节次表（可选，导入时用于参考，插件会优先根据课程自定义时间处理）
   - `number`：节次编号
   - `startTime`：开始时间
   - `endTime`：结束时间
