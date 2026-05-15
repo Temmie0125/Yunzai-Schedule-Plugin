@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { ConfigManager } from '../components/ConfigManager.js'
-import { getBotName, getFileInfo } from '../components/common.js'
+// import { ConfigManager } from '../components/ConfigManager.js'
+import { getBotName, getFileInfo, getFileContent } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import {
     importScheduleFromCode,
@@ -10,7 +10,12 @@ import {
     importScheduleFromIcsData,
     importScheduleFromWakeupData
 } from '../services/scheduleImporter.js'
-import { parseChineseDateToMD } from '../utils/timeUtils.js';
+import { parseTimeTableJson } from '../services/timeTableParser.js'
+import { 
+    parseChineseDateToMD,
+    parseSemesterStartDate,
+    formatDate
+} from '../utils/timeUtils.js';
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -51,6 +56,10 @@ export class ScheduleManage extends plugin {
                 {
                     reg: "^#(设置|修改)?学期开始(日期)?\\s+(.+)$",
                     fnc: "setSemesterStart"
+                },
+                {
+                    reg: "^#(设置|上传|导入|更新)时间表$",
+                    fnc: "updateTimeTable"
                 },
                 // ===== 新增规则：直接识别包含「口令」的消息 =====
                 {
@@ -96,8 +105,14 @@ export class ScheduleManage extends plugin {
      */
     async waitingForCode() {
         const userId = this.e.user_id;
-        let code = this.e.msg.trim();
         this.finish("waitingForCode");
+        const msg = this.e.msg;
+        // 对于非文本消息直接返回
+        if (typeof msg !== 'string'){
+            logger.warn("[设置课表] 非文本消息")
+            return this.reply("请发送分享口令而不是其他内容哦~")
+        }
+        let code = this.e.msg.trim();
         if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消操作")
         // ----- 尝试匹配星链课表分享格式 -----
         // 格式：输入：XXXXX （中文冒号或英文冒号）
@@ -131,7 +146,7 @@ export class ScheduleManage extends plugin {
         const code = match[1];
         // 一般分享口令为32位，为避免误触发，小于20位的不处理
         if (code.length < 20) {
-            logger.warn("[课表导入] 非标准分享口令，请检查是否有误")
+            logger.warn("[课表管理] 非标准分享口令，请检查是否有误")
             return false;
         }
         const result = await importScheduleFromCode(userId, code, this.e);
@@ -166,7 +181,7 @@ export class ScheduleManage extends plugin {
     async setStarlinkSchedule() {
         const userId = this.e.user_id;
         const message = this.e.msg;
-        let code = message.match(/^#星链设置课表\s+(.+)$/)?.[1];
+        let code = message.match(/^#(星链设置课表|设置星链课表)\s+(.+)$/)?.[1];
         if (!code) {
             this.setContext("waitingForStarlinkCode");
             await this.reply("请发送你的星链课程表分享码（或包含分享码的文案）。\n输入“取消”以取消操作。", false, { at: true });
@@ -183,8 +198,14 @@ export class ScheduleManage extends plugin {
 
     async waitingForStarlinkCode() {
         const userId = this.e.user_id;
-        let raw = this.e.msg.trim();
         this.finish("waitingForStarlinkCode");
+        const msg = this.e.msg;
+        // 对于非文本消息直接返回
+        if (typeof msg !== 'string'){
+            logger.warn("[设置课表] 非文本消息")
+            return this.reply("请发送分享口令而不是其他内容哦~")
+        }
+        let raw = this.e.msg.trim();
         if (raw === "取消" || raw.toLowerCase() === "cancel") return this.reply("已取消操作")
         // 提取分享码
         let code = raw.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/)?.[1];
@@ -302,6 +323,119 @@ export class ScheduleManage extends plugin {
         return true
     }
     /**
+     * 设置/上传/导入/更新时间表（命令入口）
+     */
+    async updateTimeTable() {
+        // 检查用户是否有课程节次数据
+        const userId = this.e.user_id;
+        const schedule = DataManager.loadSchedule(userId);
+        if (!schedule || !schedule.courses || schedule.courses.length === 0) {
+            await this.reply('你还没有设置课程表，请先导入课表后再更新时间表。');
+            return true;
+        }
+        const hasSectionData = schedule.courses.some(c => c.startNode !== undefined && c.step !== undefined);
+        if (!hasSectionData) {
+            await this.reply('⚠️ 你的课程缺少课程节次数据，无法更新时间表。\n' +
+                '如果你的课表来自 ICS 文件导入，通常无需更新，因为时间配置一般是正确的。\n' +
+                '如果需要更新，请尝试重新导入。');
+            return true;
+        }
+        if (this.e.group_id) {
+            return await this.waitForConfirm('更新时间表', 'confirmUpdateTimeTable', '更新时间表');
+        }
+        this.setContext("waitingForTimeTable");
+        await this.reply("请发送你的时间表 JSON 文件，或直接发送时间表的 JSON 文本内容。\n" +
+            "时间表 JSON 可以从星链课表-右上角-上课时间-点击分享获取\n" +
+            "输入\"取消\"以取消操作。", false, { at: true });
+        return true;
+    }
+
+    async confirmUpdateTimeTable() {
+        const userReply = this.e.msg.trim();
+        this.finish("confirmUpdateTimeTable");
+        if (userReply !== "确认") {
+            await this.reply("❌ 已取消更新时间表操作。");
+            return true;
+        }
+        this.setContext("waitingForTimeTable");
+        await this.reply("请发送你的时间表 JSON 文件，或直接发送时间表的 JSON 文本内容。\n" +
+            "时间表 JSON 可以从星链课表-右上角-上课时间-点击分享获取\n" +
+            "输入\"取消\"以取消操作。", false, { at: true });
+        return true;
+    }
+
+    async waitingForTimeTable() {
+        this.finish("waitingForTimeTable");
+        const e = this.e;
+        const userId = e.user_id;
+        const botName = getBotName(e);
+        // 处理取消
+        if (typeof e.msg === 'string') {
+            const code = e.msg.trim();
+            if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消更新时间表操作。");
+        }
+        let jsonText = null;
+        // 优先检查是否为文件消息
+        const fileInfo = getFileInfo(e);
+        if (fileInfo) {
+            const { fileName, fileSize, fileId, busid } = fileInfo;
+            const MAX_SIZE = 512 * 1024; // 512KB
+            const ext = path.extname(fileName).toLowerCase();
+            if (ext !== '.json') {
+                await this.reply(`${botName}只接受 JSON 格式的时间表文件哦~`);
+                return false;
+            }
+            if (fileSize > MAX_SIZE) {
+                const sizeKB = (fileSize / 1024).toFixed(2);
+                await this.reply(`文件太大了(${sizeKB}KB)，请发送小于 512KB 的 JSON 文件~`);
+                return false;
+            }
+            try {
+                jsonText = await getFileContent(e, fileId, busid);
+            } catch (err) {
+                logger.error(`[时间表更新] 获取文件内容异常: ${err}`);
+                await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
+                return false;
+            }
+            if (!jsonText) {
+                await this.reply(`${botName}无法读取文件内容，请确保文件有效`);
+                return false;
+            }
+        } else if (typeof e.msg === 'string') {
+            // 尝试直接解析为 JSON 文本
+            jsonText = e.msg.trim();
+        } else {
+            await this.reply(`请发送 JSON 文件或 JSON 文本，${botName}看不懂其他格式哦~`);
+            return false;
+        }
+        // 解析 JSON
+        let jsonData;
+        try {
+            jsonData = JSON.parse(jsonText);
+        } catch (err) {
+            await this.reply('时间表内容不是合法的 JSON 格式，请检查后重试~');
+            return false;
+        }
+        let timeSlotResult = parseTimeTableJson(jsonData)
+        if(!timeSlotResult.success){
+            return this.reply(timeSlotResult.reply);
+        }
+        const timeSlotMap = timeSlotResult.timeSlotMap;
+        // 执行更新
+        const result = DataManager.updateCourseTimesBySlots(userId, timeSlotMap);
+        if (!result.success) {
+            await this.reply(`❌ 更新时间表失败：${result.error || '未知错误'}`);
+            return true;
+        }
+        let reply = `✅ 时间表更新完成！\n`;
+        reply += `📝 更新了 ${result.updatedCount} 门课程的时间\n`;
+        if (result.skippedCount > 0) {
+            reply += `⏭️ 跳过了 ${result.skippedCount} 门课程（缺少节次数据或新时间表中未找到对应节次）`;
+        }
+        await this.reply(reply);
+        return true;
+    }
+    /**
      * 清除课表
      */
     async clearSchedule() {
@@ -324,9 +458,10 @@ export class ScheduleManage extends plugin {
  * @param {string} confirmContext 确认状态的上下文名称
  * @returns {Promise<boolean>} 是否确认
  */
-    async waitForConfirm(action, confirmContext) {
+    async waitForConfirm(action, confirmContext, actionLabel = null) {
         const botName = getBotName(this.e);
-        const msg = `⚠️ ${botName}检测到您正在群聊中执行「${action}课表」操作，这可能会泄露您的课表信息。\n` +
+        const label = actionLabel || `${action}课表`;
+        const msg = `⚠️ ${botName}检测到您正在群聊中执行「${label}」操作，这可能会泄露您的课表信息。\n` +
             `请发送「确认」继续，发送任意其他内容取消操作。\n` +
             `（提示：建议在私聊中操作以保护隐私）`;
         await this.reply(msg);
@@ -395,9 +530,9 @@ export class ScheduleManage extends plugin {
         }
         let fileContent;
         try {
-            fileContent = await this.getFileContent(fileId, busid);
+            fileContent = await getFileContent(e, fileId, busid);
         } catch (err) {
-            logger.error(`[课表导入] 获取文件内容异常: ${err}`);
+            logger.error(`[课表管理] 获取文件内容异常: ${err}`);
             await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
             return false;
         }
@@ -417,129 +552,11 @@ export class ScheduleManage extends plugin {
             result = await importScheduleFromJsonData(e.user_id, jsonData, e);
         } else if (ext === '.ics') { // .ics
             result = await importScheduleFromIcsData(e.user_id, fileContent, e);
-        } else { // .wakeup_schedule
+        } else if (ext === '.wakeup_schedule'){ // .wakeup_schedule
             result = await importScheduleFromWakeupData(e.user_id, fileContent, e);
         }
         await this.reply(result.message);
         return true;
-    }
-    /**
-   * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）
-   * @returns {Promise<string|null>}
-   */
-    async getFileContent(fileId, busid = null) {
-        const e = this.e;
-        try {
-            // ========== 1. 私聊：优先用 get_private_file_url 获取 http 地址 ==========
-            if (!e.isGroup) {
-                try {
-                    const urlRes = await Bot.sendApi('get_private_file_url', { file_id: fileId });
-                    if (urlRes?.data?.url && (urlRes.data.url.startsWith('http://') || urlRes.data.url.startsWith('https://'))) {
-                        const response = await fetch(urlRes.data.url);
-                        if (response.ok) {
-                            logger.mark(`[课表导入] 私聊文件HTTP下载成功`)
-                            return await response.text();
-                        }
-                        logger.warn(`[课表导入] 私聊文件下载失败，状态码: ${response.status}`);
-                    }
-                } catch (apiErr) {
-                    logger.warn(`[课表导入] 调用 get_private_file_url 失败，回退通用方式: ${apiErr}`);
-                }
-            }
-            // ========== 2. 群聊：尝试 get_group_file_url（可能返回 file:// 或 http）==========
-            if (e.isGroup) {
-                let groupUrlInfo = null;
-                try {
-                    groupUrlInfo = await Bot.sendApi('get_group_file_url', {
-                        group_id: e.group_id,
-                        file_id: fileId,
-                        busid: busid
-                    });
-                } catch (apiErr) {
-                    logger.warn(`[课表导入] 调用 get_group_file_url 失败: ${apiErr}`);
-                }
-                if (groupUrlInfo?.data?.url) {
-                    const url = groupUrlInfo.data.url;
-                    // 如果是 http 地址，直接下载
-                    if (url.startsWith('http://') || url.startsWith('https://')) {
-                        const response = await fetch(url);
-                        if (response.ok) {
-                            logger.mark(`[课表导入] 群文件HTTP下载成功`)
-                            return await response.text();
-                        }
-                        logger.warn(`[课表导入] 群文件HTTP下载失败，状态码: ${response.status}`);
-                    }
-                    // 如果是 file:// 地址，尝试本地读取（Docker 中大概率失败）
-                    if (url.startsWith('file://')) {
-                        let filePath = url.replace('file://', '');
-                        try { filePath = decodeURIComponent(filePath); } catch {}
-                        if (fs.existsSync(filePath)) {
-                            // 注意：容器内路径很少能用，但保留以兼容非容器环境
-                            const content = fs.readFileSync(filePath, 'utf-8');
-                            logger.mark(`[课表导入] 群文件本地读取成功: ${filePath}`);
-                            setTimeout(() => fs.promises.unlink(filePath).catch(() => {}), 2000);
-                            return content;
-                        }
-                        logger.warn("[课表导入] file:// 路径不存在 (可能是容器隔离)，尝试其他方式...");
-                    }
-                }
-            }
-            // ========== 3. 通用方式：调用 get_file 并优先处理 base64 ==========
-            let fileInfo = null;
-            try {
-                // 统一使用 get_file
-                if (!e.isGroup) {
-                    // 私聊 get_file 可能会返回 base64:// 数据
-                    fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
-                } else {
-                    if (groupUrlInfo?.data) {
-                        fileInfo = groupUrlInfo;
-                    }
-                }
-            } catch (err) {
-                logger.error("[课表导入] 获取 fileInfo 异常:", err);
-            }
-    
-            if (fileInfo?.data) {
-                const data = fileInfo.data;
-                // 优先 base64
-                if (data.file && typeof data.file === 'string' && data.file.startsWith('base64://')) {
-                    const base64 = data.file.replace('base64://', '');
-                    return Buffer.from(base64, 'base64').toString('utf-8');
-                }
-                // 如果 data.url 是有效的 http 地址（可能在 get_file 中也返回 url）
-                if (data.url && (data.url.startsWith('http://') || data.url.startsWith('https://'))) {
-                    const response = await fetch(data.url);
-                    if (response.ok) return await response.text();
-                }
-                // 本地路径兜底（仅在非严格隔离的环境有效）
-                const localPath = data.file || data.path;
-                if (localPath && typeof localPath === 'string' && fs.existsSync(localPath)) {
-                    const content = fs.readFileSync(localPath, 'utf-8');
-                    logger.mark(`[课表导入] 本地读取成功: ${filePath}`);
-                    setTimeout(() => fs.promises.unlink(localPath).catch(() => {}), 2000);
-                    return content;
-                }
-            }
-            // ========== 4. 如果配置了 NapCat HTTP 文件服务，拼接 URL ==========
-            // 需要用户在 napcat 配置中设置 http.enableFile = true，这里优先读取配置->环境变量->默认值
-            const config = ConfigManager.getConfig();
-            const fileBaseUrl = config.napcatURL || process.env.NAPCAT_FILE_BASE_URL || "http://napcat:6099"; // 例如 "http://napcat:6099"
-            if (fileBaseUrl && fileId) {
-                try {
-                    const url = `${fileBaseUrl}/file?file_id=${encodeURIComponent(fileId)}`;
-                    const response = await fetch(url);
-                    if (response.ok) return await response.text();
-                } catch (e) {
-                    logger.warn("[课表导入] 通过 NapCat HTTP 文件服务下载失败:", e);
-                }
-            }
-            logger.error("[课表导入] 无法获取文件内容（已尝试所有方式）");
-            return null;
-        } catch (err) {
-            logger.error(`[课表导入] 获取文件内容失败: ${err}`);
-            return null;
-        }
     }
     /**
    * 导出课表
@@ -610,7 +627,7 @@ export class ScheduleManage extends plugin {
             if (converted) dateInput = converted;
         }
         // 2. 解析日期字符串（支持 YYYY-MM-DD 或 MM-DD）
-        const parsed = this._parseSemesterStartDate(dateInput);
+        const parsed = parseSemesterStartDate(dateInput);
         if (!parsed.valid || !parsed.date) {
             await this.reply(`日期格式无效，请使用 YYYY-MM-DD 或 MM-DD 格式\n例如：#设置学期开始 2026-03-02 或 #设置学期开始 03-02`);
             return false;
@@ -619,7 +636,7 @@ export class ScheduleManage extends plugin {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         if (parsed.date > today) {
-            await this.reply(`学期开始日期不能晚于今天（${this._formatDate(today)}）`);
+            await this.reply(`学期开始日期不能晚于今天（${formatDate(today)}）`);
             return false;
         }
         // 4. 保存日期
@@ -636,62 +653,6 @@ export class ScheduleManage extends plugin {
             await this.reply("❌ 保存失败，请稍后重试");
         }
         return true;
-    }
-    /**
-     * 解析学期开始日期字符串
-     * @param {string} input 输入如 "2026-03-02" 或 "03-02"
-     * @returns {{valid: boolean, date: Date|null, dateStr: string|null}}
-     */
-    _parseSemesterStartDate(input) {
-        // 支持 YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD, YY-MM-DD (自动补全年份)
-        const fullMatch = input.match(/^(\d{2,4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
-        if (fullMatch) {
-            let year = parseInt(fullMatch[1]);
-            const month = parseInt(fullMatch[2]);
-            const day = parseInt(fullMatch[3]);
-            if (year < 100) year += 2000; // 如 26-03-02 -> 2026
-            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const date = new Date(year, month - 1, day);
-            if (this._isValidDate(date, year, month, day)) {
-                return { valid: true, date, dateStr };
-            }
-            return { valid: false, date: null, dateStr: null };
-        }
-
-        // 支持 MM-DD, MM/DD, MM.DD
-        const shortMatch = input.match(/^(\d{1,2})[-/.](\d{1,2})$/);
-        if (shortMatch) {
-            const month = parseInt(shortMatch[1]);
-            const day = parseInt(shortMatch[2]);
-            const year = new Date().getFullYear();
-            const date = new Date(year, month - 1, day);
-            if (!this._isValidDate(date, year, month, day)) {
-                return { valid: false, date: null, dateStr: null };
-            }
-            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            return { valid: true, date, dateStr };
-        }
-
-        return { valid: false, date: null, dateStr: null };
-    }
-
-    /**
-     * 验证日期是否有效（未被自动修正）
-     */
-    _isValidDate(date, expectedYear, expectedMonth, expectedDay) {
-        return date.getFullYear() === expectedYear &&
-            date.getMonth() + 1 === expectedMonth &&
-            date.getDate() === expectedDay;
-    }
-
-    /**
-     * 格式化日期为 YYYY-MM-DD
-     */
-    _formatDate(date) {
-        const y = date.getFullYear();
-        const m = String(date.getMonth() + 1).padStart(2, '0');
-        const d = String(date.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
     }
 }
 export default ScheduleManage

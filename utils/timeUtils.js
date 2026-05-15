@@ -385,3 +385,59 @@ export function isTodayCelebration(birthdayMMDD) {
     const { month: realMonth, day: realDay } = getActualCelebrationDate(year, storeMonth, storeDay)
     return today.getMonth() + 1 === realMonth && today.getDate() === realDay
 }
+/**
+     * 解析学期开始日期字符串
+     * @param {string} input 输入如 "2026-03-02" 或 "03-02"
+     * @returns {{valid: boolean, date: Date|null, dateStr: string|null}}
+     */
+export function parseSemesterStartDate(input) {
+    // 支持 YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD, YY-MM-DD (自动补全年份)
+    const fullMatch = input.match(/^(\d{2,4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (fullMatch) {
+        let year = parseInt(fullMatch[1]);
+        const month = parseInt(fullMatch[2]);
+        const day = parseInt(fullMatch[3]);
+        if (year < 100) year += 2000; // 如 26-03-02 -> 2026
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const date = new Date(year, month - 1, day);
+        if (isValidDate(date, year, month, day)) {
+            return { valid: true, date, dateStr };
+        }
+        return { valid: false, date: null, dateStr: null };
+    }
+
+    // 支持 MM-DD, MM/DD, MM.DD
+    const shortMatch = input.match(/^(\d{1,2})[-/.](\d{1,2})$/);
+    if (shortMatch) {
+        const month = parseInt(shortMatch[1]);
+        const day = parseInt(shortMatch[2]);
+        const year = new Date().getFullYear();
+        const date = new Date(year, month - 1, day);
+        if (!isValidDate(date, year, month, day)) {
+            return { valid: false, date: null, dateStr: null };
+        }
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return { valid: true, date, dateStr };
+    }
+
+    return { valid: false, date: null, dateStr: null };
+}
+
+/**
+ * 验证日期是否有效（未被自动修正）
+ */
+export function isValidDate(date, expectedYear, expectedMonth, expectedDay) {
+    return date.getFullYear() === expectedYear &&
+        date.getMonth() + 1 === expectedMonth &&
+        date.getDate() === expectedDay;
+}
+
+/**
+ * 格式化日期为 YYYY-MM-DD
+ */
+export function formatDate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}

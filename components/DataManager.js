@@ -823,6 +823,53 @@ export class DataManager {
  * @param {string} semesterStart 格式 YYYY-MM-DD
  * @returns {boolean}
  */
+    /**
+     * 根据新的时间段配置，更新用户课表中每门课的开始/结束时间
+     * @param {string|number} userId
+     * @param {Map<number, {start: string, end: string}>} timeSlotMap - section → {start: "HH:MM", end: "HH:MM"}
+     * @returns {{ success: boolean, updatedCount: number, skippedCount: number, hasSectionData: boolean, error?: string }}
+     */
+    static updateCourseTimesBySlots(userId, timeSlotMap) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule || !schedule.courses || schedule.courses.length === 0) {
+            return { success: false, updatedCount: 0, skippedCount: 0, hasSectionData: false, error: '你还没有设置课程表' };
+        }
+
+        let updatedCount = 0;
+        let skippedCount = 0;
+        let hasSectionData = false;
+
+        for (const course of schedule.courses) {
+            if (course.rescheduled) {
+                skippedCount++;
+                continue;
+            }
+            if (course.startNode === undefined || course.step === undefined) {
+                skippedCount++;
+                continue;
+            }
+            hasSectionData = true;
+            const endNode = course.startNode + course.step - 1;
+            const startSlot = timeSlotMap.get(course.startNode);
+            const endSlot = timeSlotMap.get(endNode);
+            if (!startSlot || !endSlot) {
+                logger.warn(`[时间表更新] 用户 ${userId} 课程 "${course.name}" 节次 ${course.startNode}-${endNode} 在新时间表中未找到，跳过`);
+                skippedCount++;
+                continue;
+            }
+            course.startTime = startSlot.start;
+            course.endTime = endSlot.end;
+            updatedCount++;
+        }
+
+        if (updatedCount > 0 || (hasSectionData && skippedCount === 0)) {
+            schedule.updateTime = new Date().toISOString();
+            this.saveSchedule(userId, schedule);
+        }
+
+        return { success: true, updatedCount, skippedCount, hasSectionData };
+    }
+
     static updateSemesterStart(userId, semesterStart) {
         const filePath = path.join(DATA_PATH, `${userId}.json`);
         let data = {};

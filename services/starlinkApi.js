@@ -55,6 +55,13 @@ function mergeConsecutiveCourses(courses) {
       const curStart = timeToMinutes(cur.startTime);
       if (curStart - lastEnd <= 10) {   // 连堂合并
         last.endTime = cur.endTime;
+        // 合并时扩展 startNode/step 范围
+        if (last.startNode !== undefined && cur.startNode !== undefined &&
+            last.step !== undefined && cur.step !== undefined) {
+          const lastEndNode = last.startNode + last.step - 1;
+          const curEndNode = cur.startNode + cur.step - 1;
+          last.step = Math.max(lastEndNode, curEndNode) - last.startNode + 1;
+        }
         continue;
       }
     }
@@ -114,7 +121,10 @@ export async function fetchStarlinkSchedule(shareCode) {
       day: c.weekday,          // 1-7
       startTime,
       endTime,
-      weeks
+      weeks,
+      // 保留节次数据，方便后续更换时间配置
+      startNode: c.startSection || undefined,
+      step: (c.startSection && c.endSection) ? (c.endSection - c.startSection + 1) : undefined
     });
   }
 
