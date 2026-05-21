@@ -16,7 +16,6 @@ import {
     parseSemesterStartDate,
     formatDate
 } from '../utils/timeUtils.js';
-import getconfig from '../../Gi-plugin/model/cfg.js'
 export class ScheduleManage extends plugin {
     constructor() {
         super({
