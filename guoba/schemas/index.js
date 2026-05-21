@@ -92,24 +92,6 @@ export const schemas = [
         bottomHelpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms。"
     },
     {
-        component: 'Divider',
-        label: '其他设置'
-    },
-    {
-        field: "defaultSemesterStart",
-        label: "默认学期开始日期",
-        component: "Input",
-        required: true,
-        componentProps: {
-            placeholder: "请输入日期，格式 YYYY-MM-DD"
-        },
-        defaultValue: "2026-03-02",
-        rules: [
-            { required: true, message: "请填写默认学期开始日期" }
-        ],
-        bottomHelpMessage: "当未提供学期开始日期时，将使用该日期计算当前周数。请确保日期为周一（插件会自动校正到所在周的周一）。"
-    },
-    {
         component: 'SOFT_GROUP_BEGIN',
         label: '课表模块设置'
     },
@@ -132,7 +114,29 @@ export const schemas = [
         placeholder: "请输入Token",
         bottomHelpMessage: "请输入用于访问课表服务的Token。可联系插件作者获取。"
     },
-    */ 
+    */
+    {
+        field: "defaultSemesterStart",
+        label: "默认学期开始日期",
+        component: "Input",
+        required: true,
+        componentProps: {
+            placeholder: "请输入日期，格式 YYYY-MM-DD"
+        },
+        defaultValue: "2026-03-02",
+        rules: [
+            { required: true, message: "请填写默认学期开始日期" }
+        ],
+        bottomHelpMessage: "当未提供学期开始日期时，将使用该日期计算当前周数。请确保日期为周一（插件会自动校正到所在周的周一）。"
+    },
+    {
+        field: "watchFiles",
+        label: "监听所有文件",
+        helpMessage: "监听所有文件以尝试跳过上下文直接导入课表。只处理支持的文件",
+        component: "Switch",
+        defaultValue: false,
+        bottomHelpMessage: "开启后将监听所有聊天文件，并自动导入支持的课表格式"
+    },
     {
         component: 'Divider',
         label: '自动任务设置'

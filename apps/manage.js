@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-// import { ConfigManager } from '../components/ConfigManager.js'
+import { ConfigManager } from '../components/ConfigManager.js'
 import { getBotName, getFileInfo, getFileContent } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import {
@@ -16,6 +16,7 @@ import {
     parseSemesterStartDate,
     formatDate
 } from '../utils/timeUtils.js';
+import getconfig from '../../Gi-plugin/model/cfg.js'
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -69,6 +70,12 @@ export class ScheduleManage extends plugin {
                 {
                     reg: ".*「星链课表」.*",
                     fnc: "handleStarlinkDirect"
+                },
+                {
+                    // 直接监听文件
+                    reg: "",
+                    fnc: "handleDirectFile",
+                    log: false
                 }
             ]
         })
@@ -670,6 +677,61 @@ export class ScheduleManage extends plugin {
         } else {
             await this.reply("❌ 保存失败，请稍后重试");
         }
+        return true;
+    }
+    /**
+ * 直接监听文件消息并自动导入（由配置 watchFiles 控制）
+ * 仅处理受支持的课表文件格式，其他消息静默返回 false
+ */
+    async handleDirectFile() {
+        const config = ConfigManager.getConfig();
+        const doWatchFile = config.watchFiles;
+        if (!doWatchFile) return false;
+        const e = this.e;
+        // 非文件消息不处理
+        const fileInfo = getFileInfo(e);
+        if (!fileInfo) return false;
+        const { fileName, fileSize, fileId, busid } = fileInfo;
+        const ext = path.extname(fileName).toLowerCase();
+        const SUPPORTED_EXTS = ['.json', '.ics', '.wakeup_schedule'];
+        if (!SUPPORTED_EXTS.includes(ext)) return false;  // 不支持的格式，静默放行
+        const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+        if (fileSize > MAX_SIZE) {
+            logger.warn(`[课表自动导入] 文件过大 (${(fileSize / 1024).toFixed(2)}KB)，跳过处理: ${fileName}`);
+            return false; // 静默失败，避免刷屏
+        }
+        let fileContent;
+        try {
+            fileContent = await getFileContent(e, fileId, busid);
+        } catch (err) {
+            logger.error(`[课表自动导入] 读取文件失败: ${fileName}`, err);
+            return false;
+        }
+        if (!fileContent) return false;
+        let result;
+        try {
+            if (ext === '.json') {
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(fileContent);
+                } catch (parseErr) {
+                    logger.warn(`[课表自动导入] JSON 解析失败: ${fileName}`, parseErr);
+                    return false;
+                }
+                result = await importScheduleFromJsonData(e.user_id, jsonData, e);
+            } else if (ext === '.ics') {
+                result = await importScheduleFromIcsData(e.user_id, fileContent, e);
+            } else if (ext === '.wakeup_schedule') {
+                result = await importScheduleFromWakeupData(e.user_id, fileContent, e);
+            } else {
+                return false;
+            }
+        } catch (err) {
+            logger.error(`[课表自动导入] 导入过程异常: ${fileName}`, err);
+            return false;
+        }
+        // 导入完成后发送一次结果通知
+        await this.reply(result.message);
         return true;
     }
 }

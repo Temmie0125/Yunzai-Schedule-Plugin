@@ -26,3 +26,5 @@ font: "像素"
 sortMode: "userId"
 # 生日列表是否展示QQ号
 showQQ: true
+# 监听所有文件以尝试自动导入课表
+watchFiles: false
