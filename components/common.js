@@ -198,6 +198,7 @@ export async function getFileContent(e, fileId, busid = null) {
                 return Buffer.from(base64, 'base64').toString('utf-8');
             }
             // 如果 data.url 是有效的 http 地址（可能在 get_file 中也返回 url）
+            // 如果需要请在NapCat的连接设置打开本地文件转URL
             if (data.url && (data.url.startsWith('http://') || data.url.startsWith('https://'))) {
                 const response = await fetch(data.url);
                 if (response.ok) return await response.text();
@@ -206,7 +207,7 @@ export async function getFileContent(e, fileId, busid = null) {
             const localPath = data.file || data.path;
             if (localPath && typeof localPath === 'string' && fs.existsSync(localPath)) {
                 const content = fs.readFileSync(localPath, 'utf-8');
-                logger.mark(`[课表管理] 本地读取成功: ${filePath}`);
+                logger.mark(`[课表管理] 本地读取成功: ${localPath}`);
                 setTimeout(() => fs.promises.unlink(localPath).catch(() => {}), 2000);
                 return content;
             }
