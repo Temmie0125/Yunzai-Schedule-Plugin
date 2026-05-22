@@ -123,9 +123,20 @@ export async function getFileContent(e, fileId, busid = null) {
         // ========== 1. 私聊：优先用 get_private_file_url 获取 http 地址 ==========
         if (!e.isGroup) {
             try {
-                const urlRes = await Bot.sendApi('get_private_file_url', { file_id: fileId });
-                if (urlRes?.data?.url && (urlRes.data.url.startsWith('http://') || urlRes.data.url.startsWith('https://'))) {
-                    const response = await fetch(urlRes.data.url);
+                // const urlRes = await Bot.sendApi('get_private_file_url', { file_id: fileId });
+                const userId = e.user_id;
+                let fileUrl;
+                const user = Bot.pickFriend(userId);
+                if (typeof user.getFileUrl === 'function') {
+                    // 如果提供了封装方法
+                    fileUrl = await user.getFileUrl(fileId);
+                } else {
+                    // 降级到通用 sendApi
+                    const res = await Bot.sendApi('get_private_file_url', { user_id: userId, file_id: fileId });
+                    fileUrl = res?.data?.url;
+                }
+                if (fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
+                    const response = await fetch(fileUrl);
                     if (response.ok) {
                         logger.mark(`[课表管理] 私聊文件HTTP下载成功`)
                         return await response.text();
@@ -139,14 +150,21 @@ export async function getFileContent(e, fileId, busid = null) {
         // ========== 2. 群聊：尝试 get_group_file_url（可能返回 file:// 或 http）==========
         if (e.isGroup) {
             let groupUrlInfo = null;
-            try {
-                groupUrlInfo = await Bot.sendApi('get_group_file_url', {
-                    group_id: e.group_id,
-                    file_id: fileId,
-                    busid: busid
-                });
-            } catch (apiErr) {
-                logger.warn(`[课表管理] 调用 get_group_file_url 失败: ${apiErr}`);
+            const group = Bot.pickGroup(e.group_id);
+            if (typeof group.fs.download === 'function') {
+                // 如果提供了封装方法
+                groupUrlInfo = await group.fs.download(fileId, busid);
+            }
+            else {  // 否则直接调用接口
+                try {
+                    groupUrlInfo = await Bot.sendApi('get_group_file_url', {
+                        group_id: e.group_id,
+                        file_id: fileId,
+                        busid: busid
+                    });
+                } catch (apiErr) {
+                    logger.warn(`[课表管理] 调用 get_group_file_url 失败: ${apiErr}`);
+                }
             }
             if (groupUrlInfo?.data?.url) {
                 const url = groupUrlInfo.data.url;
@@ -162,12 +180,12 @@ export async function getFileContent(e, fileId, busid = null) {
                 // 如果是 file:// 地址，尝试本地读取（Docker 中大概率失败）
                 if (url.startsWith('file://')) {
                     let filePath = url.replace('file://', '');
-                    try { filePath = decodeURIComponent(filePath); } catch {}
+                    try { filePath = decodeURIComponent(filePath); } catch { }
                     if (fs.existsSync(filePath)) {
                         // 注意：容器内路径很少能用，但保留以兼容非容器环境
                         const content = fs.readFileSync(filePath, 'utf-8');
                         logger.mark(`[课表管理] 群文件本地读取成功: ${filePath}`);
-                        setTimeout(() => fs.promises.unlink(filePath).catch(() => {}), 2000);
+                        setTimeout(() => fs.promises.unlink(filePath).catch(() => { }), 2000);
                         return content;
                     }
                     logger.warn("[课表管理] file:// 路径不存在 (可能是容器隔离)，尝试其他方式...");
@@ -208,7 +226,7 @@ export async function getFileContent(e, fileId, busid = null) {
             if (localPath && typeof localPath === 'string' && fs.existsSync(localPath)) {
                 const content = fs.readFileSync(localPath, 'utf-8');
                 logger.mark(`[课表管理] 本地读取成功: ${localPath}`);
-                setTimeout(() => fs.promises.unlink(localPath).catch(() => {}), 2000);
+                setTimeout(() => fs.promises.unlink(localPath).catch(() => { }), 2000);
                 return content;
             }
         }
@@ -257,12 +275,12 @@ export async function getAvatarUrl(userId) {
 /**
  * 获取Bot自定义名称
  */
-export function getBotName(e = null){
+export function getBotName(e = null) {
     let bot;
-    if(e){
+    if (e) {
         bot = e.bot || Bot;
     }
-    else{
+    else {
         bot = Bot;
     }
     const config = ConfigManager.getConfig();

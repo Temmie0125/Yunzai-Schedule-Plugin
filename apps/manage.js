@@ -687,6 +687,7 @@ export class ScheduleManage extends plugin {
         const doWatchFile = config.watchFiles;
         if (!doWatchFile) return false;
         const e = this.e;
+        if (e.user_id == Bot.uin) return false;  // 避免bot导出课表回环调用
         // 非文件消息不处理
         const fileInfo = getFileInfo(e);
         if (!fileInfo) return false;
