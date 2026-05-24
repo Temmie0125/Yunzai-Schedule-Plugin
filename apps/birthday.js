@@ -397,7 +397,10 @@ export class BirthdayReminder extends plugin {
             e.reply('格式错误！正确格式：#生日(设置|修改)昵称 新昵称')
             return true
         }
-        const newNickname = match[1].trim()
+        const newNickname = match[2].trim()
+        if (newNickname.length > 15) {
+            return e.reply("昵称太长了，最多15个字")
+        }
         const userId = e.user_id
         if (!this.birthdayData[userId]) {
             e.reply('❌ 你还没有设置生日，无法修改昵称\n请先使用 #设置生日 月-日 设置生日')
@@ -406,7 +409,7 @@ export class BirthdayReminder extends plugin {
         this.birthdayData[userId].name = newNickname
         this.birthdayData[userId].nicknameModified = true
         DataManager.saveBirthdayData(this.birthdayData)
-        e.reply('✅ 昵称修改成功')
+        e.reply(`✅ 昵称修改成功：${newNickname}`)
         return true
     }
     /** 管理员修改生日 */
