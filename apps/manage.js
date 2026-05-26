@@ -504,6 +504,9 @@ export class ScheduleManage extends plugin {
         await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。星链用户请优先使用分享口令哦~\n输入“取消”以取消操作。", false, { at: true });
         return true;
     }
+    /**
+ * 确认导出回调
+ */
     async confirmExport() {
         const userReply = this.e.msg.trim();
         this.finish("confirmExport");
@@ -511,8 +514,19 @@ export class ScheduleManage extends plugin {
             await this.reply("❌ 已取消导出操作。");
             return true;
         }
-        // 确认后执行导出
-        return await this.doExport();
+        return await this.doExport(false);
+    }
+    /**
+     * 确认导出回调（拾光格式）
+     */
+    async confirmExportShiguang() {
+        const userReply = this.e.msg.trim();
+        this.finish("confirmExportShiguang");
+        if (userReply !== "确认") {
+            await this.reply("❌ 已取消导出操作。");
+            return true;
+        }
+        return await this.doExport(true);
     }
     /**
      * 导入课表文件（命令入口）
@@ -587,24 +601,33 @@ export class ScheduleManage extends plugin {
    */
     async exportSchedule() {
         const userId = this.e.user_id;
+        const isShiguang = this.e.msg.includes('拾光');
         if (this.e.group_id) {
-            // 群聊需要二次确认
-            return await this.waitForConfirm('导出', 'confirmExport');
+            // 群聊需要二次确认，根据格式选择不同的context方法
+            if (isShiguang) {
+                return await this.waitForConfirm('导出', 'confirmExportShiguang');
+            } else {
+                return await this.waitForConfirm('导出', 'confirmExport');
+            }
         }
-        // 私聊直接执行导出
-        return await this.doExport();
+        // 私聊直接导出，传递标志
+        return await this.doExport(isShiguang);
     }
     /**
- * 实际执行导出的方法
- */
-    async doExport() {
+      * 实际执行导出的方法
+      * @param {boolean} isShiguang 是否导出拾光格式
+    */
+    async doExport(isShiguang = false) {
         const userId = this.e.user_id;
+        // 安全兜底：若参数异常未传递，尝试从消息中检测
+        if (isShiguang === undefined) {
+            isShiguang = this.e.msg.includes('拾光');
+        }
         const scheduleData = DataManager.loadSchedule(userId);
         if (!scheduleData) {
             await this.reply("你还没有设置课程表，请先设置或导入课表哦~");
             return false;
         }
-        const isShiguang = this.e.msg.includes('拾光');
         let exportJson, fileName;
         if (isShiguang) {
             exportJson = DataManager.convertToShiguangFormat(scheduleData);

@@ -510,8 +510,8 @@ export class DataManager {
         const courses = scheduleData.courses.map((course) => ({
             id: this.generateShortUuid(),
             name: course.name,
-            teacher: course.teacher || '',
-            position: course.location || '',
+            teacher: course.teacher || '未知教师',
+            position: course.location || '未知地点',
             day: Number(course.day),           // 确保为数字
             startSection: Number(course.startNode),
             endSection: Number(course.startNode) + Number(course.step) - 1,
