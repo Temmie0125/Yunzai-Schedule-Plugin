@@ -59,7 +59,9 @@ export class BirthdayReminder extends plugin {
         // 加载生日数据
         this.birthdayData = DataManager.loadBirthdayData()
         // 同步昵称（当自定义昵称关闭时，用QQ昵称覆盖存储名）
-        this._syncBirthdayNames()
+        this._syncBirthdayNames().catch(err =>
+            logger.error('[Schedule生日提醒] 同步昵称失败:', err)
+        )
         // 初始化定时推送任务
         this.pushJob = null
         this.initPushTask()
@@ -107,7 +109,9 @@ export class BirthdayReminder extends plugin {
     handleConfigChange() {
         // logger.info('[Schedule生日提醒] 检测到配置变化，重载定时任务')
         this.initPushTask()
-        this._syncBirthdayNames()
+        this._syncBirthdayNames().catch(err =>
+            logger.error('[Schedule生日提醒] 配置变更同步昵称失败:', err)
+        )
     }
     // 插件卸载时清理
     async disconnect() {
@@ -135,7 +139,7 @@ export class BirthdayReminder extends plugin {
         for (const [userId, data] of Object.entries(this.birthdayData)) {
             // 使用新的适配函数判断今天是否是该用户的实际庆祝日
             if (isTodayCelebration(data.birthday)) {
-                todayBirthdayUsers.push({ userId, name: this._getDisplayName(userId, data.name) })
+                todayBirthdayUsers.push({ userId, name: await this._getDisplayName(userId, data.name) })
             }
         }
         if (todayBirthdayUsers.length === 0) {
@@ -287,13 +291,13 @@ export class BirthdayReminder extends plugin {
             totalCount: total,
             todayCount,
             upcomingCount,
-            birthdays: finaldata.map(item => ({
-                name: this._getDisplayName(item.userId, item.name),
+            birthdays: await Promise.all(finaldata.map(async item => ({
+                name: await this._getDisplayName(item.userId, item.name),
                 qq: showQQ ? item.userId : null,
                 birthday: item.birthday,
                 days: item.days,
                 avatar: `https://q1.qlogo.cn/g?b=qq&s=0&nk=${item.userId}`
-            }))
+            })))
         }
         await e.reply("正在生成生日列表图片，请稍候...", false, { recallMsg: 5 })
         const img = await renderBirthdayList(templateData, { e })
@@ -312,7 +316,7 @@ export class BirthdayReminder extends plugin {
             return e.reply('你还没有设置生日~使用[#设置生日 月份-日期]来进行设置~')
         }
         const daysLeft = getDaysToBirthday(data.birthday)
-        const displayName = this._getDisplayName(userId, data.name)
+        const displayName = await this._getDisplayName(userId, data.name)
         let msg = `🎂 ${displayName}的生日信息 🎂\n生日: ${data.birthday}\n`
         if (daysLeft === 0) msg += '🎉 今天是你的生日！生日快乐！🎂'
         else if (daysLeft === 1) msg += '🎈 明天就是你的生日啦！'
@@ -355,7 +359,7 @@ export class BirthdayReminder extends plugin {
         } else {
             // 自定义昵称关闭时，强制使用QQ昵称
             try {
-                userName = getMemberName(Number(userId))
+                userName = await getMemberName(Number(userId))
             } catch {}
             if (!userName) {
                 userName = e.sender?.nickname || `用户${userId}`
@@ -706,7 +710,7 @@ export class BirthdayReminder extends plugin {
      * @param {string} storedName 数据文件中存储的名称
      * @returns {string} 显示名称
      */
-    _getDisplayName(userId, storedName) {
+    async _getDisplayName(userId, storedName) {
         const config = ConfigManager.getConfig()
         // 自定义昵称开启：直接返回存储的名称
         if (config.birthdayCustomName) {
@@ -714,7 +718,7 @@ export class BirthdayReminder extends plugin {
         }
         // 自定义昵称关闭：尝试获取QQ昵称
         try {
-            const qqNick = getMemberName(Number(userId))
+            const qqNick = await getMemberName(Number(userId))
             if (qqNick) return qqNick
         } catch {}
         // 获取失败时回退到存储的名称
@@ -724,14 +728,14 @@ export class BirthdayReminder extends plugin {
      * 同步生日数据中的名称为QQ昵称（仅在 birthdayCustomName 为 false 时执行）
      * 当配置从允许自定义切换为不允许时，更新数据文件中的存储名称
      */
-    _syncBirthdayNames() {
+    async _syncBirthdayNames() {
         const config = ConfigManager.getConfig()
         // 自定义昵称开启时不需要同步
         if (config.birthdayCustomName) return
         let changed = false
         for (const [userId, data] of Object.entries(this.birthdayData)) {
             try {
-                const qqNick = getMemberName(Number(userId))
+                const qqNick = await getMemberName(Number(userId))
                 if (qqNick && qqNick !== data.name) {
                     data.name = qqNick
                     data.nicknameModified = false

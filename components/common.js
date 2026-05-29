@@ -290,7 +290,7 @@ export function getBotName(e = null) {
  * 获取成员昵称
  * @param {number} qq QQ号
  */
-export function getMemberName(qq) {
-    const info = Bot.pickFriend(qq).getInfo();
+export async function getMemberName(qq) {
+    const info = await Bot.pickFriend(qq).getInfo();
     return info.nickname;
 }
