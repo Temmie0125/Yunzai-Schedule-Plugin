@@ -286,3 +286,11 @@ export function getBotName(e = null) {
     const config = ConfigManager.getConfig();
     return config.botName || bot.nickname || "Bot";
 }
+/**
+ * 获取成员昵称
+ * @param {number} qq QQ号
+ */
+export function getMemberName(qq) {
+    const info = Bot.pickFriend(qq).getInfo();
+    return info.nickname;
+}

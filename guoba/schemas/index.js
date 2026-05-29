@@ -255,6 +255,14 @@ export const schemas = [
         bottomHelpMessage: "开启后，会在生日列表卡片的头像下方显示QQ号。"
     },
     {
+        field: "birthdayCustomName",
+        label: "允许自定义昵称",
+        helpMessage: "是否允许成员使用自定义昵称来显示生日信息。",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "开启后，成员可使用 #生日修改昵称 自定义生日提醒的显示名称。关闭后，生日名称将强制同步为QQ昵称，所有已存储的自定义昵称也会被QQ昵称覆盖。"
+    },
+    {
         component: 'Divider',
         label: '群单独设置'
     },

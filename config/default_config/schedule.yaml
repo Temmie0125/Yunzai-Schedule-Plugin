@@ -28,3 +28,5 @@ sortMode: "userId"
 showQQ: true
 # 监听所有文件以尝试自动导入课表
 watchFiles: false
+# 生日列表允许使用自定义昵称，关闭则同步QQ昵称
+birthdayCustomName: true

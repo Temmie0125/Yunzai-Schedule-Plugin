@@ -4,7 +4,7 @@ import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-import { makeForwardMsg, checkPermission, getBotName, checkFriend } from '../components/common.js'
+import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName } from '../components/common.js'
 import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
@@ -58,6 +58,8 @@ export class BirthdayReminder extends plugin {
         })
         // 加载生日数据
         this.birthdayData = DataManager.loadBirthdayData()
+        // 同步昵称（当自定义昵称关闭时，用QQ昵称覆盖存储名）
+        this._syncBirthdayNames()
         // 初始化定时推送任务
         this.pushJob = null
         this.initPushTask()
@@ -105,6 +107,7 @@ export class BirthdayReminder extends plugin {
     handleConfigChange() {
         // logger.info('[Schedule生日提醒] 检测到配置变化，重载定时任务')
         this.initPushTask()
+        this._syncBirthdayNames()
     }
     // 插件卸载时清理
     async disconnect() {
@@ -132,7 +135,7 @@ export class BirthdayReminder extends plugin {
         for (const [userId, data] of Object.entries(this.birthdayData)) {
             // 使用新的适配函数判断今天是否是该用户的实际庆祝日
             if (isTodayCelebration(data.birthday)) {
-                todayBirthdayUsers.push({ userId, name: data.name })
+                todayBirthdayUsers.push({ userId, name: this._getDisplayName(userId, data.name) })
             }
         }
         if (todayBirthdayUsers.length === 0) {
@@ -285,7 +288,7 @@ export class BirthdayReminder extends plugin {
             todayCount,
             upcomingCount,
             birthdays: finaldata.map(item => ({
-                name: item.name,
+                name: this._getDisplayName(item.userId, item.name),
                 qq: showQQ ? item.userId : null,
                 birthday: item.birthday,
                 days: item.days,
@@ -309,11 +312,15 @@ export class BirthdayReminder extends plugin {
             return e.reply('你还没有设置生日~使用[#设置生日 月份-日期]来进行设置~')
         }
         const daysLeft = getDaysToBirthday(data.birthday)
-        let msg = `🎂 ${data.name}的生日信息 🎂\n生日: ${data.birthday}\n`
+        const displayName = this._getDisplayName(userId, data.name)
+        let msg = `🎂 ${displayName}的生日信息 🎂\n生日: ${data.birthday}\n`
         if (daysLeft === 0) msg += '🎉 今天是你的生日！生日快乐！🎂'
         else if (daysLeft === 1) msg += '🎈 明天就是你的生日啦！'
         else msg += `距离你的生日还有 ${daysLeft} 天`
-        msg += '\n\n使用 #生日修改昵称 新昵称 可以修改生日显示的昵称'
+        const config = ConfigManager.getConfig()
+        if (config.birthdayCustomName) {
+            msg += '\n\n使用 #生日修改昵称 新昵称 可以修改生日显示的昵称'
+        }
         e.reply(msg)
         return true
     }
@@ -342,7 +349,18 @@ export class BirthdayReminder extends plugin {
         }
         const birthday = parseResult.formatted;
         const userId = e.user_id
-        const userName = e.sender?.card || e.sender?.nickname || `用户${userId}`
+        let userName
+        if (config.birthdayCustomName) {
+            userName = e.sender?.card || e.sender?.nickname || `用户${userId}`
+        } else {
+            // 自定义昵称关闭时，强制使用QQ昵称
+            try {
+                userName = getMemberName(Number(userId))
+            } catch {}
+            if (!userName) {
+                userName = e.sender?.nickname || `用户${userId}`
+            }
+        }
         // 是否是首次设置
         let isFirstSet = false;
         if (this.birthdayData[userId]) {
@@ -391,6 +409,10 @@ export class BirthdayReminder extends plugin {
     }
     /** 修改生日昵称 */
     async modifyNickname(e) {
+        const config = ConfigManager.getConfig();
+        if (!config.birthdayCustomName){
+            return e.reply("自定义昵称已禁用（将与QQ昵称同步），如有需要请联系管理员")
+        }
         const message = e.msg.trim()
         const match = message.match(/^#生日(设置|修改)昵称\s+(.+)$/)
         if (!match) {
@@ -456,8 +478,11 @@ export class BirthdayReminder extends plugin {
             `[#生日列表] 查看本群即将到来的10个生日\n`,
             `[#生日完整列表] 查看本群所有生日\n`,
             `[#我的生日] 查看自己的生日信息\n`,
-            `[#生日修改昵称 昵称] 修改生日提醒的昵称\n`
         ]
+        const config = ConfigManager.getConfig()
+        if (config.birthdayCustomName) {
+            msg.push(`[#生日修改昵称 昵称] 修改生日提醒的昵称\n`)
+        }
         // 判断是否是管理员
         if (e.isGroup && checkPermission(e)) {
             msg.push(
@@ -674,6 +699,52 @@ export class BirthdayReminder extends plugin {
         const forwardMsg = await makeForwardMsg(e, msgList, title);
         await e.reply(forwardMsg);
         return true;
+    }
+    /**
+     * 获取用户的显示名称（根据 birthdayCustomName 配置决定返回自定义名或QQ昵称）
+     * @param {string|number} userId QQ号
+     * @param {string} storedName 数据文件中存储的名称
+     * @returns {string} 显示名称
+     */
+    _getDisplayName(userId, storedName) {
+        const config = ConfigManager.getConfig()
+        // 自定义昵称开启：直接返回存储的名称
+        if (config.birthdayCustomName) {
+            return storedName
+        }
+        // 自定义昵称关闭：尝试获取QQ昵称
+        try {
+            const qqNick = getMemberName(Number(userId))
+            if (qqNick) return qqNick
+        } catch {}
+        // 获取失败时回退到存储的名称
+        return storedName
+    }
+    /**
+     * 同步生日数据中的名称为QQ昵称（仅在 birthdayCustomName 为 false 时执行）
+     * 当配置从允许自定义切换为不允许时，更新数据文件中的存储名称
+     */
+    _syncBirthdayNames() {
+        const config = ConfigManager.getConfig()
+        // 自定义昵称开启时不需要同步
+        if (config.birthdayCustomName) return
+        let changed = false
+        for (const [userId, data] of Object.entries(this.birthdayData)) {
+            try {
+                const qqNick = getMemberName(Number(userId))
+                if (qqNick && qqNick !== data.name) {
+                    data.name = qqNick
+                    data.nicknameModified = false
+                    changed = true
+                }
+            } catch {
+                // 获取QQ昵称失败则跳过该用户
+            }
+        }
+        if (changed) {
+            DataManager.saveBirthdayData(this.birthdayData)
+            logger.info('[Schedule生日提醒] 已同步生日数据中的昵称为QQ昵称')
+        }
     }
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))
