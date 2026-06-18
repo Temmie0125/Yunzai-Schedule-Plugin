@@ -1,4 +1,5 @@
 import { ConfigManager } from "../components/ConfigManager.js";
+import LunarCalendar from 'lunar-calendar';
 /**
  * 生成1~31的中文数字映射表
  */
@@ -440,4 +441,219 @@ export function formatDate(date) {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+}
+
+// ========== 农历生日相关 ==========
+
+/** 匹配农历/阴历前缀的正则 */
+const LUNAR_PREFIX_REGEX = /^(农历|阴历|lunar\s*)\s*/i;
+
+/** 农历月份中文名（与 lunar-calendar 库一致） */
+const LUNAR_MONTH_NAMES = ['', '正月', '二月', '三月', '四月', '五月', '六月',
+    '七月', '八月', '九月', '十月', '十一月', '十二月'];
+
+/** 农历日期中文名 */
+const LUNAR_DAY_NAMES = ['', '初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十',
+    '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
+    '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
+
+/**
+ * 获取农历月份中文名
+ * @param {number} month 1-12
+ * @returns {string}
+ */
+export function getLunarMonthName(month) {
+    return LUNAR_MONTH_NAMES[month] || `${month}月`;
+}
+
+/**
+ * 获取农历日期中文名
+ * @param {number} day 1-30
+ * @returns {string}
+ */
+export function getLunarDayName(day) {
+    return LUNAR_DAY_NAMES[day] || `${day}日`;
+}
+
+/**
+ * 解析农历生日输入
+ * 支持格式："农历3-15", "阴历3月15日", "lunar 3-15", "农历三月十五"
+ * @param {string} input 用户完整输入
+ * @returns {{ valid: boolean, lunarMonth?: number, lunarDay?: number, errorCode?: string }}
+ */
+export function parseLunarBirthdayString(input) {
+    const stripped = input.replace(LUNAR_PREFIX_REGEX, '').trim();
+    // 未被替换说明不含农历前缀
+    if (stripped === input) return { valid: false, errorCode: 'not_lunar' };
+
+    if (!stripped) return { valid: false, errorCode: 'invalid_format' };
+
+    // 尝试标准数字格式（复用已有校验函数）
+    const numResult = formatAndValidateBirthday(stripped);
+    if (numResult.valid) {
+        const [m, d] = numResult.formatted.split('-').map(Number);
+        if (d > 30) return { valid: false, errorCode: 'lunar_day_overflow' };
+        return { valid: true, lunarMonth: m, lunarDay: d, errorCode: null };
+    }
+
+    // 尝试中文自然语言格式（复用已有中文日期解析函数）
+    const chineseResult = parseChineseDateToMD(stripped);
+    if (chineseResult) {
+        const [m, d] = chineseResult.split('-').map(Number);
+        if (d > 30) return { valid: false, errorCode: 'lunar_day_overflow' };
+        // 验证中文月日范围
+        if (m < 1 || m > 12) return { valid: false, errorCode: 'overflow' };
+        return { valid: true, lunarMonth: m, lunarDay: d, errorCode: null };
+    }
+
+    // 尝试农历专用中文格式（正月/冬月/腊月 + 初X/廿X 等）
+    const lunarChineseResult = parseLunarChineseDate(stripped);
+    if (lunarChineseResult) {
+        return { valid: true, lunarMonth: lunarChineseResult.month, lunarDay: lunarChineseResult.day, errorCode: null };
+    }
+
+    return { valid: false, errorCode: 'invalid_format' };
+}
+
+/**
+ * 解析农历专用中文日期格式
+ * 支持：正月初四、冬月十五、腊月三十、正月廿三 等
+ * @param {string} input 不含农历前缀的中文日期
+ * @returns {{ month: number, day: number } | null}
+ */
+function parseLunarChineseDate(input) {
+    // 农历月份映射（含别名）
+    const LUNAR_MONTH_MAP = {
+        '正月': 1, '一月': 1,
+        '二月': 2, '三月': 3, '四月': 4, '五月': 5,
+        '六月': 6, '七月': 7, '八月': 8, '九月': 9, '十月': 10,
+        '十一月': 11, '冬月': 11,
+        '十二月': 12, '腊月': 12,
+    };
+
+    // 按月份名长度降序匹配，避免"十一月"被"十一"截断
+    const monthNames = Object.keys(LUNAR_MONTH_MAP).sort((a, b) => b.length - a.length);
+    for (const monthName of monthNames) {
+        if (!input.startsWith(monthName)) continue;
+        const dayStr = input.slice(monthName.length);
+        const day = parseLunarDayNumber(dayStr);
+        if (day !== null && day >= 1 && day <= 30) {
+            return { month: LUNAR_MONTH_MAP[monthName], day };
+        }
+        return null; // 月份匹配但日期无效
+    }
+    return null;
+}
+
+/**
+ * 解析农历日期的中文表达（初四→4, 十五→15, 廿三→23, 三十→30）
+ * @param {string} str 日期部分字符串
+ * @returns {number | null}
+ */
+function parseLunarDayNumber(str) {
+    // 去掉末尾的"日"/"号"
+    str = str.replace(/[日号]$/, '');
+    if (!str) return null;
+
+    // "初X" 格式：初一~初十
+    const chuMatch = str.match(/^初([一二三四五六七八九十])$/);
+    if (chuMatch) {
+        const map = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
+        return map[chuMatch[1]] || null;
+    }
+
+    // "廿X" 格式：廿一~廿九, 廿（即二十）
+    const nianMatch = str.match(/^廿([一二三四五六七八九]?)$/);
+    if (nianMatch) {
+        const map = { '': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+        const extra = map[nianMatch[1]];
+        if (extra === undefined) return null;
+        return 20 + extra;
+    }
+
+    // 标准中文数字
+    return chineseToNumber(str);
+}
+
+/**
+ * 将农历日期转换为指定年份的公历日期
+ * @param {number} year 公历年份 (1891-2100)
+ * @param {number} lunarMonth 农历月 (1-12)
+ * @param {number} lunarDay 农历日 (1-30)
+ * @returns {{ year: number, month: number, day: number } | null}
+ */
+export function lunarToSolarDate(year, lunarMonth, lunarDay) {
+    try {
+        const result = LunarCalendar.lunarToSolar(year, lunarMonth, lunarDay);
+        if (!result || result.month < 1 || result.month > 12 || result.day < 1 || result.day > 31) {
+            return null;
+        }
+        // 验证结果是真实存在的日期
+        const testDate = new Date(result.year, result.month - 1, result.day);
+        if (testDate.getMonth() + 1 !== result.month || testDate.getDate() !== result.day) {
+            return null;
+        }
+        return { year: result.year, month: result.month, day: result.day };
+    } catch (err) {
+        logger.error(`[农历转换] 失败: year=${year}, lunarMonth=${lunarMonth}, lunarDay=${lunarDay}`, err);
+        return null;
+    }
+}
+
+/**
+ * 将农历生日转换为下一个未到来的公历日期
+ * 如果当年对应的公历日期已过，则返回下一年的日期
+ * @param {number} lunarMonth 农历月 (1-12)
+ * @param {number} lunarDay 农历日 (1-30)
+ * @returns {{ year: number, month: number, day: number, targetYear: number } | null}
+ *   targetYear: 实际使用的农历年份（用于存储 birthdayYear）
+ */
+export function lunarToUpcomingSolarDate(lunarMonth, lunarDay) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+
+    let solar = lunarToSolarDate(currentYear, lunarMonth, lunarDay);
+    if (!solar) return null;
+
+    const solarDate = new Date(solar.year, solar.month - 1, solar.day);
+    if (solarDate < today) {
+        // 今年的农历生日已过，使用明年
+        solar = lunarToSolarDate(currentYear + 1, lunarMonth, lunarDay);
+        if (!solar) return null;
+        return { year: solar.year, month: solar.month, day: solar.day, targetYear: currentYear + 1 };
+    }
+
+    return { year: solar.year, month: solar.month, day: solar.day, targetYear: currentYear };
+}
+
+/**
+ * 刷新所有需要更新的农历生日
+ * 使用 lunarToUpcomingSolarDate 判断下一个庆祝日，自动处理年份跨越：
+ *   - 当年公历对应日已过 → 自动使用下一年
+ *   - 存储的 birthday/birthdayYear 与最新计算结果不一致时更新
+ * @param {Object} birthdayData 全部生日数据
+ * @returns {boolean} 是否有数据被更新（需要调用方保存）
+ */
+export function refreshLunarBirthdays(birthdayData) {
+    let changed = false;
+
+    for (const [, data] of Object.entries(birthdayData)) {
+        if (data.birthdayType !== 'lunar') continue;
+
+        const solar = lunarToUpcomingSolarDate(data.lunarMonth, data.lunarDay);
+        if (!solar) {
+            logger.warn(`[农历刷新] 用户农历生日转换失败: lunarMonth=${data.lunarMonth}, lunarDay=${data.lunarDay}`);
+            continue;
+        }
+        const newBirthday = `${String(solar.month).padStart(2, '0')}-${String(solar.day).padStart(2, '0')}`;
+        if (data.birthday !== newBirthday || data.birthdayYear !== solar.targetYear) {
+            data.birthday = newBirthday;
+            data.birthdayYear = solar.targetYear;
+            changed = true;
+            logger.mark(`[农历刷新] 农历生日已更新: ${getLunarMonthName(data.lunarMonth)}${getLunarDayName(data.lunarDay)} → ${newBirthday} (${solar.targetYear}年)`);
+        }
+    }
+
+    return changed;
 }

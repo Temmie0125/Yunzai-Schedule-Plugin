@@ -5,7 +5,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
 import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName } from '../components/common.js'
-import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration } from '../utils/timeUtils.js';
+import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration, parseLunarBirthdayString, lunarToUpcomingSolarDate, refreshLunarBirthdays, getLunarMonthName, getLunarDayName } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
 const GLOBAL_BIRTHDAY_CRON = '__birthdayPushCron'
@@ -133,6 +133,10 @@ export class BirthdayReminder extends plugin {
     }
     /** 检查生日并发送祝福 */
     async checkBirthdays() {
+        // 刷新过期的农历生日（年份变更后重新计算公历日期）
+        if (refreshLunarBirthdays(this.birthdayData)) {
+            DataManager.saveBirthdayData(this.birthdayData);
+        }
         const today = getCurrentDate()
         logger.mark(`[Schedule生日提醒] 检查生日，今天是: ${today}`)
         const todayBirthdayUsers = []
@@ -204,21 +208,32 @@ export class BirthdayReminder extends plugin {
             return e.reply('只有管理员或群主才能添加生日');
         }
         if (!e.group_id) return e.reply('请在群聊中使用此命令');
-        const { targetUserId, birthday, errorMsg } = this._parseAdminBirthdayCommand(e);
+        const { targetUserId, birthday, birthdayType, lunarMonth, lunarDay, birthdayYear, errorMsg } = this._parseAdminBirthdayCommand(e);
         if (errorMsg) return e.reply(errorMsg);
         // 检查用户是否在群内
         const { exists, nickname, errorMsg: userError } = await this._checkUserInGroup(e.group_id, targetUserId);
         if (!exists) return e.reply(userError);
         // 如果已存在记录，直接覆盖
-        this.birthdayData[targetUserId] = {
+        const entry = {
             name: nickname,
             birthday: birthday,
+            birthdayType: birthdayType || 'solar',
             addedBy: e.user_id,
             addedAt: new Date().toISOString(),
             nicknameModified: false,
             isSelfSet: false
         };
-        this._saveBirthdayDataAndReply(e, this.birthdayData, `已成功为${nickname}(${targetUserId})添加生日：${birthday}`);
+        if (birthdayType === 'lunar') {
+            entry.lunarMonth = lunarMonth;
+            entry.lunarDay = lunarDay;
+            entry.birthdayYear = birthdayYear;
+        }
+        this.birthdayData[targetUserId] = entry;
+        let displayBirthday = birthday;
+        if (birthdayType === 'lunar') {
+            displayBirthday = `${birthday}（农历${getLunarMonthName(lunarMonth)}${getLunarDayName(lunarDay)}）`;
+        }
+        this._saveBirthdayDataAndReply(e, this.birthdayData, `已成功为${nickname}(${targetUserId})添加生日：${displayBirthday}`);
         return true;
     }
 
@@ -249,6 +264,10 @@ export class BirthdayReminder extends plugin {
     }
     /** 查看本群生日 */
     async listBirthdays(e) {
+        // 先刷新过期的农历生日
+        if (refreshLunarBirthdays(this.birthdayData)) {
+            DataManager.saveBirthdayData(this.birthdayData);
+        }
         if (!e.group_id) {
             e.reply('请在群聊中使用此命令')
             return true
@@ -265,8 +284,14 @@ export class BirthdayReminder extends plugin {
         const birthdaysWithDays = []
         for (const [userId, data] of Object.entries(groupBirthdays)) {
             const days = getDaysToBirthday(data.birthday)
+            // 构建生日显示文本（农历则附加农历信息）
+            let birthdayDisplay = data.birthday;
+            if (data.birthdayType === 'lunar' && data.lunarMonth && data.lunarDay) {
+                birthdayDisplay = `${data.birthday}（农历${getLunarMonthName(data.lunarMonth)}${getLunarDayName(data.lunarDay)}）`;
+            }
             birthdaysWithDays.push({
-                userId, name: data.name, birthday: data.birthday, days
+                userId, name: data.name, birthday: birthdayDisplay, days,
+                birthdayType: data.birthdayType || 'solar'
             })
         }
         // 排序并处理是否为完整
@@ -296,6 +321,7 @@ export class BirthdayReminder extends plugin {
                 qq: showQQ ? item.userId : null,
                 birthday: item.birthday,
                 days: item.days,
+                birthdayType: item.birthdayType,
                 avatar: `https://q1.qlogo.cn/g?b=qq&s=0&nk=${item.userId}`
             })))
         }
@@ -310,14 +336,22 @@ export class BirthdayReminder extends plugin {
     }
     /** 我的生日 */
     async myBirthday(e) {
+        // 先刷新过期的农历生日
+        if (refreshLunarBirthdays(this.birthdayData)) {
+            DataManager.saveBirthdayData(this.birthdayData);
+        }
         const userId = e.user_id
         const data = this.birthdayData[userId]
         if (!data) {
-            return e.reply('你还没有设置生日~使用[#设置生日 月份-日期]来进行设置~')
+            return e.reply('你还没有设置生日~使用[#设置生日 月份-日期]来进行设置~\n支持农历：#设置生日 农历三月十五')
         }
         const daysLeft = getDaysToBirthday(data.birthday)
         const displayName = await this._getDisplayName(userId, data.name)
-        let msg = `🎂 ${displayName}的生日信息 🎂\n生日: ${data.birthday}\n`
+        let birthdayDisplay = data.birthday;
+        if (data.birthdayType === 'lunar' && data.lunarMonth && data.lunarDay) {
+            birthdayDisplay = `${data.birthday}（农历${getLunarMonthName(data.lunarMonth)}${getLunarDayName(data.lunarDay)}）`;
+        }
+        let msg = `🎂 ${displayName}的生日信息 🎂\n生日: ${birthdayDisplay}\n`
         if (daysLeft === 0) msg += '🎉 今天是你的生日！生日快乐！🎂'
         else if (daysLeft === 1) msg += '🎈 明天就是你的生日啦！'
         else msg += `距离你的生日还有 ${daysLeft} 天`
@@ -336,22 +370,56 @@ export class BirthdayReminder extends plugin {
         const message = e.msg.trim();
         const match = message.match(/^#设置生日\s+(.+)$/);
         if (!match) {
-            e.reply('格式错误！正确格式：#设置生日 3-2 或 #设置生日 3月2日');
+            e.reply('格式错误！正确格式：#设置生日 3-2 或 #设置生日 3月2日\n设置农历生日：#设置生日 农历3-2 或 #设置生日 农历三月十五');
             return true;
         }
         const birthdayRaw = match[1].trim();
-        const parseResult = parseBirthdayString(birthdayRaw);
-        if (!parseResult.valid) {
-            const errorMsgMap = {
-                'invalid_format': '生日格式错误！请使用“月-日”或“3月2日”这种格式~',
-                'overflow': '月份应在1-12之间，日期应在1-31之间~',
-                'nonexistent_date': `“${birthdayRaw}”不是一个有效的日期，请检查后重新设置~`
-            };
-            const replyMsg = errorMsgMap[parseResult.errorCode] || '生日格式错误，请使用正确的月-日格式！';
-            e.reply(replyMsg);
-            return true;
+
+        // 判断是否为农历生日
+        const isLunar = /^(农历|阴历|lunar\s*)/i.test(birthdayRaw);
+        let birthday;
+        let birthdayType = 'solar';
+        let lunarMonth = null;
+        let lunarDay = null;
+        let birthdayYear = null;
+
+        if (isLunar) {
+            const lunarResult = parseLunarBirthdayString(birthdayRaw);
+            if (!lunarResult.valid) {
+                const errorMsgMap = {
+                    'invalid_format': '农历生日格式错误！请使用”农历3-15”或”农历三月十五”这种格式~',
+                    'overflow': '农历月份应在1-12之间~',
+                    'lunar_day_overflow': '农历日期应在1-30之间~'
+                };
+                const replyMsg = errorMsgMap[lunarResult.errorCode] || '农历生日格式错误，请使用正确的格式！';
+                e.reply(replyMsg);
+                return true;
+            }
+            const solar = lunarToUpcomingSolarDate(lunarResult.lunarMonth, lunarResult.lunarDay);
+            if (!solar) {
+                e.reply('农历日期转换失败，请检查日期是否有效（仅支持1891-2100年）');
+                return true;
+            }
+            birthday = `${String(solar.month).padStart(2, '0')}-${String(solar.day).padStart(2, '0')}`;
+            birthdayType = 'lunar';
+            lunarMonth = lunarResult.lunarMonth;
+            lunarDay = lunarResult.lunarDay;
+            birthdayYear = solar.targetYear;
+        } else {
+            const parseResult = parseBirthdayString(birthdayRaw);
+            if (!parseResult.valid) {
+                const errorMsgMap = {
+                    'invalid_format': '生日格式错误！请使用”月-日”或”3月2日”这种格式~',
+                    'overflow': '月份应在1-12之间，日期应在1-31之间~',
+                    'nonexistent_date': `”${birthdayRaw}”不是一个有效的日期，请检查后重新设置~`
+                };
+                const replyMsg = errorMsgMap[parseResult.errorCode] || '生日格式错误，请使用正确的月-日格式！';
+                e.reply(replyMsg);
+                return true;
+            }
+            birthday = parseResult.formatted;
         }
-        const birthday = parseResult.formatted;
+
         const userId = e.user_id
         let userName
         if (config.birthdayCustomName) {
@@ -377,14 +445,24 @@ export class BirthdayReminder extends plugin {
         this.birthdayData[userId] = {
             name: userName,
             birthday: birthday,
+            birthdayType: birthdayType,
             addedBy: userId,
             addedAt: new Date().toISOString(),
             isSelfSet: true,
             nicknameModified: false
+        };
+        if (birthdayType === 'lunar') {
+            this.birthdayData[userId].lunarMonth = lunarMonth;
+            this.birthdayData[userId].lunarDay = lunarDay;
+            this.birthdayData[userId].birthdayYear = birthdayYear;
         }
         DataManager.saveBirthdayData(this.birthdayData)
         const botName = getBotName(e)
-        let replymsg = [`✅ 已${isFirstSet ? '修改' : '设置'}你的生日：${birthday}`]
+        let displayBirthday = birthday;
+        if (birthdayType === 'lunar') {
+            displayBirthday = `${birthday}（农历${getLunarMonthName(lunarMonth)}${getLunarDayName(lunarDay)}）`;
+        }
+        let replymsg = [`✅ 已${isFirstSet ? '修改' : '设置'}你的生日：${displayBirthday}`]
         if (!checkFriend(Number(e.user_id))) {
             replymsg.push(`\n您还未添加好友哦，添加后还可以在生日当天收到${botName}的私信祝福~`)
         }
@@ -444,7 +522,7 @@ export class BirthdayReminder extends plugin {
             return e.reply('只有管理员或群主才能修改生日');
         }
         if (!e.group_id) return e.reply('请在群聊中使用此命令');
-        const { targetUserId, birthday, errorMsg } = this._parseAdminBirthdayCommand(e);
+        const { targetUserId, birthday, birthdayType, lunarMonth, lunarDay, birthdayYear, errorMsg } = this._parseAdminBirthdayCommand(e);
         if (errorMsg) return e.reply(errorMsg);
         const { exists, nickname, errorMsg: userError } = await this._checkUserInGroup(e.group_id, targetUserId);
         if (!exists) return e.reply(userError);
@@ -453,21 +531,37 @@ export class BirthdayReminder extends plugin {
             return e.reply(`❌ ${nickname}(${targetUserId}) 还没有设置生日，请先使用 #添加生日 命令`);
         }
         const oldBirthday = oldRecord.birthday;
-        this.birthdayData[targetUserId] = {
+        // 构建新记录（基于旧记录覆盖新字段）
+        const newEntry = {
             ...oldRecord,
             birthday: birthday,
+            birthdayType: birthdayType || 'solar',
             modifiedBy: e.user_id,
             modifiedAt: new Date().toISOString(),
             oldBirthday: oldBirthday,
             isModified: true
         };
+        // 清除旧农历字段（避免类型切换后残留）
+        delete newEntry.lunarMonth;
+        delete newEntry.lunarDay;
+        delete newEntry.birthdayYear;
+        if (birthdayType === 'lunar') {
+            newEntry.lunarMonth = lunarMonth;
+            newEntry.lunarDay = lunarDay;
+            newEntry.birthdayYear = birthdayYear;
+        }
+        this.birthdayData[targetUserId] = newEntry;
+        let displayBirthday = birthday;
+        if (birthdayType === 'lunar') {
+            displayBirthday = `${birthday}（农历${getLunarMonthName(lunarMonth)}${getLunarDayName(lunarDay)}）`;
+        }
         this._saveBirthdayDataAndReply(e, this.birthdayData,
-            `已成功修改${nickname}(${targetUserId})的生日：${oldBirthday} → ${birthday}`
+            `已成功修改${nickname}(${targetUserId})的生日：${oldBirthday} → ${displayBirthday}`
         );
         // 私聊通知（只有是好友才通知）
         if ((targetUserId !== e.user_id) && !checkFriend(Number(e.user_id))) {
             try {
-                await Bot.pickFriend(targetUserId).sendMsg(`管理员已修改你的生日：${oldBirthday} → ${birthday}`);
+                await Bot.pickFriend(targetUserId).sendMsg(`管理员已修改你的生日：${oldBirthday} → ${displayBirthday}`);
             } catch (err) { logger.error(`通知失败: ${err}`); }
         }
         return true;
@@ -479,6 +573,7 @@ export class BirthdayReminder extends plugin {
             `[Schedule生日模块]\n`,
             `========\n`,
             `[#设置生日 日期] 设置自己的生日\n`,
+            `[#清除生日] 移除自己的生日信息`
             `[#生日列表] 查看本群即将到来的10个生日\n`,
             `[#生日完整列表] 查看本群所有生日\n`,
             `[#我的生日] 查看自己的生日信息\n`,
@@ -509,7 +604,7 @@ export class BirthdayReminder extends plugin {
                 `[#生日黑白名单清空] 清空所有黑白名单\n`
             );
         }
-        msg.push(`========\n日期格式示例：1-14`)
+        msg.push(`========\n日期格式示例：1-14\n农历生日示例：#设置生日 农历5-3 或 #设置生日 农历三月十五`)
         e.reply(msg)
         return true
     }
@@ -616,17 +711,17 @@ export class BirthdayReminder extends plugin {
     /**
      * 从消息中提取目标QQ和生日字符串（用于管理员命令 #添加生日 / #修改生日）
      * @param {Object} e 事件对象
-     * @returns {Object} { targetUserId, birthday, errorMsg }
+     * @returns {Object} { targetUserId, birthday, birthdayType, lunarMonth, lunarDay, birthdayYear, errorMsg }
      */
     _parseAdminBirthdayCommand(e) {
         const msg = e.msg.trim();
         let targetUserId = e.at;
         let birthdayRaw = null;
         if (targetUserId) {
-            // 有@的情况：格式 "#添加生日 3月2日" 或 "#修改生日 3-2"
+            // 有@的情况：格式 “#添加生日 3月2日” 或 “#修改生日 3-2”
             birthdayRaw = msg.slice(5).trim();
         } else {
-            // 无@的情况：格式 "#添加生日 123456 3-2"
+            // 无@的情况：格式 “#添加生日 123456 3-2”
             const match = msg.match(/^#(添加|修改)生日\s+(\d+)\s+(.+)$/);
             if (match) {
                 targetUserId = match[2];
@@ -634,8 +729,44 @@ export class BirthdayReminder extends plugin {
             }
         }
         if (!targetUserId || !birthdayRaw) {
-            return { errorMsg: '格式错误！正确格式：#添加生日 @某人 3月2日 或 #添加生日 QQ号 3-2' };
+            return { errorMsg: '格式错误！正确格式：#添加生日 @某人 3月2日 或 #添加生日 QQ号 3-2\n支持农历：#添加生日 QQ号 农历3-15' };
         }
+
+        // 判断是否为农历生日
+        const isLunar = /^(农历|阴历|lunar\s*)/i.test(birthdayRaw);
+        if (isLunar) {
+            const lunarResult = parseLunarBirthdayString(birthdayRaw);
+            if (!lunarResult.valid) {
+                let errorMsg;
+                switch (lunarResult.errorCode) {
+                    case 'invalid_format':
+                        errorMsg = '农历生日格式错误！请使用 农历3-15 或 农历三月十五 这样的格式~';
+                        break;
+                    case 'overflow':
+                        errorMsg = '农历月份应在1-12之间~';
+                        break;
+                    case 'lunar_day_overflow':
+                        errorMsg = '农历日期应在1-30之间~';
+                        break;
+                    default:
+                        errorMsg = '农历生日格式错误！';
+                }
+                return { errorMsg, targetUserId: null, birthday: null };
+            }
+            const solar = lunarToUpcomingSolarDate(lunarResult.lunarMonth, lunarResult.lunarDay);
+            if (!solar) {
+                return { errorMsg: '农历日期转换失败，请检查日期是否有效（仅支持1891-2100年）', targetUserId: null, birthday: null };
+            }
+            const birthday = `${String(solar.month).padStart(2, '0')}-${String(solar.day).padStart(2, '0')}`;
+            return {
+                targetUserId, birthday, errorMsg: null,
+                birthdayType: 'lunar',
+                lunarMonth: lunarResult.lunarMonth,
+                lunarDay: lunarResult.lunarDay,
+                birthdayYear: solar.targetYear
+            };
+        }
+
         const parseResult = parseBirthdayString(birthdayRaw);
         if (!parseResult.valid) {
             let errorMsg;
@@ -647,14 +778,14 @@ export class BirthdayReminder extends plugin {
                     errorMsg = '月份应在1-12之间，日期应在1-31之间~';
                     break;
                 case 'nonexistent_date':
-                    errorMsg = `“${birthdayRaw}”不是真实存在的日期，请重新输入有效日期。`;
+                    errorMsg = `”${birthdayRaw}”不是真实存在的日期，请重新输入有效日期。`;
                     break;
                 default:
                     errorMsg = '生日格式错误！';
             }
             return { errorMsg, targetUserId: null, birthday: null };
         }
-        return { targetUserId, birthday: parseResult.formatted, errorMsg: null };
+        return { targetUserId, birthday: parseResult.formatted, birthdayType: 'solar', errorMsg: null };
     }
     /**
      * 检查目标用户是否在当前群内，并返回其昵称

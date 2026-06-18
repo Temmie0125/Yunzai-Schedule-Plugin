@@ -248,6 +248,18 @@
             content: "📅";
             font-size: 18px;
         }
+        .lunar-tag {
+            background: #FFF8E7;
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 17px;
+            font-weight: 500;
+            color: #B8860B;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
         .days-left {
             background: #E6F7FF;
             padding: 4px 14px;
@@ -398,6 +410,9 @@
                 <!-- 右侧第二行：生日日期 & 剩余天数 -->
                 <div class="birthday-meta">
                     <span class="birthday-date">{{item.birthday}}</span>
+                    {{if item.birthdayType === 'lunar'}}
+                        <span class="lunar-tag">🌙 农历</span>
+                    {{/if}}
                     {{if item.days === 0}}
                         <span class="days-left today">今天生日！</span>
                     {{else if item.days === 1}}
@@ -411,7 +426,7 @@
         </div>
         <!-- 底部提示区 -->
         <div class="footer">
-            <div class="tips">使用 #设置生日 月-日 设置你的生日<br>使用 #生日修改昵称 新昵称 修改显示昵称</div>
+            <div class="tips">使用 #设置生日 月-日 设置你的生日<br>使用 #设置生日 农历月-日 设置农历生日<br>使用 #生日修改昵称 新昵称 修改显示昵称</div>
             {{if isRecent10}}
             <div class="tips">当前显示最近10个生日，查看全部请使用 #生日完整列表</div>
             {{/if}}
