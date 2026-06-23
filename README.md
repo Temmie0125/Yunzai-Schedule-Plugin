@@ -413,7 +413,7 @@ schedule
 
 - [拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule) 提供的数据格式参考
 - [BLBot](https://github.com/BobLiu0518/BLBot) 提供的界面设计参考
-- [WakeUpDecoder](https://github.com/airline233/WakeUpDecoder) 提供的口令解析服务
+- [WakeUp2ICS](https://github.com/airline233/WakeUp2ICS) 提供的口令解析服务
 
 ## 支持项目
 
