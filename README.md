@@ -411,8 +411,9 @@ schedule
 
 感谢以下项目对本插件的启发：
 
-- [拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule)
+- [拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule) 提供的数据格式参考
 - [BLBot](https://github.com/BobLiu0518/BLBot) 提供的界面设计参考
+- [WakeUpDecoder](https://github.com/airline233/WakeUpDecoder) 提供的口令解析服务
 
 ## 支持项目
 
