@@ -11,11 +11,11 @@ birthdayPushHour: 0
 allowSelfModify: true
 birthdayWhitelistGroups: []
 birthdayBlacklistGroups: []
-# 中转服务地址（例如 http://YOUR_SERVER_URL:19178）
-# 留空或删除则使用直连官方API(现已不可用)
-proxyUrl: ""
-# 中转服务鉴权 Token, 如有需要请联系插件作者获取
-apiToken: ""
+# WakeUp 课程表服务基础URL
+# 默认使用公共服务，也可以配置自己的服务地址
+wakeupServiceUrl: "https://wakeup.cpc.cn.eu.org/"
+# WakeUp 服务鉴权 Token，留空则不进行鉴权
+wakeupAuthToken: ""
 # 默认学期开始日期
 defaultSemesterStart: "2026-03-02"
 # 自定义bot名称

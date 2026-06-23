@@ -47,9 +47,9 @@ export class ConfigManager {
             allowSelfModify: true,       // 允许用户自行修改/重新设置生日
             birthdayWhitelistGroups: [],  // 推送白名单
             birthdayBlacklistGroups: [],   // 推送黑名单
-            // 新增字段
-            proxyUrl: "",        // 中转服务地址
-            apiToken: "",         // 中转服务所需的 API Token
+            // WakeUp 服务配置
+            wakeupServiceUrl: "https://wakeup.cpc.cn.eu.org/",  // WakeUp 服务基础URL
+            wakeupAuthToken: "",         // WakeUp 服务鉴权 Token
             defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
             botName: "",    // bot自定义名称，默认取机器人昵称
             font: "像素",    // 字体风格，默认为像素字体
@@ -63,8 +63,8 @@ export class ConfigManager {
         // 确保新增字段存在（防止旧配置没有这两个字段）
         if (!config.birthdayWhitelistGroups) config.birthdayWhitelistGroups = [];
         if (!config.birthdayBlacklistGroups) config.birthdayBlacklistGroups = [];
-        if (config.proxyUrl === undefined) config.proxyUrl = "";
-        if (config.apiToken === undefined) config.apiToken = "";
+        if (config.wakeupServiceUrl === undefined) config.wakeupServiceUrl = "https://wakeup.cpc.cn.eu.org/";
+        if (config.wakeupAuthToken === undefined) config.wakeupAuthToken = "";
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -113,7 +113,7 @@ export class ConfigManager {
             autoCancelCheckEnabled, autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
-            proxyUrl, apiToken,
+            wakeupServiceUrl, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
             sortMode, showQQ,
@@ -128,7 +128,7 @@ export class ConfigManager {
             autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
-            proxyUrl, apiToken,
+            wakeupServiceUrl, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
             sortMode, showQQ,

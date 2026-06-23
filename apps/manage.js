@@ -92,8 +92,8 @@ export class ScheduleManage extends plugin {
         }
         let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1];
         if (!code) {
-            this.setContext("waitingForCode");
-            await this.reply("请发送你的「星链课表」分享口令。\n发送“取消”以取消操作。", false, { at: true });
+            this.setContext(`waitingForCode`);
+            await this.reply(`请发送你的 WakeUp 或「星链课表」分享口令。\n发送"取消"以取消操作。`, false, { at: true });
             return true;
         }
         code = code.trim();
@@ -133,12 +133,19 @@ export class ScheduleManage extends plugin {
             await this.reply(result.message);
             return true;
         }
+        // ----- 尝试匹配 WakeUp / 通用口令格式 -----
         const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
         if (match) {
             code = match[1];
         }
-        const result = await importScheduleFromCode(userId, code, this.e);
-        await this.reply(result.message);
+        // 判断口令类型：长口令（>=20位）走WakeUp导入，短口令走星链导入
+        if (code.length >= 20) {
+            const result = await importScheduleFromCode(userId, code, this.e);
+            await this.reply(result.message);
+        } else {
+            const result = await importScheduleFromStarlinkCode(userId, code, this.e);
+            await this.reply(result.message);
+        }
         return true;
     }
     /**
@@ -150,9 +157,8 @@ export class ScheduleManage extends plugin {
         const match = message.match(/「([0-9a-zA-Z\-_]+?)」/u);
         if (!match) return false;  // 没有口令，不处理
         const code = match[1];
-        // 一般分享口令为32位，为避免误触发，小于20位的不处理
+        // 一般分享口令为32位，为避免误触发，小于20位的不处理（可能是星链口令，由其他规则处理）
         if (code.length < 20) {
-            logger.warn("[课表管理] 非标准分享口令，请检查是否有误")
             return false;
         }
         const result = await importScheduleFromCode(userId, code, this.e);

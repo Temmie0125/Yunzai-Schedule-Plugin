@@ -95,26 +95,24 @@ export const schemas = [
         component: 'SOFT_GROUP_BEGIN',
         label: '课表模块设置'
     },
-    /*
     {
         component: 'Divider',
-        label: 'WakeUP反代设置'
+        label: 'WakeUp服务设置'
     },
     {
-        field: "proxyUrl",
-        label: "课表反代服务器",
+        field: "wakeupServiceUrl",
+        label: "WakeUp服务地址",
         component: "Input",
-        placeholder: "请输入URL:PORT",
-        bottomHelpMessage: "请输入用于获取课表数据的URL。端口号为19178。例如http://YOUR_SERVER_URL:19178"
+        placeholder: "请输入服务基础URL",
+        bottomHelpMessage: "WakeUp课程表解析服务的基础URL。默认使用公共服务，也可以配置自己的服务地址。"
     },
     {
-        field: "apiToken",
-        label: "API Token",
+        field: "wakeupAuthToken",
+        label: "鉴权Token",
         component: "Input",
-        placeholder: "请输入Token",
-        bottomHelpMessage: "请输入用于访问课表服务的Token。可联系插件作者获取。"
+        placeholder: "请输入Token（可选）",
+        bottomHelpMessage: "WakeUp服务的鉴权Token。如果使用自己的服务并配置了鉴权，请填写此项。留空则不进行鉴权。"
     },
-    */
     {
         field: "defaultSemesterStart",
         label: "默认学期开始日期",

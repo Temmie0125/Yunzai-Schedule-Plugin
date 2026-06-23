@@ -223,15 +223,6 @@ async function handleAutoRecall(replyMsg, event, autoRecallCode, botName) {
  * @returns {Promise<{ success: boolean, message: string }>}
  */
 export async function importScheduleFromCode(userId, code, event) {
-  // 直接返回不支持提示
-  const message = `❌ WakeUp 课程表已停止支持口令导入！\n` +
-    `WakeUp 近期加强了接口限制，本插件无法继续通过口令导入。\n` +
-    `建议您尽快迁移至其他课表软件（如拾光课表、星链课表）。\n` +
-    `✅ 您可以使用以下方式继续导入课程表：\n` +
-    `• 发送 #导入课表 并上传课表文件（支持拾光导出JSON格式 / ICS 日历文件）\n` +
-    `• 使用星链课表分享口令（直接发送「星链课表」分享消息）\n\n` +
-    `迁移教程请查看 #课表帮助 或联系管理员。`;
-  return { success: false, message };
   if (!code || !/^[0-9a-zA-Z\-_]+$/.test(code)) {
     return { success: false, message: "口令格式不正确，请确保是WakeUp课程表的正确分享口令" };
   }
@@ -243,16 +234,16 @@ export async function importScheduleFromCode(userId, code, event) {
     const autoRecallCode = config.autoRecallCode ?? false;
     const scheduleData = await fetchScheduleFromAPI(code);
     if (!scheduleData) {
-      return { success: false, message: "获取课表失败，请检查口令" };
+      return { success: false, message: "获取课表失败，请检查口令或WakeUp服务配置" };
     }
 
     const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
-    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "", showTableName, !!event.group);
+    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "📱 WakeUp", showTableName, !!event.group);
     replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
     return { success: true, message: replyMsg };
   } catch (err) {
-    logger.error(`设置课表失败: ${err}`);
-    return { success: false, message: "设置课表失败，请稍后重试" };
+    logger.error(`[WakeUp导入] 设置课表失败: ${err}`);
+    return { success: false, message: `导入失败：${err.message || '请稍后重试'}` };
   }
 }
 
