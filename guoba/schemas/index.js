@@ -107,10 +107,35 @@ export const schemas = [
         bottomHelpMessage: "WakeUp课程表解析服务的基础URL。默认使用公共服务，也可以配置自己的服务地址。"
     },
     {
+        field: "wakeupApiEndpoint",
+        label: "API端点",
+        component: "Input",
+        placeholder: "请输入API端点路径",
+        defaultValue: "/parse",
+        bottomHelpMessage: "WakeUp API的端点路径，默认 /parse。可配置为自定义路径以兼容自建服务。"
+    },
+    {
+        field: "wakeupAuthType",
+        label: "鉴权方式",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "Bearer Token", value: "Bearer" },
+                { label: "X-Auth-Token", value: "X-Auth-Token" },
+                { label: "无鉴权", value: "None" }
+            ]
+        },
+        defaultValue: "Bearer",
+        bottomHelpMessage: "选择WakeUp服务的鉴权方式。Bearer: Authorization请求头；X-Auth-Token: 自定义请求头。如服务无需鉴权请选「无鉴权」。"
+    },
+    {
         field: "wakeupAuthToken",
         label: "鉴权Token",
         component: "Input",
-        placeholder: "请输入Token（可选）",
+        componentProps: {
+            type: "password",
+            placeholder: "请输入Token（可选）"
+        },
         bottomHelpMessage: "WakeUp服务的鉴权Token。如果使用自己的服务并配置了鉴权，请填写此项。留空则不进行鉴权。"
     },
     {

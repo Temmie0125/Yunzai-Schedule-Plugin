@@ -14,6 +14,10 @@ birthdayBlacklistGroups: []
 # WakeUp 课程表服务基础URL
 # 默认使用公共服务，也可以配置自己的服务地址
 wakeupServiceUrl: "https://wakeup.cpc.cn.eu.org/"
+# WakeUp API端点路径
+wakeupApiEndpoint: "/parse"
+# WakeUp 服务鉴权方式: Bearer / X-Auth-Token / None
+wakeupAuthType: "None"
 # WakeUp 服务鉴权 Token，留空则不进行鉴权
 wakeupAuthToken: ""
 # 默认学期开始日期

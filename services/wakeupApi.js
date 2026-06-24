@@ -9,15 +9,26 @@ import { ConfigManager } from '../components/ConfigManager.js'
  */
 export async function fetchScheduleFromAPI(code) {
   const config = ConfigManager.getConfig()
-  const serviceUrl = (config.wakeupServiceUrl || 'https://wakeup.cpc.cn.eu.org/').replace(/\/$/, '')
+  const baseUrl = (config.wakeupServiceUrl || 'https://wakeup.cpc.cn.eu.org/').replace(/\/$/, '')
+  const endpoint = config.wakeupApiEndpoint || '/parse'
   const authToken = (config.wakeupAuthToken || '').trim()
+  const authType = config.wakeupAuthType || 'Bearer'
 
   const headers = { 'Content-Type': 'application/json' }
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`
+  if (authToken && authType !== 'None') {
+    switch (authType) {
+      case 'X-Auth-Token':
+        headers['X-Auth-Token'] = authToken
+        break
+      case 'Bearer':
+      default:
+        headers['Authorization'] = `Bearer ${authToken}`
+        break
+    }
   }
 
-  const url = `${serviceUrl}/parse`
+  // 确保端点以 / 开头
+  const url = `${baseUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`
 
   let response
   try {

@@ -49,6 +49,8 @@ export class ConfigManager {
             birthdayBlacklistGroups: [],   // 推送黑名单
             // WakeUp 服务配置
             wakeupServiceUrl: "https://wakeup.cpc.cn.eu.org/",  // WakeUp 服务基础URL
+            wakeupApiEndpoint: "/parse",    // WakeUp API端点路径
+            wakeupAuthType: "Bearer",       // WakeUp 鉴权方式: Bearer / X-Auth-Token / None
             wakeupAuthToken: "",         // WakeUp 服务鉴权 Token
             defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
             botName: "",    // bot自定义名称，默认取机器人昵称
@@ -64,6 +66,8 @@ export class ConfigManager {
         if (!config.birthdayWhitelistGroups) config.birthdayWhitelistGroups = [];
         if (!config.birthdayBlacklistGroups) config.birthdayBlacklistGroups = [];
         if (config.wakeupServiceUrl === undefined) config.wakeupServiceUrl = "https://wakeup.cpc.cn.eu.org/";
+        if (config.wakeupApiEndpoint === undefined) config.wakeupApiEndpoint = "/parse";
+        if (config.wakeupAuthType === undefined) config.wakeupAuthType = "Bearer";
         if (config.wakeupAuthToken === undefined) config.wakeupAuthToken = "";
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
@@ -113,7 +117,7 @@ export class ConfigManager {
             autoCancelCheckEnabled, autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
-            wakeupServiceUrl, wakeupAuthToken,
+            wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
             sortMode, showQQ,
@@ -128,7 +132,7 @@ export class ConfigManager {
             autoCancelCheckInterval,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
-            wakeupServiceUrl, wakeupAuthToken,
+            wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
             sortMode, showQQ,
