@@ -76,7 +76,7 @@ export function checkFriend(userId) {
 /**
  * 从事件对象中提取文件信息（兼容私聊和群聊）
  * @param {object} e 事件对象
- * @returns {{ fileName: string, fileSize: number, fileId: string, busid?: number } | null}
+ * @returns {{ fileName: string, fileSize: number, fileId: string, busid?: number, fileHash?: string, fileUrl?: string } | null}
  */
 export function getFileInfo(e) {
     if (!e.file) return null;
@@ -84,23 +84,29 @@ export function getFileInfo(e) {
     let fileSize = 0;
     let fileId = '';
     let busid = null;
-    // 私聊文件结构：e.file.data
+    let fileHash = null;
+    let fileUrl = null;
+    // 私聊文件结构：e.file.data（SnowLuma 等新版 API：file_name/file_id/file_hash/url）
     if (e.file.data) {
-        fileName = e.file.data.file || e.file.data.filename || '';
+        fileName = e.file.data.file || e.file.data.file_name || e.file.data.filename || '';
         fileSize = parseInt(e.file.data.file_size || e.file.data.size || 0, 10);
         fileId = e.file.data.file_id || e.file.data.id || '';
         busid = e.file.data.busid;
+        fileHash = e.file.data.file_hash || null;
+        fileUrl = e.file.data.url || null;
     }
-    // 群聊文件结构：e.file 直接包含 id, name, size, busid
+    // 群聊文件结构：e.file 直接包含（LLOneBot: name/id; SnowLuma: file_name/file_id）
     if (!fileName && e.file.name) {
         fileName = e.file.name;
         fileSize = parseInt(e.file.size || 0, 10);
         fileId = e.file.id || '';
         busid = e.file.busid;
+        fileHash = e.file.file_hash || null;
+        fileUrl = e.file.url || null;
     }
-    // 兜底
+    // 兜底：新版 API 字段名（file_name / file_id）
     if (!fileName) {
-        fileName = e.file.file || e.file.filename || '';
+        fileName = e.file.file_name || e.file.file || e.file.filename || '';
     }
     if (!fileSize) {
         fileSize = parseInt(e.file.file_size || e.file.size || 0, 10);
@@ -108,18 +114,37 @@ export function getFileInfo(e) {
     if (!fileId) {
         fileId = e.file.file_id || e.file.id || '';
     }
+    // busid 兜底：部分适配器（如 SnowLuma）可能不提供 busid 字段，默认传 0
+    if (busid == null) {
+        busid = 0;
+    } else {
+        busid = parseInt(busid) || 0;
+    }
     if (!fileName || !fileSize || !fileId) {
         logger.warn("[课表导入] 无法提取完整的文件信息", { eFile: e.file });
         return null;
     }
-    return { fileName, fileSize, fileId, busid };
+    return { fileName, fileSize, fileId, busid, fileHash, fileUrl };
 }
 /**
    * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）
    * @returns {Promise<string|null>}
    */
-export async function getFileContent(e, fileId, busid = null) {
+export async function getFileContent(e, fileId, busid = null, fileHash = null, directUrl = null) {
     try {
+        // ========== 0. 直接下载链接（SnowLuma 新版 API 在消息段中直接提供 url）==========
+        if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://'))) {
+            try {
+                const response = await fetch(directUrl);
+                if (response.ok) {
+                    logger.mark(`[课表管理] 直接链接下载成功`)
+                    return await response.text();
+                }
+                logger.warn(`[课表管理] 直接链接下载失败，状态码: ${response.status}`);
+            } catch (err) {
+                logger.warn(`[课表管理] 直接链接下载失败，回退 API 方式: ${err}`);
+            }
+        }
         // ========== 1. 私聊：优先用 get_private_file_url 获取 http 地址 ==========
         if (!e.isGroup) {
             try {
@@ -129,10 +154,12 @@ export async function getFileContent(e, fileId, busid = null) {
                 const user = Bot.pickFriend(userId);
                 if (typeof user.getFileUrl === 'function') {
                     // 如果提供了封装方法
-                    fileUrl = await user.getFileUrl(fileId);
+                    fileUrl = await user.getFileUrl(fileId, fileHash);
                 } else {
                     // 降级到通用 sendApi
-                    const res = await Bot.sendApi('get_private_file_url', { user_id: userId, file_id: fileId });
+                    const params = { user_id: userId, file_id: fileId };
+                    if (fileHash) params.file_hash = fileHash;
+                    const res = await Bot.sendApi('get_private_file_url', params);
                     fileUrl = res?.data?.url;
                 }
                 if (fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
@@ -164,6 +191,18 @@ export async function getFileContent(e, fileId, busid = null) {
                     });
                 } catch (apiErr) {
                     logger.warn(`[课表管理] 调用 get_group_file_url 失败: ${apiErr}`);
+                }
+            }
+            // 如果带 busid 失败且 busid 可能无效，尝试 busid=0 重试
+            if (!groupUrlInfo?.data?.url && busid !== 0) {
+                try {
+                    groupUrlInfo = await Bot.sendApi('get_group_file_url', {
+                        group_id: e.group_id,
+                        file_id: fileId,
+                        busid: 0
+                    });
+                } catch (retryErr) {
+                    logger.warn(`[课表管理] busid=0 重试 get_group_file_url 也失败: ${retryErr}`);
                 }
             }
             if (groupUrlInfo?.data?.url) {
@@ -200,7 +239,14 @@ export async function getFileContent(e, fileId, busid = null) {
                 // 私聊 get_file 可能会返回 base64:// 数据
                 fileInfo = await Bot.sendApi('get_file', { file_id: fileId });
             } else {
-                if (groupUrlInfo?.data) {
+                // SnowLuma 等适配器：get_file API 不需要 busid，可作为备选
+                try {
+                    fileInfo = await Bot.sendApi('get_file', { group_id: e.group_id, file_id: fileId });
+                } catch (err) {
+                    logger.warn(`[mil-plugin] 群聊 get_file API 失败: ${err}`);
+                }
+                // 如果 get_file 也没数据，回退到之前的 groupUrlInfo
+                if (!fileInfo?.data && groupUrlInfo?.data) {
                     fileInfo = groupUrlInfo;
                 }
             }

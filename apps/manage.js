@@ -383,7 +383,7 @@ export class ScheduleManage extends plugin {
         // 优先检查是否为文件消息
         const fileInfo = getFileInfo(e);
         if (fileInfo) {
-            const { fileName, fileSize, fileId, busid } = fileInfo;
+            const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;
             const MAX_SIZE = 512 * 1024; // 512KB
             const ext = path.extname(fileName).toLowerCase();
             if (ext !== '.json') {
@@ -396,7 +396,7 @@ export class ScheduleManage extends plugin {
                 return false;
             }
             try {
-                jsonText = await getFileContent(e, fileId, busid);
+                jsonText = await getFileContent(e, fileId, busid, fileHash, fileUrl);
             } catch (err) {
                 logger.error(`[时间表更新] 获取文件内容异常: ${err}`);
                 await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
@@ -559,7 +559,7 @@ export class ScheduleManage extends plugin {
             await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件~`);
             return false;
         }
-        const { fileName, fileSize, fileId, busid } = fileInfo;
+        const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;
         const MAX_SIZE = 2 * 1024 * 1024;
         // 获取文件扩展名
         const ext = path.extname(fileName).toLowerCase();
@@ -574,7 +574,7 @@ export class ScheduleManage extends plugin {
         }
         let fileContent;
         try {
-            fileContent = await getFileContent(e, fileId, busid);
+            fileContent = await getFileContent(e, fileId, busid, fileHash, fileUrl);
         } catch (err) {
             logger.error(`[课表管理] 获取文件内容异常: ${err}`);
             await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
@@ -720,7 +720,7 @@ export class ScheduleManage extends plugin {
         // 非文件消息不处理
         const fileInfo = getFileInfo(e);
         if (!fileInfo) return false;
-        const { fileName, fileSize, fileId, busid } = fileInfo;
+        const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;
         const ext = path.extname(fileName).toLowerCase();
         const SUPPORTED_EXTS = ['.json', '.ics', '.wakeup_schedule'];
         if (!SUPPORTED_EXTS.includes(ext)) return false;  // 不支持的格式，静默放行
@@ -731,7 +731,7 @@ export class ScheduleManage extends plugin {
         }
         let fileContent;
         try {
-            fileContent = await getFileContent(e, fileId, busid);
+            fileContent = await getFileContent(e, fileId, busid, fileHash, fileUrl);
         } catch (err) {
             logger.error(`[课表自动导入] 读取文件失败: ${fileName}`, err);
             return false;
