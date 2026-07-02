@@ -648,7 +648,12 @@ export class ScheduleManage extends plugin {
         const filePath = path.join(tmpDir, fileName);
         fs.writeFileSync(filePath, jsonStr, 'utf-8');
         try {
-            await this.e.reply(segment.file(filePath, fileName));
+            // 根据私聊/群聊场景，调用适配器封装的 sendFile 方法发送文件
+            if (this.e.group_id) {
+                await this.e.group.sendFile(filePath, fileName);
+            } else {
+                await this.e.friend.sendFile(filePath, fileName);
+            }
             setTimeout(() => {
                 fs.unlink(filePath, (err) => {
                     if (err) logger.warn(`[课表导出] 删除临时文件失败: ${filePath}`, err);
