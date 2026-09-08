@@ -2,7 +2,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from './ConfigManager.js'
-import { calculateWeekFromDate, getMondayOfSameWeek } from '../utils/timeUtils.js';
+import { calculateWeekFromDate, getCurrentFullDate, getMondayOfSameWeek } from '../utils/timeUtils.js';
+import { normalizeDateStr } from '../utils/timeZoneUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
@@ -70,10 +71,10 @@ export class DataManager {
                 // 保存数据
                 fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
             } else {
-                // 创建新的数据文件
+                // 创建新的数据文件（semesterStart 用本地日期，避免 UTC 日期在凌晨跨日错位）
                 const data = {
                     tableName: '未设置',
-                    semesterStart: new Date().toISOString().split('T')[0],
+                    semesterStart: getCurrentFullDate(),
                     updateTime: new Date().toISOString(),
                     nickname: nickname,
                     courses: []
@@ -110,7 +111,7 @@ export class DataManager {
                 // 如果还没有课程表数据，创建新的数据文件
                 const data = {
                     tableName: '未设置',
-                    semesterStart: new Date().toISOString().split('T')[0],
+                    semesterStart: getCurrentFullDate(),
                     updateTime: new Date().toISOString(),
                     nickname: userId.toString(),
                     signature: signature,  // 新增签名字段
@@ -122,6 +123,57 @@ export class DataManager {
             return true
         } catch (error) {
             logger.error(`保存用户 ${userId} 签名失败: ${error}`)
+            return false
+        }
+    }
+
+    /**
+     * 获取用户时区设置（课表解释时区链的前两级）
+     * @param {string|number} userId
+     * @returns {{ timeZone: string|null, importTimeZone: string|null }}
+     *   timeZone: #设置时区 的显式设置；importTimeZone: ICS 导入推断
+     */
+    static getUserTimeZone(userId) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule) return { timeZone: null, importTimeZone: null };
+        return { timeZone: schedule.timeZone || null, importTimeZone: schedule.importTimeZone || null };
+    }
+
+    /**
+     * 设置/清除用户的课表解释时区
+     * @param {string|number} userId
+     * @param {string|null} timeZone 规范时区（IANA 名或 "+08:00"）；null = 清除（恢复默认链）
+     * @returns {boolean}
+     */
+    static setUserTimeZone(userId, timeZone) {
+        try {
+            const filePath = path.join(DATA_PATH, `${userId}.json`)
+            const dir = path.dirname(filePath)
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+            if (fs.existsSync(filePath)) {
+                const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+                if (timeZone) data.timeZone = timeZone
+                else delete data.timeZone
+                data.updateTime = new Date().toISOString()
+                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
+            } else {
+                // 无课表文件：清除时无需创建（幂等成功）；设置时自动建骨架（海外用户可先设时区再导入）
+                if (!timeZone) return true
+                const data = {
+                    tableName: '未设置',
+                    semesterStart: getCurrentFullDate(),
+                    updateTime: new Date().toISOString(),
+                    nickname: userId.toString(),
+                    signature: '',
+                    courses: [],
+                    timeZone
+                }
+                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
+            }
+            return true
+        } catch (error) {
+            logger.error(`设置用户 ${userId} 时区失败: ${error}`)
             return false
         }
     }
@@ -152,6 +204,16 @@ export class DataManager {
             fullData.timeSlots = timeSlots
         } else if (existing.timeSlots && Array.isArray(existing.timeSlots)) {
             fullData.timeSlots = existing.timeSlots
+        }
+
+        // 时区字段（全插件唯一写课表入口，白名单重建处需显式处理）：
+        // - timeZone：用户 #设置时区 的显式设置，跨重新导入保留（仅显式清除会删）
+        // - importTimeZone：ICS 导入推断，本次导入提供了则写入（覆盖上次推断），否则清除陈旧推断
+        if (existing.timeZone) fullData.timeZone = existing.timeZone;
+        if (scheduleData.importTimeZone) {
+            fullData.importTimeZone = scheduleData.importTimeZone;
+        } else {
+            delete fullData.importTimeZone;
         }
 
         // 确保目录存在
@@ -379,7 +441,8 @@ export class DataManager {
                         { icon: 1, title: "#设置课表", desc: "导入WakeUp/星链分享口令" },
                         { icon: 2, title: "#清除课表", desc: "清除自己的课程表" },
                         { icon: 3, title: "#课表设置昵称", desc: "修改显示昵称" },
-                        { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" }
+                        { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" },
+                        { icon: 5, title: "#设置时区", desc: "设置课表解释时区，支持 Asia/Shanghai、UTC+8、北京时间 等，auto 恢复默认" }
                     ]
                 },
                 {
@@ -411,6 +474,7 @@ export class DataManager {
 【#清除课表】清除自己的课表
 【#课表设置昵称 昵称】修改昵称
 【#课表设置签名 签名】设置个性签名(最多30字)
+【#设置时区 时区】设置课表解释时区（Asia/Shanghai、UTC+8、北京时间，auto 恢复默认）
 【#今日课表|明日课表】查看自己今日/明日课表
 【#课表查询 周数 星期】查看自己某日的课表
 【#我的课表】查看自己的相关信息
@@ -530,6 +594,10 @@ export class DataManager {
             result.timeSlots = scheduleData.timeSlots
         }
 
+        // 直通时区字段（导出→导入往返不丢；老版本导出无此字段则按浮动导入，行为不变）
+        if (scheduleData.timeZone) result.timeZone = scheduleData.timeZone;
+        if (scheduleData.importTimeZone) result.importTimeZone = scheduleData.importTimeZone;
+
         return result;
     }
     /**
@@ -564,16 +632,11 @@ export class DataManager {
             customEndTime: course.endTime
         }));
 
-        // 格式化日期为 YYYY-MM-DD
+        // 格式化日期为 YYYY-MM-DD（日历日域规范化，避免 new Date("YYYY-MM-DD") 按 UTC 解析的跨日错位）
         let semesterStart = scheduleData.semesterStart;
         if (semesterStart) {
-            const date = new Date(semesterStart);
-            if (!isNaN(date.getTime())) {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                semesterStart = `${year}-${month}-${day}`;
-            }
+            const normalized = normalizeDateStr(semesterStart);
+            if (normalized) semesterStart = normalized;
         }
 
         return {

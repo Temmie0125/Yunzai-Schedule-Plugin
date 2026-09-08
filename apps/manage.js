@@ -14,8 +14,11 @@ import { parseTimeTableJson } from '../services/timeTableParser.js'
 import {
     parseChineseDateToMD,
     parseSemesterStartDate,
-    formatDate
+    formatDate,
+    effectiveTimeZone,
+    nowPartsForSchedule
 } from '../utils/timeUtils.js';
+import { describeTimeZone, getZonedNowParts, parseTimeZoneInput, weekdayOfDateStr } from '../utils/timeZoneUtils.js';
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -79,10 +82,87 @@ export class ScheduleManage extends plugin {
                     reg: "",
                     fnc: "handleDirectFile",
                     log: false
+                },
+                // ===== 课表解释时区 =====
+                {
+                    reg: "^#(设置时区|课表时区|timezone|set ?timezone)(?:\\s+(.*))?$",
+                    fnc: "setTimeZone"
                 }
             ]
         })
     }
+    // ========== 课表解释时区（#设置时区） ==========
+    /**
+     * 设置/查看课表解释时区
+     * 影响范围：#clstb/群课表/@某人状态、今日/明日/周课表查询、订阅推送内容中
+     * "今天/明天/星期/现在几点"的计算基准（课程墙钟按该时区解释）。
+     * 生日模块不受影响（继续按服务器时间）。
+     */
+    async setTimeZone() {
+        const userId = this.e.user_id;
+        const match = this.e.msg.match(/^#(?:设置时区|课表时区|timezone|set ?timezone)(?:\s+(.*))?$/);
+        const arg = match && match[1] ? match[1].trim() : '';
+        const weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        const nowLine = (parts) => `${parts.dateStr} ${parts.timeHHMM} ${weekdayNames[weekdayOfDateStr(parts.dateStr) - 1]}`;
+
+        // 无参数：查看当前生效时区与来源
+        if (!arg) {
+            const schedule = DataManager.loadSchedule(userId);
+            const tz = effectiveTimeZone(schedule);
+            const tzInfo = describeTimeZone(tz);
+            const source = schedule?.timeZone ? '手动设置'
+                : (schedule?.importTimeZone ? 'ICS 导入推断' : '插件配置/系统默认');
+            await this.reply(
+                `📅 你的课表解释时区：${tzInfo.canonical}（${tzInfo.offsetLabel}${tzInfo.dst ? '，当前为夏令时' : ''}）\n` +
+                `来源：${source}\n` +
+                `现在时间：${nowLine(nowPartsForSchedule(schedule))}\n\n` +
+                `💡 修改示例：\n` +
+                `  #设置时区 Asia/Shanghai   （IANA 时区名，自动跟随夏令时）\n` +
+                `  #设置时区 UTC+8 / +08:00\n` +
+                `  #设置时区 北京时间\n` +
+                `  #设置时区 auto            （恢复默认）`
+            );
+            return true;
+        }
+
+        const parsed = parseTimeZoneInput(arg);
+        if (!parsed.ok) {
+            const cur = effectiveTimeZone(DataManager.loadSchedule(userId));
+            await this.reply(
+                `❌ ${parsed.hint || '无法识别的时区'}：${arg}\n` +
+                `可用格式例如：\n` +
+                `  #设置时区 Asia/Shanghai    （IANA 时区名，自动跟随夏令时）\n` +
+                `  #设置时区 UTC+8 / GMT-5 / +08:00\n` +
+                `  #设置时区 北京时间\n` +
+                `  #设置时区 auto            （恢复默认）\n` +
+                `你当前生效时区：${cur}`
+            );
+            return true;
+        }
+
+        // 清除显式设置（auto/清除 等），回退 ICS 推断 → 插件配置 → 系统
+        if (parsed.clear) {
+            DataManager.setUserTimeZone(userId, null);
+            const afterTZ = effectiveTimeZone(DataManager.loadSchedule(userId));
+            const info = describeTimeZone(afterTZ);
+            await this.reply(
+                `✅ 已恢复默认解释时区：${info.canonical}（${info.offsetLabel}）\n` +
+                `⚠️ 该设置不会换算已存课程的时间点；若旧课表与当前解释不符，请重新导入课表（ICS 导入会自动识别日历时区）。`
+            );
+            return true;
+        }
+
+        const ok = DataManager.setUserTimeZone(userId, parsed.timeZone);
+        const tzInfo = describeTimeZone(parsed.timeZone);
+        await this.reply(
+            `${ok ? '✅' : '❌'} 已设置课表解释时区：${parsed.timeZone}（${tzInfo.offsetLabel}${tzInfo.dst ? '，当前为夏令时' : ''}）\n` +
+            `现在时间：${nowLine(getZonedNowParts(parsed.timeZone))}\n\n` +
+            `⚠️ 课表的今天/明天/星期/推送将按该时区计算；已存课程时间点不会自动换算，` +
+            `若课表导入时的时区与此不符，请重新导入课表。`
+        );
+        return true;
+    }
+
     /**
      * 处理 #设置课表 命令
      */

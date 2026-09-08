@@ -1,5 +1,9 @@
 import { ConfigManager } from "../components/ConfigManager.js";
 import LunarCalendar from 'lunar-calendar';
+import {
+    dateStrToLocalMidnight, getZonedNowParts, mondayOfDateStr, normalizeDateStr,
+    resolveEffectiveTimeZone, shiftDateStr, toDateStr, weekOfDateStr
+} from './timeZoneUtils.js';
 /**
  * 生成1~31的中文数字映射表
  */
@@ -26,21 +30,21 @@ const chineseNumberMap = (() => {
     return map;
 })();
 // 获取给定日期所在周的周一（周一为一周开始，周日为7）
+// 改为在日历日域（YYYY-MM-DD）内计算后转回"本地午夜 Date"，返回语义与旧实现一致
 export function getMondayOfSameWeek(date) {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    const day = d.getDay(); // 0=周日, 1=周一, ..., 6=周六
-    // 计算到本周一的偏移：如果day=0（周日），偏移6天；否则偏移 day-1 天
-    const offset = day === 0 ? 6 : day - 1;
-    d.setDate(d.getDate() - offset);
-    return d;
+    const ds = toDateStr(date);
+    if (!ds) return new Date(NaN); // 非法输入 → Invalid Date（与旧行为一致）
+    return dateStrToLocalMidnight(mondayOfDateStr(ds));
 }
 /**
  * 计算当前周数
  * @param {string} semesterStart - 学期开始日期 YYYY-MM-DD
+ * @param {Date} [baseDate] - 基准时刻，默认服务器当前时刻（日历日取 baseDate 的本地日历日）
  * @returns {number}
  */
-export function calculateCurrentWeek(semesterStart) {
+export function calculateCurrentWeek(semesterStart, baseDate = new Date()) {
+    const base = toDateStr(baseDate);
+    if (!base) return null;
     let startDateStr = semesterStart;
     if (!startDateStr) {
         // 从配置中读取默认学期开始日期
@@ -51,34 +55,78 @@ export function calculateCurrentWeek(semesterStart) {
             startDateStr = "2026-03-02";
         }
     }
-    const startDate = new Date(startDateStr);
-    // 获取学期开始日所在周的周一
-    const startMonday = getMondayOfSameWeek(startDate);
-    const now = new Date();
-    const dayDiff = Math.floor((now - startMonday) / (1000 * 3600 * 24));
-    // 周数 = 从该周一算起的天数 / 7 向下取整 + 1
-    return Math.max(1, Math.floor(dayDiff / 7) + 1);
+    const start = normalizeDateStr(startDateStr);
+    if (!start) return NaN; // 非法学期开始（与旧代码 new Date 解析失败 → NaN 一致）
+    const week = weekOfDateStr(start, base);
+    // 早于学期开始所在周的周一 → 钳制为第 1 周（旧代码 Math.max(1, ...) 语义）
+    return week === null ? 1 : week;
 }
 /**
  * 计算目标日期所在的周数（相对于学期开始日期）
- * @param {string} semesterStart 学期开始日期，格式 YYYY-MM-DD
- * @param {Date} targetDate 目标日期
+ * 内部使用日历日计数（不经过本地时区毫秒差，修复夏令时切换日 23/25 小时天导致的周次错位，
+ * 及 new Date("YYYY-MM-DD") 按 UTC 解析在负偏移服务器上的星期错位）
+ * @param {string} semesterStart 学期开始日期，格式 YYYY-MM-DD（容忍 "2026-3-2" 非补零）
+ * @param {Date|string} targetDate 目标日期（Date 按本地日历日，或 "YYYY-MM-DD" 字符串）
  * @returns {number|null} 周数（第1周开始），若日期早于学期开始则返回 null
  */
 export function calculateWeekFromDate(semesterStart, targetDate) {
-    const start = new Date(semesterStart);
-    if (isNaN(start)) return null;
+    const start = normalizeDateStr(semesterStart);
+    if (!start) return null; // 学期开始非法（旧代码 isNaN(start) → null 一致）
 
-    // 获取学期开始日所在周的周一
-    const startMonday = getMondayOfSameWeek(start);
-    const target = new Date(targetDate);
-    target.setHours(0, 0, 0, 0);
-    startMonday.setHours(0, 0, 0, 0);
+    const target = toDateStr(targetDate);
+    if (!target) return null;
 
-    const diffDays = Math.floor((target - startMonday) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return null; // 目标日期在学期开始所在周的周一之前
+    return weekOfDateStr(start, target);
+}
 
-    return Math.floor(diffDays / 7) + 1;
+/**
+ * 课表的有效解释时区：用户显式设置 → ICS 导入推断 → 插件配置 timeZone（'auto'=系统）→ 系统时区
+ * 课程墙钟 "HH:MM"/星期/周次均视为该时区下的语义
+ * @param {object|null} schedule 用户课表数据（data/{qq}.json 顶层）
+ * @returns {string} IANA 时区名或 "+08:00"
+ */
+export function effectiveTimeZone(schedule) {
+    const config = ConfigManager.getConfig();
+    return resolveEffectiveTimeZone(schedule?.timeZone, schedule?.importTimeZone, config.timeZone);
+}
+
+/**
+ * 某课表语义下"现在"的日历分量（dateStr/timeHHMM/weekday 等，按该课表有效解释时区换算）
+ * schedule 为 null 时退化为插件配置/系统时区
+ * @param {object|null} schedule
+ */
+export function nowPartsForSchedule(schedule) {
+    return getZonedNowParts(effectiveTimeZone(schedule));
+}
+
+/**
+ * 宽松解析日期为"本地午夜 Date"（本地解析语义：本地分量即目标日历日）
+ * @param {Date|string} input Date 或日期串（容忍 "2026-3-2" 非补零）
+ * @returns {Date|null}
+ */
+export function localParseDateStr(input) {
+    const ds = toDateStr(input);
+    return ds ? dateStrToLocalMidnight(ds) : null;
+}
+
+/**
+ * 按目标日历日计算周数，统一"个人学期/配置默认学期"双分支语义：
+ * - 有（可解析的）个人 semesterStart → 严格按日期算，未开学（早于学期所在周周一）返回 null；
+ * - 无个人 semesterStart（老数据）→ 回退配置 defaultSemesterStart，钳制不低于第 1 周；
+ * - semesterStart 非空但不可解析 → NaN（与旧 hasValidStart=false 分支的 calculateCurrentWeek 一致）
+ * @param {string|null|undefined} semesterStart 用户课表的 semesterStart
+ * @param {string} dateStr 目标日历日 YYYY-MM-DD
+ * @returns {number|null|NaN}
+ */
+export function weekForDateStr(semesterStart, dateStr) {
+    const target = normalizeDateStr(dateStr);
+    if (!target) return null;
+    if (semesterStart) {
+        const start = normalizeDateStr(semesterStart);
+        if (!start) return NaN;
+        return weekOfDateStr(start, target);
+    }
+    return calculateCurrentWeek(semesterStart, dateStrToLocalMidnight(target) || undefined);
 }
 
 /**
@@ -102,9 +150,9 @@ export function parseDateInput(input, semesterStart) {
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 
     if (!year) {
-        // 没有提供年份，使用学期开始年份作为基准
-        const startDate = new Date(semesterStart);
-        if (isNaN(startDate)) return null;
+        // 没有提供年份，使用学期开始年份作为基准（本地解析，避免 YYYY-MM-DD 被按 UTC 解析）
+        const startDate = localParseDateStr(semesterStart);
+        if (!startDate) return null;
         year = startDate.getFullYear();
 
         // 构造日期（使用该年）
@@ -161,15 +209,12 @@ export function calculateTimeUntil(currentTime, startTime) {
  * @returns {Date|null} 如果计算出的日期有效（在学期开始之后），返回 Date 对象；否则返回 null
  */
 export function calculateDateFromWeekAndDay(semesterStart, week, day) {
-    const start = new Date(semesterStart);
-    if (isNaN(start)) return null;
+    const start = normalizeDateStr(semesterStart);
+    if (!start || !Number.isInteger(week) || week < 1 || !Number.isInteger(day) || day < 1 || day > 7) return null;
 
-    const startMonday = getMondayOfSameWeek(start);
-    // 目标日期相对于 startMonday 的偏移天数
+    // 目标日期相对于学期开始所在周周一的偏移天数（日历日域计算）
     const offsetDays = (week - 1) * 7 + (day - 1); // day: 1=周一, 7=周日
-    const target = new Date(startMonday);
-    target.setDate(startMonday.getDate() + offsetDays);
-    return target;
+    return dateStrToLocalMidnight(shiftDateStr(mondayOfDateStr(start), offsetDays));
 }
 /**
  * 获取当前日期 MM-DD
@@ -333,14 +378,11 @@ export function parseWeekday(str) {
  * @returns {Date} 计算得到的目标日期（时间部分归零）
  */
 export function getDateByRelativeWeek(weekOffset, weekday, baseDate = new Date()) {
-    const base = new Date(baseDate);
-    base.setHours(0, 0, 0, 0);
-    // 获取基准日期所在周的周一
-    const monday = getMondayOfSameWeek(base);
-    // 目标日期 = 周一 + (weekOffset * 7 + (weekday - 1)) 天
-    const target = new Date(monday);
-    target.setDate(monday.getDate() + weekOffset * 7 + (weekday - 1));
-    return target;
+    const base = toDateStr(baseDate);
+    if (!base) return new Date(NaN);
+    // 目标日期 = 周一 + (weekOffset * 7 + (weekday - 1)) 天（日历日域计算）
+    const target = shiftDateStr(mondayOfDateStr(base), weekOffset * 7 + (weekday - 1));
+    return dateStrToLocalMidnight(target) || new Date(NaN);
 }
 /**
  * 判断是否为闰年

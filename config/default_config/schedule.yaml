@@ -22,6 +22,9 @@ wakeupAuthType: "None"
 wakeupAuthToken: ""
 # 默认学期开始日期
 defaultSemesterStart: "2026-08-31"
+# 课表解释默认时区：auto=跟随服务器系统时区；或 IANA 时区名（如 Asia/Shanghai、America/New_York，自动处理夏令时）
+# 未通过 #设置时区 设置、且课表无 ICS 导入时区信息的用户，其课表按此时区解释（今天/明天/星期/周次/当前时间）
+timeZone: "auto"
 # 自定义bot名称
 botName: ""
 # 字体风格

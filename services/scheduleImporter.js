@@ -3,8 +3,9 @@ import { fetchScheduleFromAPI } from './wakeupApi.js'
 import { fetchStarlinkSchedule } from './starlinkApi.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
-import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate } from '../utils/timeUtils.js'
+import { getCurrentFullDate } from '../utils/timeUtils.js'
 import ICalExpander from 'ical-expander';
+import { parseIcsScheduleCourses } from './icsScheduleParser.js'
 // 默认节次时间映射
 const DEFAULT_TIME_SLOTS = {
   1: { start: "08:00", end: "08:45" },
@@ -484,110 +485,32 @@ export async function importScheduleFromStarlinkCode(userId, code, event) {
  */
 export async function importScheduleFromIcsData(userId, icsText, event) {
   try {
-    const expander = new ICalExpander({ ics: icsText, maxIterations: 5000 });
-    const all = expander.between(new Date(2000, 0, 1), new Date(2100, 0, 1));
-    const occurrences = [...(all.events || []), ...(all.occurrences || [])];
-
-    if (occurrences.length === 0) {
-      return { success: false, message: '未在文件中找到任何课程事件' };
+    // 用户显式设置的时区作为换算锚（若有）：课表墙钟落盘为用户时区视角，
+    // importTimeZone 不写（避免用户 auto 清除后按日历时区解释已换算数据造成二次错误）
+    const oldData = DataManager.loadSchedule(userId);
+    const parsed = parseIcsScheduleCourses(icsText, { userTZ: oldData?.timeZone || null });
+    if (!parsed.ok) {
+      return { success: false, message: parsed.message };
     }
 
-    // 计算学期开始（最早事件所在周的周一），先统一转换日期
-    const dates = occurrences.map(o => {
-      // 转换 startDate 为 JS Date
-      let sd = o.startDate;
-      if (typeof sd.toJSDate === 'function') sd = sd.toJSDate();
-      return sd;
-    });
-    const earliest = new Date(Math.min(...dates.map(d => d.getTime())));
-    const semesterStartDate = getMondayOfSameWeek(earliest);
-    const semesterStart = [
-      semesterStartDate.getFullYear(),
-      String(semesterStartDate.getMonth() + 1).padStart(2, '0'),
-      String(semesterStartDate.getDate()).padStart(2, '0')
-    ].join('-');
-
-    const courseMap = new Map();
-    for (const occ of occurrences) {
-      // 转换日期
-      let startDate = occ.startDate;
-      let endDate = occ.endDate;
-      if (typeof startDate.toJSDate === 'function') startDate = startDate.toJSDate();
-      if (typeof endDate.toJSDate === 'function') endDate = endDate.toJSDate();
-
-      // 统一从 occ.item（Occurrence）或 occ 自身（Event）取详情
-      const ev = occ.item || occ;
-
-      const summary = ev.summary || '未知课程';
-
-      let rawLocation = (ev.location || '').trim();
-      const description = (ev.description || '').trim();
-
-      let location = '';
-      let teacher = '';
-
-      // 1. 尝试从 location 中分割“地点 教师”（WakeUp 格式）
-      if (rawLocation) {
-        const parts = rawLocation.split(/\s+/);
-        if (parts.length >= 2) {
-          teacher = parts.pop();
-          location = parts.join(' ');
-        } else {
-          location = rawLocation; // 只有地点，没有教师
-        }
-      }
-
-      // 2. 若 location 中没拿到教师，尝试从 description 提取（新 ICS 格式）
-      if (!teacher && description) {
-        // 取最后一行作为可能的教师名，并去掉末尾句号
-        const lines = description.split('\n').filter(l => l.trim());
-        if (lines.length > 0) {
-          teacher = lines[lines.length - 1].replace(/[。.]$/, '').trim();
-        }
-      }
-
-      // 若仍无教师则置空
-      if (!teacher) teacher = '';
-
-      // 后面的星期、时间、周次计算保持不变
-      const weekday = startDate.getDay() || 7;
-      const startTime = [startDate.getHours(), startDate.getMinutes()]
-        .map(n => String(n).padStart(2, '0')).join(':');
-      const endTime = [endDate.getHours(), endDate.getMinutes()]
-        .map(n => String(n).padStart(2, '0')).join(':');
-      const week = calculateWeekFromDate(semesterStart, startDate);
-      if (week === null) continue;
-
-      const key = `${summary}|${weekday}|${startTime}|${endTime}|${location}|${teacher}`;
-      if (!courseMap.has(key)) {
-        courseMap.set(key, {
-          name: summary, day: weekday, startTime, endTime,
-          weeks: new Set(), location, teacher
-        });
-      }
-      courseMap.get(key).weeks.add(week);
-    }
-
-    const rawCourses = Array.from(courseMap.values()).map(c => ({
-      ...c,
-      weeks: Array.from(c.weeks).sort((a, b) => a - b)
-    }));
     // 合并名称、教师、地点相同且时间连续（间隔≤10分钟）的相邻课程
-    const courses = mergeConsecutiveCourses(rawCourses);
-
-    if (courses.length === 0) {
-      return { success: false, message: '未能解析出有效的课程数据' };
-    }
+    const courses = mergeConsecutiveCourses(parsed.courses);
 
     const scheduleData = {
       tableName: 'ICS 课程表',
-      semesterStart,
+      semesterStart: parsed.semesterStart,
       courses,
       updateTime: new Date().toISOString()
     };
+    // 无用户显式时区且识别出日历主时区 → 写入推断（saveSchedule 会清掉本次未提供的陈旧推断）
+    if (parsed.importTimeZone) scheduleData.importTimeZone = parsed.importTimeZone;
 
     const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
     let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, '📅 ICS', true, !!event.group);
+    if (parsed.notes && parsed.notes.length > 0) {
+      replyMsg += `\n${parsed.notes.join('\n')}`;
+      replyMsg += `\n💡 如需按你的时区解释课表，可用 #设置时区 调整`;
+    }
     return { success: true, message: replyMsg };
   } catch (err) {
     logger.error(`[ICS导入] ${err}`);

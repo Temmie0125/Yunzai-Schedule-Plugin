@@ -1,7 +1,8 @@
-// components/ConfigManager.js 
+// components/ConfigManager.js
 import fs from 'node:fs'
 import path from 'node:path'
 import YAML from 'yaml'
+import { isValidTimeZone } from '../utils/timeZoneUtils.js'
 export const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/default_config');
 export const CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/config');
 export const CONFIG_FILE = 'schedule.yaml';
@@ -53,6 +54,7 @@ export class ConfigManager {
             wakeupAuthType: "Bearer",       // WakeUp 鉴权方式: Bearer / X-Auth-Token / None
             wakeupAuthToken: "",         // WakeUp 服务鉴权 Token
             defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
+            timeZone: "auto",   // 课表解释默认时区：auto=跟随服务器系统时区；或 IANA 时区名如 Asia/Shanghai（无显式设置的用户的课表按此解释）
             botName: "",    // bot自定义名称，默认取机器人昵称
             font: "像素",    // 字体风格，默认为像素字体
             sortMode: "userId",    // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态
@@ -75,6 +77,11 @@ export class ConfigManager {
         }
         if (!config.birthdayPushHour) {
             config.birthdayPushHour = defaultConfig.birthdayPushHour;
+        }
+        // timeZone 校验：'auto' 或合法时区（IANA/固定偏移），非法配置回落 auto 并告警
+        if (config.timeZone !== 'auto' && !isValidTimeZone(config.timeZone)) {
+            logger.warn(`[Schedule-配置管理] 配置 timeZone 非法（${config.timeZone}），已回退为 auto（跟随系统时区）`);
+            config.timeZone = 'auto';
         }
         // 动态生成 pushCron 字段，供其他模块调用
         config.pushCron = `0 ${config.pushHour} * * *`;
@@ -119,6 +126,7 @@ export class ConfigManager {
             birthdayWhitelistGroups, birthdayBlacklistGroups,
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
+            timeZone,
             botName, font,
             sortMode, showQQ,
             watchFiles, birthdayCustomName
@@ -134,6 +142,7 @@ export class ConfigManager {
             birthdayWhitelistGroups, birthdayBlacklistGroups,
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
+            timeZone,
             botName, font,
             sortMode, showQQ,
             watchFiles, birthdayCustomName

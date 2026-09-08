@@ -4,7 +4,8 @@ import { checkFriend, getBotName } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { generateUserScheduleImage } from '../components/Renderer.js'
-import { calculateWeekFromDate } from '../utils/timeUtils.js'
+import { calculateWeekFromDate, nowPartsForSchedule } from '../utils/timeUtils.js'
+import { dateStrToLocalMidnight, shiftDateStr, weekdayOfDateStr } from '../utils/timeZoneUtils.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePush extends plugin {
@@ -124,9 +125,8 @@ export class SchedulePush extends plugin {
       logger.mark(`${logger.green(`[课表订阅] 无订阅用户，任务结束`)}`);
       return;
     }
-    let tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowWeekday = tomorrow.getDay(); // 0=周日, 1=周一...6=周六
+    // 触发时刻为服务器时区 pushHour（单个 cron，触发机制不变）；每个订阅用户的
+    // "明天"按各自课表有效解释时区（显式设置→ICS推断→插件配置→系统）独立计算
     for (const userId of users) {
       try {
         // 1. 检查用户是否有课表
@@ -140,6 +140,11 @@ export class SchedulePush extends plugin {
           logger.warn(`[课表订阅] 用户 ${userId} 不是机器人好友，无法私信`);
           continue;
         }
+        // 该用户时区下的"明天"（日历日），本地午夜 Date 的本地分量即该日历日
+        const tomorrowStr = shiftDateStr(nowPartsForSchedule(schedule).dateStr, 1);
+        const dayNum = weekdayOfDateStr(tomorrowStr); // 1=周一...7=周日
+        const tomorrowWeekday = dayNum === 7 ? 0 : dayNum; // 兼容 getDay() 惯例 0=周日
+        const tomorrow = dateStrToLocalMidnight(tomorrowStr);
         // 2. 学期结束判断（优先处理）
         if (DataManager.isSemesterEnded(schedule, tomorrow)) {
           logger.info(`[课表订阅] 用户 ${userId} 学期已结束，自动关闭订阅`);

@@ -161,6 +161,16 @@ export const schemas = [
         bottomHelpMessage: "开启后将监听所有聊天文件，并自动导入支持的课表格式"
     },
     {
+        field: "timeZone",
+        label: "课表解释默认时区",
+        component: "Input",
+        defaultValue: "auto",
+        componentProps: {
+            placeholder: "auto 或 IANA 时区名，如 Asia/Shanghai"
+        },
+        bottomHelpMessage: "auto=跟随服务器系统时区。未通过 #设置时区 设置、且课表无 ICS 导入时区信息的用户按此时区解释课表（今天/明天/星期/当前时间）。"
+    },
+    {
         component: 'Divider',
         label: '自动任务设置'
     },

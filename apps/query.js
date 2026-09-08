@@ -1,14 +1,16 @@
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import {
-    calculateCurrentWeek,
     calculateWeekFromDate,
     parseDateInput,
     calculateDateFromWeekAndDay,
     parseWeekday,
     getDateByRelativeWeek,
-    parseChineseDateToMD
+    parseChineseDateToMD,
+    weekForDateStr,
+    nowPartsForSchedule
 } from '../utils/timeUtils.js';
+import { dateStrToLocalMidnight, shiftDateStr } from '../utils/timeZoneUtils.js';
 import { generateUserScheduleImage, generateUserInfoImage, generateWeeklyScheduleImage } from '../components/Renderer.js'
 
 export class ScheduleQuery extends plugin {
@@ -58,11 +60,9 @@ export class ScheduleQuery extends plugin {
             return false;
         }
         // 未开学时（日期早于个人学期开始日期）提示等待，避免显示错误的"第1周"
-        const hasValidStart = scheduleData.semesterStart && !isNaN(new Date(scheduleData.semesterStart));
-        const currentWeek = hasValidStart
-            ? calculateWeekFromDate(scheduleData.semesterStart, new Date())
-            : calculateCurrentWeek(scheduleData.semesterStart);
-        if (hasValidStart && currentWeek === null) {
+        // 周数按该用户课表的有效解释时区（#设置时区/ICS 推断/插件配置/系统）下的"今天"计算
+        const currentWeek = weekForDateStr(scheduleData.semesterStart, nowPartsForSchedule(scheduleData).dateStr);
+        if (currentWeek === null) {
             await this.reply(`📅 你的新学期尚未开始（${scheduleData.semesterStart} 开学），当前暂无课程安排，届时将自动生效~`);
             return true;
         }
@@ -129,7 +129,10 @@ export class ScheduleQuery extends plugin {
      */
     async showTodaySchedule() {
         const userId = this.e.user_id;
-        const today = new Date();
+        // "今天"按用户课表有效解释时区取（本地午夜 Date 的本地分量即该日历日）
+        const schedule = DataManager.loadSchedule(userId);
+        const parts = nowPartsForSchedule(schedule);
+        const today = dateStrToLocalMidnight(parts.dateStr);
         const result = await DataManager.getCoursesForDate(userId, today);
         if (result.error) {
             await this.reply(result.error);
@@ -139,7 +142,6 @@ export class ScheduleQuery extends plugin {
         const holidayInfo = DataManager.getHolidayInfoForDate(today);
         let globalNotice = null;
         let isReschedule = false
-        const schedule = DataManager.loadSchedule(userId);
         const todayWeek = result.week;
         const todayDay = result.day;
         isReschedule = DataManager.hasRescheduledCoursesForDate(schedule, todayWeek, todayDay)
@@ -169,15 +171,16 @@ export class ScheduleQuery extends plugin {
      */
     async showTomorrowSchedule() {
         const userId = this.e.user_id;
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        // "明天" = 用户课表有效解释时区的今天 + 1 天（日历日算术）
+        const schedule = DataManager.loadSchedule(userId);
+        const parts = nowPartsForSchedule(schedule);
+        const tomorrow = dateStrToLocalMidnight(shiftDateStr(parts.dateStr, 1));
         const result = await DataManager.getCoursesForDate(userId, tomorrow);
         if (result.error) {
             await this.reply(result.error);
             return true;
         }
         // 尝试生成图片
-        const schedule = DataManager.loadSchedule(userId);
         await this._sendScheduleReply(userId, tomorrow, result, schedule);
         return true;
     }
@@ -197,7 +200,7 @@ export class ScheduleQuery extends plugin {
         const param = match ? match[1].trim() : '';
         // 如果没有参数，显示提示
         if (!param) {
-            const currentWeek = calculateCurrentWeek(schedule.semesterStart);
+            const currentWeek = weekForDateStr(schedule.semesterStart, nowPartsForSchedule(schedule).dateStr);
             await this.reply(
                 `请指定查询条件：\n` +
                 `1. 周数 + 星期（如 #课表查询 ${currentWeek} 1）\n` +
@@ -266,7 +269,7 @@ export class ScheduleQuery extends plugin {
             return true;
         }
         // 尝试匹配自然语言周数
-        const naturalDate = this.parseNaturalLanguageQuery(param, schedule.semesterStart);
+        const naturalDate = this.parseNaturalLanguageQuery(param, schedule);
         if (naturalDate) {
             const result = await DataManager.getCoursesForDate(userId, naturalDate);
             if (result.error) {
@@ -277,7 +280,7 @@ export class ScheduleQuery extends plugin {
             return true;
         }
         // 3. 无法解析，给出提示
-        const currentWeek = calculateCurrentWeek(schedule.semesterStart);
+        const currentWeek = weekForDateStr(schedule.semesterStart, nowPartsForSchedule(schedule).dateStr);
         await this.reply(
             `日期不存在或者格式有误~ 请使用以下格式：\n` +
             `1. #课表查询 周数 星期（如 #课表查询 ${currentWeek} 1）\n` +
@@ -290,10 +293,10 @@ export class ScheduleQuery extends plugin {
     /**
       * 解析自然语言课表查询参数
       * @param {string} param - 用户输入的参数部分（如 "本周三"、"上周五"、"周一"）
-      * @param {string} semesterStart - 学期开始日期 YYYY-MM-DD (仅用于辅助，非必需)
+      * @param {Object} schedule - 用户课表（其有效解释时区决定"本周"的基准日）
       * @returns {Date|null} 成功返回日期对象，失败返回 null
     */
-    parseNaturalLanguageQuery(param, semesterStart) {
+    parseNaturalLanguageQuery(param, schedule) {
         if (!param) return null;
         // 1. 判断相对周偏移
         let weekOffset = 0; // 默认本周
@@ -312,9 +315,9 @@ export class ScheduleQuery extends plugin {
         const weekday = parseWeekday(remaining);
         if (!weekday) return null;
 
-        // 3. 根据相对周和星期几计算具体日期
-        const targetDate = getDateByRelativeWeek(weekOffset, weekday, new Date());
-        return targetDate;
+        // 3. 以用户课表解释时区下的"今天"为基准计算具体日期
+        const today = dateStrToLocalMidnight(nowPartsForSchedule(schedule).dateStr);
+        return getDateByRelativeWeek(weekOffset, weekday, today);
     }
 
     /**
@@ -365,7 +368,7 @@ export class ScheduleQuery extends plugin {
         else if (/^#上周课表$/.test(msg)) { weekOffset = -1; label = '上周'; }
         // 本周/这周 → offset=0
 
-        const currentWeek = calculateCurrentWeek(schedule.semesterStart);
+        const currentWeek = weekForDateStr(schedule.semesterStart, nowPartsForSchedule(schedule).dateStr);
         const targetWeek = currentWeek + weekOffset;
         return await this._showWeeklySchedule(userId, schedule, targetWeek, label);
     }
@@ -394,18 +397,16 @@ export class ScheduleQuery extends plugin {
      */
     _parseWeeklyQuery(param, schedule) {
         if (!param) return null;
+        const currentWeek = weekForDateStr(schedule.semesterStart, nowPartsForSchedule(schedule).dateStr);
         // 匹配：本周 / 这周 / 下周 / 上周
         if (/^(本周|这周)$/.test(param)) {
-            const week = calculateCurrentWeek(schedule.semesterStart);
-            return { week, label: '本周' };
+            return { week: currentWeek, label: '本周' };
         }
         if (/^下周$/.test(param)) {
-            const week = calculateCurrentWeek(schedule.semesterStart) + 1;
-            return { week, label: '下周' };
+            return { week: currentWeek + 1, label: '下周' };
         }
         if (/^上周$/.test(param)) {
-            const week = calculateCurrentWeek(schedule.semesterStart) - 1;
-            return { week, label: '上周' };
+            return { week: currentWeek - 1, label: '上周' };
         }
         // 匹配：第N周 / 第N个周
         const weekNumMatch = param.match(/^第(\d+)周$/);
@@ -435,10 +436,9 @@ export class ScheduleQuery extends plugin {
             return true;
         }
 
-        // 构建7天数据
+        // 构建7天数据（"今天"标记按用户课表解释时区下的日历日）
         const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = dateStrToLocalMidnight(nowPartsForSchedule(schedule).dateStr);
         const days = [];
 
         for (let d = 1; d <= 7; d++) {

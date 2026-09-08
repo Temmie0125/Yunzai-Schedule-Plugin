@@ -4,7 +4,8 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate } from '../utils/timeUtils.js'
+import { calculateRemainingTime, calculateTimeUntil, effectiveTimeZone, nowPartsForSchedule, weekForDateStr } from '../utils/timeUtils.js'
+import { dateStrToLocalMidnight, tzDateStrToUtcMs, weekdayOfDateStr } from '../utils/timeZoneUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -39,18 +40,19 @@ export class GroupSchedulePlugin extends plugin {
     // this.skipStatusPath = 'plugins/schedule/skip-status.json'  翘课状态存储
   }
   // ========== 构建用户上课数据 ==========
-  async _buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname = null) {
+  // 每位成员的"现在/今天/星期/周次"按其课表有效解释时区（显式设置 → ICS推断 → 插件配置 → 系统）独立计算
+  async _buildUserData(userId, scheduleData, fallbackNickname = null) {
     const skipStatus = await DataManager.loadSkipStatus(userId);
     const signature = scheduleData.signature || "此人很懒，还没有设置个性签名~";
     const semesterStart = scheduleData.semesterStart;
     // 当前周数：设置了个人学期开始日期的用户严格按日期计算，未开学时返回 null（不再截断为第1周导致误显示课程）；
     // 无学期开始日期的老数据仍回退到配置中的默认学期开始日期
-    const hasValidStart = semesterStart && !isNaN(new Date(semesterStart));
-    const userCurrentWeek = hasValidStart
-      ? calculateWeekFromDate(semesterStart, new Date())
-      : calculateCurrentWeek(semesterStart);
+    const ctx = nowPartsForSchedule(scheduleData);
+    const currentDay = weekdayOfDateStr(ctx.dateStr);
+    const currentTime = ctx.timeHHMM;
+    const userCurrentWeek = weekForDateStr(semesterStart, ctx.dateStr);
     // 学期未开始：不展示任何课程，等待开学
-    if (hasValidStart && userCurrentWeek === null) {
+    if (userCurrentWeek === null) {
       return {
         userId,
         nickname: fallbackNickname || scheduleData.nickname || `用户${userId}`,
@@ -150,18 +152,24 @@ export class GroupSchedulePlugin extends plugin {
     return { shouldStop: false, notice: null, holidayName: null, isHoliday: false };
   }
   // ========== 获取群成员数据（带自动过期和 memberInfo 备选昵称） ==========
-  async getMemberScheduleData(userId, memberInfo, currentDay, currentTime) {
+  // 成员"现在"状态一律按成员课表的有效解释时区在 _buildUserData 内自行计算
+  async getMemberScheduleData(userId, memberInfo) {
     // 先检查并自动过期翘课状态
     await this.checkAndAutoExpireSkip(userId);
     const scheduleData = DataManager.loadSchedule(userId);
     if (!scheduleData) return null;
     // 优先使用群名片，其次昵称
     const fallbackNickname = memberInfo.card || memberInfo.nickname || null;
-    return this._buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname);
+    return this._buildUserData(userId, scheduleData, fallbackNickname);
   }
   // ========== 获取任意用户数据（不带自动过期，由调用方决定） ==========
-  async getUserScheduleData(userId, scheduleData, currentDay, currentTime) {
-    return this._buildUserData(userId, scheduleData, currentDay, currentTime, null);
+  async getUserScheduleData(userId, scheduleData) {
+    return this._buildUserData(userId, scheduleData, null);
+  }
+  // ========== 命令发起人上下文：群级头部/节假日闸门以发起人课表解释时区为准（无课表退化为插件/系统时区） ==========
+  _nowCtx() {
+    const requesterSchedule = DataManager.loadSchedule(this.e.user_id);
+    return nowPartsForSchedule(requesterSchedule);
   }
   /**
    * 显示群上课情况
@@ -172,28 +180,28 @@ export class GroupSchedulePlugin extends plugin {
       await this.reply("请在群聊中使用此命令")
       return true
     }
-    // 获取当前时间信息
-    const now = new Date()
-    // 全局当前周数，实际上不使用，但作为保留
-    const currentWeek = calculateCurrentWeek()
-    const currentDay = now.getDay() === 0 ? 7 : now.getDay()
-    const currentTime = now.toTimeString().slice(0, 5) // HH:MM
+    // 当前时间信息：群级头部/节假日闸门以命令发起人课表解释时区为准（无课表退化为插件/系统时区）；
+    // 各成员的"现在在上什么课"状态在 _buildUserData 内按成员自己的时区计算
+    const requesterCtx = this._nowCtx()
+    const currentWeek = weekForDateStr(undefined, requesterCtx.dateStr) // 全局展示周数（配置默认学期口径，同旧 calculateCurrentWeek()）
+    const currentDay = weekdayOfDateStr(requesterCtx.dateStr)
+    const now = dateStrToLocalMidnight(requesterCtx.dateStr)
     // 节假日处理（先跳过自动回复，待检测调课后再决定）
-    const { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, currentWeek, true);
+    let { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, currentWeek, true);
 
     const groupMembers = await getGroupMembers(groupId)
     const membersWithSchedule = []
     let hasAnyRescheduled = false;
     for (const member of groupMembers) {
-      const data = await this.getMemberScheduleData(member.user_id, member, currentDay, currentTime);
+      const data = await this.getMemberScheduleData(member.user_id, member);
       if (data) {
         membersWithSchedule.push(data);
       }
-      // 检查是否有调课课程
+      // 检查是否有调课课程（成员学期按群级"今天"日历日折算周次）
       if (isHoliday && !hasAnyRescheduled) {
         const schedule = DataManager.loadSchedule(member.user_id);
         if (schedule && schedule.semesterStart) {
-          const memberWeek = calculateWeekFromDate(schedule.semesterStart, now);
+          const memberWeek = weekForDateStr(schedule.semesterStart, requesterCtx.dateStr);
           if (memberWeek !== null && DataManager.hasRescheduledCoursesForDate(schedule, memberWeek, currentDay)) {
             hasAnyRescheduled = true;
           }
@@ -225,12 +233,13 @@ export class GroupSchedulePlugin extends plugin {
       await this.reply("只有群管理员或主人可以使用此命令");
       return true;
     }
-    const now = new Date();
-    const currentWeek = calculateCurrentWeek();
-    const currentDay = now.getDay() === 0 ? 7 : now.getDay();
-    const currentTime = now.toTimeString().slice(0, 5);
+    // 群级头部/节假日闸门以命令发起人课表解释时区为准；各用户状态按各自时区计算
+    const requesterCtx = this._nowCtx();
+    const currentWeek = weekForDateStr(undefined, requesterCtx.dateStr);
+    const currentDay = weekdayOfDateStr(requesterCtx.dateStr);
+    const now = dateStrToLocalMidnight(requesterCtx.dateStr);
     // 节假日处理（先跳过自动回复，待检测调课后再决定）
-    const { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, currentWeek, true);
+    let { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, currentWeek, true);
     // 获取所有用户课表
     const allUsers = DataManager.getAllUserSchedules();
     if (allUsers.length === 0) {
@@ -244,13 +253,13 @@ export class GroupSchedulePlugin extends plugin {
     for (const { userId, schedule } of allUsers) {
       // 自动过期翘课状态
       await this.checkAndAutoExpireSkip(userId);
-      const userData = await this.getUserScheduleData(userId, schedule, currentDay, currentTime);
+      const userData = await this.getUserScheduleData(userId, schedule);
       if (userData) {
         allUsersData.push(userData);
       }
       // 检查是否有调课课程
       if (isHoliday && !hasAnyRescheduled && schedule.semesterStart) {
-        const memberWeek = calculateWeekFromDate(schedule.semesterStart, now);
+        const memberWeek = weekForDateStr(schedule.semesterStart, requesterCtx.dateStr);
         if (memberWeek !== null && DataManager.hasRescheduledCoursesForDate(schedule, memberWeek, currentDay)) {
           hasAnyRescheduled = true;
         }
@@ -342,14 +351,14 @@ export class GroupSchedulePlugin extends plugin {
       await this.reply(`${botName}似乎未找到成员${targetId}，可能不在本群...`);
       return true;
     }
-    // 当前时间信息
-    const now = new Date();
-    const currentDay = now.getDay() === 0 ? 7 : now.getDay();
-    const currentTime = now.toTimeString().slice(0, 5);
+    // 当前时间信息：节假日闸门/回复头以命令发起人时区为准，目标成员"现在"状态按成员自己时区计算
+    const requesterCtx = this._nowCtx();
+    const currentDay = weekdayOfDateStr(requesterCtx.dateStr);
+    const now = dateStrToLocalMidnight(requesterCtx.dateStr);
     // 节假日处理（先跳过自动回复，待检测调课后再决定）
-    const { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, calculateCurrentWeek(), true);
-    // 获取该成员的上课状态数据
-    const memberData = await this.getMemberScheduleData(targetId, targetMember, currentDay, currentTime);
+    let { shouldStop, notice: globalNotice, holidayName, isHoliday } = await this._handleHoliday(now, weekForDateStr(undefined, requesterCtx.dateStr), true);
+    // 获取该成员的上课状态数据（成员课表时区）
+    const memberData = await this.getMemberScheduleData(targetId, targetMember);
     if (!memberData) {
       if (isHoliday) {
         await this.reply(`今日是【${holidayName}】，法定节假日，无课程安排~`);
@@ -363,7 +372,7 @@ export class GroupSchedulePlugin extends plugin {
       const schedule = DataManager.loadSchedule(targetId);
       let week = null;
       if (schedule && schedule.semesterStart) {
-        week = calculateWeekFromDate(schedule.semesterStart, now);
+        week = weekForDateStr(schedule.semesterStart, requesterCtx.dateStr);
       }
       if (!schedule || week === null || !DataManager.hasRescheduledCoursesForDate(schedule, week, currentDay)) {
         await this.reply(`今日是【${holidayName}】，法定节假日，该成员无课程安排~`);
@@ -372,7 +381,7 @@ export class GroupSchedulePlugin extends plugin {
       globalNotice = `⚠️ 今日为法定节假日（${holidayName}），以下显示为调课后的课程安排。`;
     }
     // 发送图片（仅包含该成员）
-    await this.sendScheduleMessage([memberData], calculateCurrentWeek(), currentDay, globalNotice);
+    await this.sendScheduleMessage([memberData], weekForDateStr(undefined, requesterCtx.dateStr), currentDay, globalNotice);
     return true;
   }
   /**
@@ -410,10 +419,11 @@ export class GroupSchedulePlugin extends plugin {
     // 计算结束时间
     let expireTime = null;
     if (newStatus) {
-      const now = new Date();
-      const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
-      const currentDay = now.getDay() === 0 ? 7 : now.getDay();
-      const currentTime = now.toTimeString().slice(0, 5);
+      // "现在/今天"按该用户课表有效解释时区计算
+      const ctx = nowPartsForSchedule(scheduleData);
+      const currentWeek = weekForDateStr(scheduleData.semesterStart, ctx.dateStr);
+      const currentDay = weekdayOfDateStr(ctx.dateStr);
+      const currentTime = ctx.timeHHMM;
       const todayCourses = scheduleData.courses.filter(course =>
         parseInt(course.day) === currentDay && course.weeks.includes(currentWeek)
       );
@@ -425,11 +435,9 @@ export class GroupSchedulePlugin extends plugin {
       }
       futureCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
       const targetCourse = futureCourses[0]; // 第一个未结束的课程
-      // 构造结束时间点：今日的 targetCourse.endTime 对应的 Date 对象
-      const [hour, minute] = targetCourse.endTime.split(':');
-      const expireDate = new Date(now);
-      expireDate.setHours(parseInt(hour), parseInt(minute), 0, 0);
-      expireTime = expireDate.toISOString();
+      // 构造结束时间点：用户时区"今天"的 targetCourse.endTime → 绝对时刻（跨时区/夏令时正确）
+      const { ms } = tzDateStrToUtcMs(ctx.dateStr, targetCourse.endTime, effectiveTimeZone(scheduleData));
+      expireTime = new Date(ms).toISOString();
       autoCancelMsg = `，将在『${targetCourse.name}』结束时（${targetCourse.endTime}）自动取消`;
     }
     // 更新状态

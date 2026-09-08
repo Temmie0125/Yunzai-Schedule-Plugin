@@ -1,5 +1,6 @@
 // services/wakeupApi.js
 import { ConfigManager } from '../components/ConfigManager.js'
+import { parseIcsScheduleCourses } from './icsScheduleParser.js'
 
 /**
  * 从 WakeUp2ICS API 获取课表数据
@@ -300,110 +301,14 @@ function parseWakeupJsonData(data) {
 }
 
 /**
- * 从 ICS 文本解析课表数据（ICS 格式响应的兜底处理）
+ * 从 ICS 文本解析课表数据（ICS 格式响应的兜底处理，委托 TZID 感知的共享解析器）
  * @param {string} icsText - ICS 文件文本
  * @returns {object} 标准课表数据 { tableName, semesterStart, courses }
  */
 async function parseIcsToSchedule(icsText) {
-  // 动态导入 ical-expander
-  let ICalExpander
-  try {
-    const module = await import('ical-expander')
-    ICalExpander = module.default || module.ICalExpander
-  } catch {
-    throw new Error('ICS 格式需要 ical-expander 依赖，但未能加载')
+  const parsed = parseIcsScheduleCourses(icsText)
+  if (!parsed.ok) {
+    throw new Error(parsed.message)
   }
-
-  const expander = new ICalExpander({ ics: icsText, maxIterations: 5000 })
-  const all = expander.between(new Date(2000, 0, 1), new Date(2100, 0, 1))
-  const occurrences = [...(all.events || []), ...(all.occurrences || [])]
-
-  if (occurrences.length === 0) {
-    throw new Error('ICS 数据中未找到任何课程事件')
-  }
-
-  // 计算学期开始日期（最早事件所在周的周一）
-  const dates = occurrences.map(o => {
-    let sd = o.startDate
-    if (typeof sd.toJSDate === 'function') sd = sd.toJSDate()
-    return sd
-  })
-  const earliest = new Date(Math.min(...dates.map(d => d.getTime())))
-  const semesterStartDate = new Date(earliest)
-  semesterStartDate.setDate(semesterStartDate.getDate() - ((semesterStartDate.getDay() + 6) % 7))
-  const semesterStart = [
-    semesterStartDate.getFullYear(),
-    String(semesterStartDate.getMonth() + 1).padStart(2, '0'),
-    String(semesterStartDate.getDate()).padStart(2, '0')
-  ].join('-')
-
-  // 计算周数
-  const semesterStartMs = semesterStartDate.getTime()
-  const msPerWeek = 7 * 24 * 60 * 60 * 1000
-  const getWeek = (date) => {
-    const diffMs = date.getTime() - semesterStartMs
-    return Math.floor(diffMs / msPerWeek) + 1
-  }
-
-  const courseMap = new Map()
-  for (const occ of occurrences) {
-    let startDate = occ.startDate
-    let endDate = occ.endDate
-    if (typeof startDate.toJSDate === 'function') startDate = startDate.toJSDate()
-    if (typeof endDate.toJSDate === 'function') endDate = endDate.toJSDate()
-
-    const ev = occ.item || occ
-    const summary = ev.summary || '未知课程'
-
-    // 从 location 提取教师（WakeUp ICS 格式：地点 教师）
-    let rawLocation = (ev.location || '').trim()
-    let location = ''
-    let teacher = ''
-    if (rawLocation) {
-      const parts = rawLocation.split(/\s+/)
-      if (parts.length >= 2) {
-        teacher = parts.pop()
-        location = parts.join(' ')
-      } else {
-        location = rawLocation
-      }
-    }
-
-    // 从 description 提取教师（新格式）
-    if (!teacher && ev.description) {
-      const lines = ev.description.split('\n').filter(l => l.trim())
-      if (lines.length > 0) {
-        teacher = lines[lines.length - 1].replace(/[。.]$/, '').trim()
-      }
-    }
-
-    const weekday = startDate.getDay() || 7
-    const startTime = [startDate.getHours(), startDate.getMinutes()]
-      .map(n => String(n).padStart(2, '0')).join(':')
-    const endTime = [endDate.getHours(), endDate.getMinutes()]
-      .map(n => String(n).padStart(2, '0')).join(':')
-
-    const week = getWeek(startDate)
-    if (week === null || week < 1) continue
-
-    const key = `${summary}|${weekday}|${startTime}|${endTime}|${location}|${teacher}`
-    if (!courseMap.has(key)) {
-      courseMap.set(key, {
-        name: summary, day: weekday, startTime, endTime,
-        weeks: new Set(), location, teacher
-      })
-    }
-    courseMap.get(key).weeks.add(week)
-  }
-
-  const courses = Array.from(courseMap.values()).map(c => ({
-    ...c,
-    weeks: Array.from(c.weeks).sort((a, b) => a - b)
-  }))
-
-  if (!courses.length) {
-    throw new Error('未能从 ICS 数据中解析出有效的课程')
-  }
-
-  return { tableName: 'WakeUp课表', semesterStart, courses }
+  return { tableName: 'WakeUp课表', semesterStart: parsed.semesterStart, courses: parsed.courses }
 }
