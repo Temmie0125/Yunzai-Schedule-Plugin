@@ -272,6 +272,8 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
                     text += `   距离上课: ${member.remainingTime}\n`;
                 }
             }
+        } else if (member.status === '学期未开始' && member.semesterStartDate) {
+            text += `   新学期尚未开始，${member.semesterStartDate} 开学\n`;
         } else {
             text += `   今日暂无课程安排\n`;
         }

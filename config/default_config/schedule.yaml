@@ -21,7 +21,7 @@ wakeupAuthType: "None"
 # WakeUp 服务鉴权 Token，留空则不进行鉴权
 wakeupAuthToken: ""
 # 默认学期开始日期
-defaultSemesterStart: "2026-03-02"
+defaultSemesterStart: "2026-08-31"
 # 自定义bot名称
 botName: ""
 # 字体风格

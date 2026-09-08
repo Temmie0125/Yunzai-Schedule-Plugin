@@ -43,7 +43,26 @@ export class GroupSchedulePlugin extends plugin {
     const skipStatus = await DataManager.loadSkipStatus(userId);
     const signature = scheduleData.signature || "此人很懒，还没有设置个性签名~";
     const semesterStart = scheduleData.semesterStart;
-    const userCurrentWeek = calculateCurrentWeek(semesterStart);
+    // 当前周数：设置了个人学期开始日期的用户严格按日期计算，未开学时返回 null（不再截断为第1周导致误显示课程）；
+    // 无学期开始日期的老数据仍回退到配置中的默认学期开始日期
+    const hasValidStart = semesterStart && !isNaN(new Date(semesterStart));
+    const userCurrentWeek = hasValidStart
+      ? calculateWeekFromDate(semesterStart, new Date())
+      : calculateCurrentWeek(semesterStart);
+    // 学期未开始：不展示任何课程，等待开学
+    if (hasValidStart && userCurrentWeek === null) {
+      return {
+        userId,
+        nickname: fallbackNickname || scheduleData.nickname || `用户${userId}`,
+        avatar: await getAvatarUrl(userId),
+        semesterNotStarted: true,
+        status: '学期未开始',
+        semesterStartDate: semesterStart,
+        signature,
+        currentWeek: 1,
+        hasSemesterStart: true
+      };
+    }
     // 计算最大周数，判断学期是否结束
     let maxWeek = 0;
     if (scheduleData.courses && scheduleData.courses.length > 0) {
@@ -471,7 +490,7 @@ export class GroupSchedulePlugin extends plugin {
         return startA.localeCompare(startB);
       });
       // 无课组：按状态优先级排序 → 同类按 QQ 号升序
-      const statusOrder = ['已结束', '无课程', '学期结束'];
+      const statusOrder = ['已结束', '无课程', '学期结束', '学期未开始'];
       noClass.sort((a, b) => {
         const idxA = statusOrder.indexOf(a.status);
         const idxB = statusOrder.indexOf(b.status);

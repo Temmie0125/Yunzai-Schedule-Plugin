@@ -57,16 +57,23 @@ export class ScheduleQuery extends plugin {
             await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
             return false;
         }
-        const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
+        // 未开学时（日期早于个人学期开始日期）提示等待，避免显示错误的"第1周"
+        const hasValidStart = scheduleData.semesterStart && !isNaN(new Date(scheduleData.semesterStart));
+        const currentWeek = hasValidStart
+            ? calculateWeekFromDate(scheduleData.semesterStart, new Date())
+            : calculateCurrentWeek(scheduleData.semesterStart);
+        if (hasValidStart && currentWeek === null) {
+            await this.reply(`📅 你的新学期尚未开始（${scheduleData.semesterStart} 开学），当前暂无课程安排，届时将自动生效~`);
+            return true;
+        }
         const maxWeek = Math.max(...scheduleData.courses.flatMap(c => c.weeks), 0);
         if (maxWeek > 0 && currentWeek > maxWeek) {
             await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
             return true;
         }
-        const totalCourses = scheduleData.courses.length;
-        const thisWeekCourses = scheduleData.courses.filter(course =>
-            course.weeks.includes(currentWeek)
-        ).length;
+        // 课程门数按课程名去重统计：单双周拆分、中途换地点等同一门课只计 1 门（仅统计口径，存储格式不变）
+        const totalCourses = DataManager.countDistinctCourses(scheduleData.courses);
+        const thisWeekCourses = DataManager.countDistinctCoursesInWeek(scheduleData.courses, currentWeek);
         // --- 新增：根据配置和聊天环境处理课表名称 ---
         const config = ConfigManager.getConfig();
         const showTableName = config.showTableName !== false; // 默认为 true

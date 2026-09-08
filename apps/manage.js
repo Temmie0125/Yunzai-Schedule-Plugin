@@ -58,6 +58,10 @@ export class ScheduleManage extends plugin {
                     fnc: "setSemesterStart"
                 },
                 {
+                    reg: "^#(对齐课表|校历对齐|课表对齐|设置校历开学(日|日期))\\s+(.+)$",
+                    fnc: "alignScheduleToCalendar"
+                },
+                {
                     reg: "^#(设置|上传|导入|更新)时间表$",
                     fnc: "updateTimeTable"
                 },
@@ -710,6 +714,52 @@ export class ScheduleManage extends plugin {
         } else {
             await this.reply("❌ 保存失败，请稍后重试");
         }
+        return true;
+    }
+    /**
+     * 对齐课表到真实校历开学日期
+     * 适用于周次以自己第一节课为第1周的课表（如缺少学期开始信息的ICS导入），
+     * 与真实校历存在整体偏移的情况（例：开学第一个月没有课，10-05被当成第1周，实际是校历第5周）。
+     * 与 #设置学期开始（仅改日期、不动周次）不同，本命令会连带把课程周次整体平移，
+     * 上课的具体日期保持不变，仅周次编号与校历对齐。
+     */
+    async alignScheduleToCalendar() {
+        const userId = this.e.user_id;
+        let dateInput = this.e.msg.match(/^#(?:对齐课表|校历对齐|课表对齐|设置校历开学(?:日|日期))\s+(.+)$/)?.[1];
+        if (!dateInput) {
+            await this.reply("请提供你的真实校历开学日期，格式如：#对齐课表 2026-09-07 或 #对齐课表 09-07");
+            return false;
+        }
+        dateInput = dateInput.trim();
+        // 中文日期转换（如"9月7日"）
+        if (/[月日]/.test(dateInput)) {
+            const converted = parseChineseDateToMD(dateInput);
+            if (converted) dateInput = converted;
+        }
+        // 解析日期（支持 YYYY-MM-DD 或 MM-DD）
+        const parsed = parseSemesterStartDate(dateInput);
+        if (!parsed.valid || !parsed.date) {
+            await this.reply(`日期格式无效，请使用 YYYY-MM-DD 或 MM-DD 格式\n例如：#对齐课表 2026-09-07`);
+            return false;
+        }
+        const result = DataManager.realignSemesterToCalendar(userId, parsed.dateStr);
+        if (!result.success) {
+            await this.reply(result.error);
+            return true;
+        }
+        if (result.delta === 0) {
+            await this.reply(`✅ 对齐日期与当前学期开始日期在同一周，已直接更新为 ${result.newStart}（课程周次不变）。\n⚠️ 如需在周次不变的前提下仅调整日期，请使用 #设置学期开始 命令。`);
+            return true;
+        }
+        const sign = result.delta > 0 ? '+' : '';
+        let reply = `✅ 课表已对齐到真实校历开学日 ${result.newStart}\n`;
+        reply += `📅 学期开始：${result.oldStart} → ${result.newStart}\n`;
+        reply += `🗓️ 课程周次整体${sign}${result.delta}：范围由 第${result.oldRange}周 变为 第${result.newRange}周`;
+        if (result.delta > 0) reply += `（例如你原本的第1周现在对应校历第${1 + result.delta}周）`;
+        reply += `\nℹ️ 上课的具体日期保持不变，仅周次编号与校历对齐。`;
+        reply += `\n⚠️ 若想撤销，可再次使用本命令并填入 ${result.oldStart}。`;
+        reply += `\n⚠️ 本命令适用于课表周次以自己第一节课为第1周的情况；若你的课表周次本就是校历周次，仅日期不对，请改用 #设置学期开始。`;
+        await this.reply(reply);
         return true;
     }
     /**

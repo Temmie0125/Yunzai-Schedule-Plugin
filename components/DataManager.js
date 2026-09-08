@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from './ConfigManager.js'
-import { calculateWeekFromDate } from '../utils/timeUtils.js';
+import { calculateWeekFromDate, getMondayOfSameWeek } from '../utils/timeUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
@@ -162,6 +162,44 @@ export class DataManager {
         logger.info(`用户 ${userId} 课表保存成功，昵称: ${fullData.nickname}`)
     }
     /**
+     * 统计课表中的课程门数（按课程名称去重）
+     * 同一门课因单双周拆分、中途更换地点等原因拆成多条记录的只计 1 门，
+     * 保证不同导入源（连堂合并策略不同）统计口径一致。仅影响统计展示，存储格式不变。
+     * @param {Array} courses 课程数组
+     * @returns {number} 去重后的课程门数
+     */
+    static countDistinctCourses(courses) {
+        if (!Array.isArray(courses)) return 0;
+        const names = new Set();
+        let anon = 0;
+        for (const course of courses) {
+            if (!course) continue;
+            // 无课程名的记录各自独立计数，避免被吞掉
+            names.add(course.name || `__未命名课程${++anon}__`);
+        }
+        return names.size;
+    }
+
+    /**
+     * 统计指定周内有课的课程门数（按课程名称去重，与 countDistinctCourses 口径一致）
+     * @param {Array} courses 课程数组
+     * @param {number} week 周数
+     * @returns {number} 该周有排课的课程门数
+     */
+    static countDistinctCoursesInWeek(courses, week) {
+        if (!Array.isArray(courses)) return 0;
+        const names = new Set();
+        let anon = 0;
+        for (const course of courses) {
+            if (!course || !Array.isArray(course.weeks)) continue;
+            if (course.weeks.includes(week)) {
+                names.add(course.name || `__未命名课程${++anon}__`);
+            }
+        }
+        return names.size;
+    }
+
+    /**
    * 获取指定日期的课程
    * @param {number} userId 用户QQ
    * @param {Date} date 查询日期
@@ -172,8 +210,12 @@ export class DataManager {
         if (!schedule) {
             return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
         }
-        const week = calculateWeekFromDate(schedule.semesterStart, date);
+        const hasValidStart = schedule.semesterStart && !isNaN(new Date(schedule.semesterStart));
+        const week = hasValidStart ? calculateWeekFromDate(schedule.semesterStart, date) : null;
         if (week === null) {
+            if (hasValidStart) {
+                return { error: `新学期尚未开始（${schedule.semesterStart} 开学），当前查询日期早于学期开始` };
+            }
             return { error: "查询日期早于学期开始日期，无法计算周数" };
         }
         const day = date.getDay() === 0 ? 7 : date.getDay(); // 1=周一 ... 7=周日
@@ -629,7 +671,7 @@ export class DataManager {
         const semesterStart = schedule.semesterStart;
         if (!semesterStart) return false;
         const weekNum = calculateWeekFromDate(semesterStart, date);
-        if (weekNum === null) return true; // 日期早于学期开始，视为异常结束
+        if (weekNum === null) return false; // 日期早于学期开始：学期尚未开始，不应视为已结束
         // 计算课表最大周数
         let maxWeek = 0;
         if (schedule.courses && schedule.courses.length > 0) {
@@ -1046,6 +1088,90 @@ export class DataManager {
         } catch (err) {
             logger.error(`保存用户 ${userId} 学期开始日期失败: ${err}`);
             return false;
+        }
+    }
+
+    /**
+     * 将课表重新对齐到真实校历开学日期
+     * 适用场景：课表周次以"自己第一节课为第1周"编号（如缺少学期开始信息的 ICS 导入），
+     * 与真实校历存在偏移（例如开学第一个月没有课，10-05 被当成第1周，实际是校历第5周）。
+     * 修正方式：学期开始日期平移到真实开学日期，同时所有课程周次整体平移相同周数，
+     * 课程落在日历上的绝对日期保持不变，仅周次编号与校历对齐。
+     * @param {string|number} userId
+     * @param {string} realDateStr 真实校历开学日期 YYYY-MM-DD（周内任意一天均可）
+     * @returns {{success: boolean, error?: string, delta?: number, oldStart?: string, newStart?: string, oldRange?: string, newRange?: string}}
+     */
+    static realignSemesterToCalendar(userId, realDateStr) {
+        const schedule = this.loadSchedule(userId);
+        if (!schedule) {
+            return { success: false, error: "你还没有设置课程表，请先设置或导入课表哦~" };
+        }
+        if (!Array.isArray(schedule.courses) || schedule.courses.length === 0) {
+            return { success: false, error: "当前课表没有课程数据，无需对齐" };
+        }
+        const realDate = new Date(realDateStr);
+        if (isNaN(realDate)) {
+            return { success: false, error: "日期无效，请使用 YYYY-MM-DD 格式" };
+        }
+        const oldStart = schedule.semesterStart;
+        const oldStartDate = oldStart ? new Date(oldStart) : null;
+        if (!oldStartDate || isNaN(oldStartDate)) {
+            return { success: false, error: "当前课表缺少学期开始日期，请先使用 #设置学期开始 设定日期" };
+        }
+        // 归一化到各自所在周的周一（与全插件周次计算口径一致）
+        const oldMonday = getMondayOfSameWeek(oldStartDate);
+        const realMonday = getMondayOfSameWeek(realDate);
+        const delta = Math.round((oldMonday - realMonday) / (1000 * 60 * 60 * 24 * 7));
+        if (Math.abs(delta) > 26) {
+            return { success: false, error: "与现有学期开始日期间隔超过 26 周，请确认日期是否正确" };
+        }
+        if (delta === 0) {
+            // 同一周：无平移，仅同步日期字段（等效 #设置学期开始）
+            this.updateSemesterStart(userId, realDateStr);
+            return { success: true, delta: 0, oldStart, newStart: realDateStr };
+        }
+        // 统计平移前后的周次范围，平移后任何课程早于第1周则中止，防止破坏数据
+        const allWeeks = [];
+        for (const course of schedule.courses) {
+            if (course && Array.isArray(course.weeks)) {
+                for (const w of course.weeks) {
+                    if (Number(w) > 0) allWeeks.push(Number(w));
+                }
+            }
+        }
+        if (allWeeks.length === 0) {
+            return { success: false, error: "课表中的课程均没有有效的周次信息，无法对齐" };
+        }
+        const oldMin = Math.min(...allWeeks);
+        const oldMax = Math.max(...allWeeks);
+        if (oldMin + delta < 1) {
+            return { success: false, error: `平移 ${Math.abs(delta)} 周后课程周次将早于第1周（原第${oldMin}周 → 第${oldMin + delta}周），请检查日期是否正确` };
+        }
+        // 应用平移：所有课程 weeks 整体 +delta
+        for (const course of schedule.courses) {
+            if (course && Array.isArray(course.weeks)) {
+                course.weeks = course.weeks.map(w => Number(w) + delta);
+            }
+        }
+        schedule.semesterStart = realDateStr;
+        schedule.updateTime = new Date().toISOString();
+        const filePath = path.join(DATA_PATH, `${userId}.json`);
+        try {
+            const dir = path.dirname(filePath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, JSON.stringify(schedule, null, 2), 'utf8');
+            logger.info(`用户 ${userId} 课表已对齐校历：学期开始 ${oldStart} → ${realDateStr}，课程周次整体平移 ${delta} 周`);
+            return {
+                success: true,
+                delta,
+                oldStart,
+                newStart: realDateStr,
+                oldRange: `${oldMin}-${oldMax}`,
+                newRange: `${oldMin + delta}-${oldMax + delta}`
+            };
+        } catch (err) {
+            logger.error(`保存用户 ${userId} 课表对齐失败: ${err}`);
+            return { success: false, error: "保存失败，请稍后重试" };
         }
     }
 }

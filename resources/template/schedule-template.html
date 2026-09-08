@@ -427,6 +427,10 @@
             --status-color: #D81B60;
         }
 
+        .status-学期未开始 {
+            --status-color: #9575CD;
+        }
+
         .status-学期结束 {
             --status-color: #6c757d;
         }
@@ -510,12 +514,13 @@
                 member.status === '已结束' ? '#379151' : 
                 member.status === '无课程' ? '#7F7F7F' : 
                 member.status === '分身中' ? '#D81B60' : 
+                member.status === '学期未开始' ? '#9575CD' :
                 member.status === '学期结束' ? '#6c757d' : '#00897B' 
             }};">
                 <!-- 头像区域 -->
                 <div class="member-avatar">
                     <img src="{{member.avatar}}" alt="{{member.nickname}}">
-                    {{if member.skipStatus && member.status !== '学期结束'}}
+                    {{if member.skipStatus && member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <span class="skip-tag">翘课模式</span>
                     {{/if}}
                 </div>
@@ -523,7 +528,7 @@
                 <!-- 右侧信息容器：昵称 + 状态行 -->
                 <div class="member-info-right">
                     <div class="member-name">{{member.nickname}}</div>
-                    {{if member.status !== '学期结束'}}
+                    {{if member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <div class="member-status-row">
                         <div class="member-status status-{{member.status}}">{{member.status}}</div>
                         {{if member.currentCourse && member.status !== '已结束' && member.status !== '学期结束'}}
@@ -535,14 +540,29 @@
                     </div>
                     {{else}}
                     <div class="member-status-row">
+                        {{if member.status === '学期未开始'}}
+                        <div class="member-status status-学期未开始">学期未开始</div>
+                        <span class="member-week">{{member.semesterStartDate}} 开学</span>
+                        {{else}}
                         <div class="member-status status-学期结束">学期结束</div>
+                        {{/if}}
                     </div>
                     {{/if}}
                 </div>
 
                 <!-- 课程信息区域 -->
                 <div class="course-section">
-                    {{if member.status === '学期结束'}}
+                    {{if member.status === '学期未开始'}}
+                    <!-- 学期未开始专用显示：图标+文本同行 -->
+                    <div class="course-info-row">
+                        <span class="course-icon" style="color: #999;">📅</span>
+                        <span class="course-info" style="color: #999;">新学期尚未开始，{{member.semesterStartDate}} 开学</span>
+                    </div>
+                    {{if member.signature}}
+                    <div class="member-signature">💭 {{member.signature}}</div>
+                    {{/if}}
+
+                    {{else if member.status === '学期结束'}}
                     <!-- 学期结束专用显示：图标+文本同行 -->
                     <div class="course-info-row">
                         <span class="course-icon" style="color: #999;">📅</span>

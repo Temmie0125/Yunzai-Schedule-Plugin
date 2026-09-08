@@ -183,7 +183,7 @@ function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabe
   if (scheduleData.semesterStart) {
     replyMsg += `📅 学期开始：${scheduleData.semesterStart}\n`;
   }
-  replyMsg += `📖 课程数量：${scheduleData.courses.length} 门\n`;
+  replyMsg += `📖 课程数量：${DataManager.countDistinctCourses(scheduleData.courses)} 门\n`;
   replyMsg += `👤 昵称：${nickname}`;
   if (signature) replyMsg += `\n💬 签名：${signature}`;
   if (nickname === String(userId)) {
@@ -426,7 +426,7 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     }
     replyMsg += `📚 课表名称：${tableName}\n`;
     replyMsg += `📅 学期开始：${semesterStart}\n`;
-    replyMsg += `📖 课程数量：${courses.length} 门\n`;
+    replyMsg += `📖 课程数量：${DataManager.countDistinctCourses(courses)} 门\n`;
     replyMsg += `👤 昵称：${nickname}`;
     if (signature) replyMsg += `\n💬 签名：${signature}`;
     replyMsg += `\n使用 #今日课表 查看今日课程。`;
