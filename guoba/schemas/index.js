@@ -2,8 +2,15 @@
 export const schemas = [
     // 分组
     {
-        component: "SOFT_GROUP_BEGIN",
-        label: "全局设置"
+        component: 'SOFT_GROUP_BEGIN',
+        label: '全局设置'
+    },
+    {
+        field: "debugMode",
+        label: "调试模式",
+        component: "Switch",
+        defaultValue: false,
+        bottomHelpMessage: "开启后会打印高频扫描等详细日志（如上课提醒/翘课扫描的开始与结束）。关闭时仅打印关键日志（配置重载、实际发送提醒、实际处理翘课状态等），避免刷屏。"
     },
     {
         field: "botName",
@@ -201,6 +208,32 @@ export const schemas = [
         },
         defaultValue: 60,
         bottomHelpMessage: "自动检查翘课的时间间隔（分钟）"
+    },
+    {
+        component: 'Divider',
+        label: '上课提醒设置'
+    },
+    {
+        field: "classReminderEnabled",
+        label: "上课提醒功能",
+        component: "Switch",
+        defaultValue: false,
+        bottomHelpMessage: "上课提醒功能总开关。开启后，用户可通过 #开启上课提醒 使用（需加Bot好友）。关闭则全局禁用该功能。"
+    },
+    {
+        field: "classReminderScanInterval",
+        label: "上课提醒扫描间隔",
+        component: "InputNumber",
+        required: true,
+        componentProps: {
+            min: 1,
+            max: 30,
+            step: 1,
+            placeholder: '请输入间隔（分钟）',
+            addonAfter: '分钟'
+        },
+        defaultValue: 1,
+        bottomHelpMessage: "扫描课程并发送提醒的时间间隔（分钟）。默认1分钟，精度越高提醒越准时。"
     },
     // 其他配置项保持不变
     {

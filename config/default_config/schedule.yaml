@@ -7,6 +7,12 @@ maxRenderRetry: 1
 renderTimeOut: 10000
 autoCancelCheckEnabled: false    
 autoCancelCheckInterval: 60
+# 上课提醒功能总开关（管理员可全局禁用，默认关闭，用户需手动开启）
+classReminderEnabled: false
+# 上课提醒扫描间隔（分钟），精度越高提醒越准时，默认1分钟
+classReminderScanInterval: 1
+# 调试模式：开启后会打印高频扫描等详细日志（默认关闭，避免刷屏）
+debugMode: false
 birthdayPushHour: 0
 allowSelfModify: true
 birthdayWhitelistGroups: []

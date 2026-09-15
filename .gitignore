@@ -9,3 +9,4 @@ config/config/
 node_modules/
 *.log
 /CLAUDE.md
+.opencode/

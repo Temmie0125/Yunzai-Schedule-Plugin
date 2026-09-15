@@ -6,6 +6,8 @@ import { watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import { startSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { reloadSkipExpireScheduler } from './components/SkipExpireScheduler.js';
+import { startClassReminderScheduler, reloadClassReminderScheduler } from './components/ClassReminderScheduler.js';
+import { debugLog } from './components/common.js';
 import { CONFIG_PATH, CONFIG_FILE } from './components/ConfigManager.js';
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
@@ -40,6 +42,8 @@ const loadPlugins = async () => {
     });
     // 启动翘课过期扫描定时器（内部自动防止重复启动）
     startSkipExpireScheduler();
+    // 启动上课提醒扫描定时器（内部自动防止重复启动）
+    startClassReminderScheduler();
     return apps;
 };
 // 定义全局事件总线
@@ -86,7 +90,7 @@ function startConfigWatcher() {
                 }
                 // 内容完全相同则跳过
                 if (newContent === lastConfigContent) {
-                    logger.mark('[课程表插件] 配置文件内容未变化，跳过重载');
+                    debugLog('mark', '[课程表插件] 配置文件内容未变化，跳过重载');
                     reloadTimer = null;
                     return;
                 }
@@ -94,7 +98,7 @@ function startConfigWatcher() {
                 try {
                     const oldConfig = YAML.parse(lastConfigContent || '{}');
                     const newConfig = YAML.parse(newContent);
-                    const keysToCompare = ['pushHour', 'birthdayPushHour', 'autoCancelCheckEnabled', 'autoCancelCheckInterval'];
+                    const keysToCompare = ['pushHour', 'birthdayPushHour', 'autoCancelCheckEnabled', 'autoCancelCheckInterval', 'classReminderEnabled', 'classReminderScanInterval'];
                     let hasRealChange = false;
                     for (const key of keysToCompare) {
                         if (oldConfig[key] !== newConfig[key]) {
@@ -103,7 +107,7 @@ function startConfigWatcher() {
                         }
                     }
                     if (!hasRealChange) {
-                        logger.mark('[课程表插件] 关键配置字段未变化，跳过重载');
+                        debugLog('mark', '[课程表插件] 关键配置字段未变化，跳过重载');
                         lastConfigContent = newContent; // 更新缓存
                         reloadTimer = null;
                         return;
@@ -111,9 +115,10 @@ function startConfigWatcher() {
                 } catch (parseErr) {
                     logger.warn('[课程表插件] 配置解析失败，按变化处理', parseErr);
                 }
-                logger.info('[课程表插件] 检测到 schedule.yaml 实质性变化，触发重载事件');
+                logger.mark('[课程表插件] 检测到 schedule.yaml 实质性变化，触发重载事件');
                 lastConfigContent = newContent;
                 reloadSkipExpireScheduler();
+                reloadClassReminderScheduler();
                 global.scheduleEvents.emit({ type: 'config-changed', file: configFile });
                 reloadTimer = null;
             }, 500);

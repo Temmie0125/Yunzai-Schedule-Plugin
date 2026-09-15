@@ -42,6 +42,11 @@ export class ConfigManager {
             renderTimeOut: 10000,     // 渲染超时时间（ms）
             autoCancelCheckEnabled: false,
             autoCancelCheckInterval: 60,
+            // 调试模式：开启后会打印高频扫描等详细日志（默认关闭，避免刷屏）
+            debugMode: false,
+            // 上课提醒配置
+            classReminderEnabled: false,   // 上课提醒功能总开关（管理员可全局禁用）
+            classReminderScanInterval: 1,  // 上课提醒扫描间隔（分钟）
             // 生日配置
             birthdayPushHour: 0,        // 生日推送小时，默认0点
             allowSelfModify: true,       // 允许用户自行修改/重新设置生日
@@ -69,6 +74,11 @@ export class ConfigManager {
         if (config.wakeupApiEndpoint === undefined) config.wakeupApiEndpoint = "/parse";
         if (config.wakeupAuthType === undefined) config.wakeupAuthType = "Bearer";
         if (config.wakeupAuthToken === undefined) config.wakeupAuthToken = "";
+        // 上课提醒默认值兜底
+        if (config.classReminderEnabled === undefined) config.classReminderEnabled = defaultConfig.classReminderEnabled;
+        if (!config.classReminderScanInterval) config.classReminderScanInterval = defaultConfig.classReminderScanInterval;
+        // 调试模式默认值兜底
+        if (config.debugMode === undefined) config.debugMode = defaultConfig.debugMode;
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -115,6 +125,8 @@ export class ConfigManager {
             pushHour, showTableName, autoRecallCode,
             renderScale, renderRestartCount, maxRenderRetry, renderTimeOut,
             autoCancelCheckEnabled, autoCancelCheckInterval,
+            classReminderEnabled, classReminderScanInterval,
+            debugMode,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
@@ -130,6 +142,8 @@ export class ConfigManager {
             renderScale, renderRestartCount, maxRenderRetry, renderTimeOut,
             autoCancelCheckEnabled,
             autoCancelCheckInterval,
+            classReminderEnabled, classReminderScanInterval,
+            debugMode,
             birthdayPushHour, allowSelfModify,
             birthdayWhitelistGroups, birthdayBlacklistGroups,
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,

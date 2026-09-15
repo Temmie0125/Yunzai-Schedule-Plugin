@@ -6,6 +6,7 @@ import { calculateWeekFromDate, getMondayOfSameWeek } from '../utils/timeUtils.j
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
+const CLASS_REMINDER_PATH = path.join(DATA_PATH, 'class-reminder.json'); // 上课提醒配置
 const BIRTHDAY_DATA_PATH = path.join(DATA_PATH, 'birthdayData.json');
 const HOLIDAY_RESOURCE_PATH = path.join(process.cwd(), 'plugins/schedule/resources/holiday/'); // 节假日数据目录
 // 节假日数据缓存（Map<年份, 节假日对象>）
@@ -396,7 +397,8 @@ export class DataManager {
                     list: [
                         { icon: 9, title: "#群课表", desc: "查看群友上课状态" },
                         { icon: 10, title: "#翘课", desc: "开启/关闭翘课模式" },
-                        { icon: 11, title: "#开启课表订阅", desc: "开启明日课表推送(需加好友)" }
+                        { icon: 11, title: "#开启课表订阅", desc: "开启明日课表推送(需加好友)" },
+                        { icon: 12, title: "#开启上课提醒", desc: "上课前提醒(需加好友)，可带阈值如 15 分钟" }
                     ]
                 }
             ]
@@ -416,7 +418,8 @@ export class DataManager {
 【#我的课表】查看自己的相关信息
 【#课程表|群课表】查看（视奸）群友的上课状态
 【#翘课|取消翘课】开关翘课状态
-【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）`
+【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）
+【#开启|关闭上课提醒 [阈值]】开关上课提醒（需要加bot好友），阈值5~60分钟(5的倍数)，默认10分钟`
     }
 
     /**
@@ -465,6 +468,68 @@ export class DataManager {
         const status = await this.loadReminderStatus();
         // 只保留状态为 true 的用户
         return Object.keys(status).filter(userId => status[userId] === true);
+    }
+
+    // ---------- 上课提醒配置 ----------
+    /**
+     * 加载所有上课提醒配置
+     * @returns {Promise<Object>} 键为用户ID，值为 { enabled: boolean, threshold: number }
+     */
+    static async loadClassReminderConfig() {
+        if (!fs.existsSync(CLASS_REMINDER_PATH)) return {};
+        try {
+            return JSON.parse(fs.readFileSync(CLASS_REMINDER_PATH, 'utf8')) || {};
+        } catch (err) {
+            logger.error(`[上课提醒] 读取配置失败: ${err}`);
+            return {};
+        }
+    }
+
+    /**
+     * 保存上课提醒配置
+     * @param {Object} config
+     */
+    static async saveClassReminderConfig(config) {
+        const dir = path.dirname(CLASS_REMINDER_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(CLASS_REMINDER_PATH, JSON.stringify(config, null, 2), 'utf8');
+    }
+
+    /**
+     * 获取单个用户的上课提醒配置
+     * @param {string|number} userId
+     * @returns {Promise<{ enabled: boolean, threshold: number }>}
+     */
+    static async getClassReminderConfig(userId) {
+        const all = await this.loadClassReminderConfig();
+        const raw = all[userId];
+        if (!raw) return { enabled: false, threshold: null };
+        return { enabled: raw.enabled === true, threshold: raw.threshold ?? null };
+    }
+
+    /**
+     * 设置用户上课提醒配置
+     * @param {string|number} userId
+     * @param {boolean} enabled
+     * @param {number} [threshold] 提前提醒分钟数（仅 enabled=true 时有效）
+     */
+    static async setClassReminderConfig(userId, enabled, threshold = null) {
+        const all = await this.loadClassReminderConfig();
+        if (enabled) {
+            all[userId] = { enabled: true, threshold };
+        } else {
+            delete all[userId];
+        }
+        await this.saveClassReminderConfig(all);
+    }
+
+    /**
+     * 获取所有开启上课提醒的用户ID列表
+     * @returns {Promise<string[]>}
+     */
+    static async getAllClassReminderUsers() {
+        const all = await this.loadClassReminderConfig();
+        return Object.keys(all).filter(userId => all[userId] && all[userId].enabled === true);
     }
     /**
      * 加载生日数据

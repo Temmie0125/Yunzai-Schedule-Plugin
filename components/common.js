@@ -1,6 +1,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigManager } from "./ConfigManager.js"
+
+/**
+ * 调试日志工具：仅在配置开启 debugMode 时打印非关键日志，避免高频扫描刷屏
+ * 用法：debugLog('info', '[上课提醒] ...') ；调试关闭时直接静默
+ * @param {string} level 日志级别 info/mark/warn/debug
+ * @param {...any} args 透传给 logger 的参数
+ */
+export function debugLog(level = 'info', ...args) {
+    try {
+        const config = ConfigManager.getConfig();
+        if (config.debugMode !== true) return;
+    } catch {
+        return;
+    }
+    const fn = typeof logger[level] === 'function' ? logger[level] : logger.info;
+    fn.apply(logger, args);
+}
+
+/**
+ * 判断调试模式是否开启
+ * @returns {boolean}
+ */
+export function isDebugMode() {
+    try {
+        return ConfigManager.getConfig().debugMode === true;
+    } catch {
+        return false;
+    }
+}
+
 /**
  *
  * 制作转发消息
