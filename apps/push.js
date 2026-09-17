@@ -5,6 +5,7 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { generateUserScheduleImage } from '../components/Renderer.js'
 import { calculateWeekFromDate } from '../utils/timeUtils.js'
+import { checkHolidayUpdate } from '../services/holidayUpdater.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 export class SchedulePush extends plugin {
@@ -63,7 +64,13 @@ export class SchedulePush extends plugin {
     }
     try {
       logger.info('[推送任务] 开始加载定时任务...');
-      global.__schedulePushJob = schedule.scheduleJob(pushCron, () => {
+      global.__schedulePushJob = schedule.scheduleJob(pushCron, async () => {
+        // 与课表推送共用定时节点：推送前检查更新节假日数据（内部有每日一次守卫，更新失败不影响推送）
+        try {
+          await checkHolidayUpdate();
+        } catch (err) {
+          logger.warn(`[节假日数据] 定时更新失败，本次推送将使用现有数据: ${err.message}`);
+        }
         SchedulePush.pushTomorrowSchedule();
       });
       global.__schedulePushCron = pushCron;

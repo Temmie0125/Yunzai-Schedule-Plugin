@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { startSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { reloadSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { startClassReminderScheduler, reloadClassReminderScheduler } from './components/ClassReminderScheduler.js';
+import { startupCheckHolidayUpdate } from './services/holidayUpdater.js';
 import { debugLog } from './components/common.js';
 import { CONFIG_PATH, CONFIG_FILE } from './components/ConfigManager.js';
 const require = createRequire(import.meta.url);
@@ -44,6 +45,8 @@ const loadPlugins = async () => {
     startSkipExpireScheduler();
     // 启动上课提醒扫描定时器（内部自动防止重复启动）
     startClassReminderScheduler();
+    // 补检节假日数据更新（每日一次守卫，与课表推送节点共用配额；异步执行不阻塞启动）
+    startupCheckHolidayUpdate();
     return apps;
 };
 // 定义全局事件总线

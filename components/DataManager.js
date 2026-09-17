@@ -8,7 +8,8 @@ const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
 const CLASS_REMINDER_PATH = path.join(DATA_PATH, 'class-reminder.json'); // 上课提醒配置
 const BIRTHDAY_DATA_PATH = path.join(DATA_PATH, 'birthdayData.json');
-const HOLIDAY_RESOURCE_PATH = path.join(process.cwd(), 'plugins/schedule/resources/holiday/'); // 节假日数据目录
+const HOLIDAY_DATA_PATH = path.join(DATA_PATH, 'holiday/'); // 节假日自动更新数据目录（优先，gitignored）
+const HOLIDAY_RESOURCE_PATH = path.join(process.cwd(), 'plugins/schedule/resources/holiday/'); // 节假日打包资源目录（兜底）
 // 节假日数据缓存（Map<年份, 节假日对象>）
 let holidayCache = new Map();
 export class DataManager {
@@ -686,25 +687,37 @@ export class DataManager {
     }
     /**
      * 加载指定年份的节假日数据
+     * 优先读取自动更新的数据目录（每日随课表推送节点更新），缺失时回退到插件自带的资源目录
      * @param {number} year - 年份
      * @returns {object|null} holiday 对象（key: MM-DD, value: 节假日信息）
      */
     static loadHolidayData(year) {
         if (holidayCache.has(year)) return holidayCache.get(year);
-        const filePath = path.join(HOLIDAY_RESOURCE_PATH, `${year}.json`);
-        if (!fs.existsSync(filePath)) {
-            logger.warn(`[课程表插件] 节假日数据文件不存在: ${filePath}`);
-            return null;
+        const searchPaths = [
+            path.join(HOLIDAY_DATA_PATH, `${year}.json`),
+            path.join(HOLIDAY_RESOURCE_PATH, `${year}.json`)
+        ];
+        for (const filePath of searchPaths) {
+            if (!fs.existsSync(filePath)) continue;
+            try {
+                const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                const holidays = data.holiday || {};
+                holidayCache.set(year, holidays);
+                return holidays;
+            } catch (err) {
+                logger.error(`[课程表插件] 读取节假日数据失败: ${filePath} ${err}`);
+            }
         }
-        try {
-            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-            const holidays = data.holiday || {};
-            holidayCache.set(year, holidays);
-            return holidays;
-        } catch (err) {
-            logger.error(`[课程表插件] 读取节假日数据失败: ${err}`);
-            return null;
-        }
+        logger.warn(`[课程表插件] ${year} 年节假日数据不存在（数据目录与资源目录均未找到）`);
+        return null;
+    }
+
+    /**
+     * 清除指定年份的节假日数据缓存（节假日数据更新后调用，使新数据立即生效）
+     * @param {number} year - 年份
+     */
+    static clearHolidayCache(year) {
+        holidayCache.delete(year);
     }
     /**
  * 获取指定日期的节假日/调休信息
