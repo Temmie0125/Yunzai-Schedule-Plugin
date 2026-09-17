@@ -4,6 +4,7 @@ import { fetchStarlinkSchedule } from './starlinkApi.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
 import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate } from '../utils/timeUtils.js'
+import { normalizeIcsTimezoneIds } from '../utils/icsTimezone.js'
 import ICalExpander from 'ical-expander';
 // 默认节次时间映射
 const DEFAULT_TIME_SLOTS = {
@@ -484,7 +485,7 @@ export async function importScheduleFromStarlinkCode(userId, code, event) {
  */
 export async function importScheduleFromIcsData(userId, icsText, event) {
   try {
-    const expander = new ICalExpander({ ics: icsText, maxIterations: 5000 });
+    const expander = new ICalExpander({ ics: normalizeIcsTimezoneIds(icsText), maxIterations: 5000 });
     const all = expander.between(new Date(2000, 0, 1), new Date(2100, 0, 1));
     const occurrences = [...(all.events || []), ...(all.occurrences || [])];
 
