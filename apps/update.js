@@ -197,7 +197,9 @@ export class ScheduleUpdate extends plugin {
         const cmd = `git -C "${PLUGIN_PATH}" symbolic-ref --short HEAD`
         const { stdout, error } = await this.execAsync(cmd)
         if (error) return 'main'  // 默认分支
-        return stdout.trim()
+        const branch = stdout.trim()
+        // 校验分支名只包含安全字符，避免拼接到 shell 命令时被注入
+        return /^[\w./-]+$/.test(branch) ? branch : 'main'
     }
 
     // 获取当前 commit id

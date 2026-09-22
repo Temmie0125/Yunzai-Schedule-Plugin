@@ -490,7 +490,7 @@ export class GroupSchedulePlugin extends plugin {
         return startA.localeCompare(startB);
       });
       // 无课组：按状态优先级排序 → 同类按 QQ 号升序
-      const statusOrder = ['已结束', '无课程', '学期结束', '学期未开始'];
+      const statusOrder = ['已结束', '无课程', '学期未开始', '学期结束'];
       noClass.sort((a, b) => {
         const idxA = statusOrder.indexOf(a.status);
         const idxB = statusOrder.indexOf(b.status);
