@@ -71,9 +71,54 @@ function mergeConsecutiveCourses(courses) {
 }
 
 /**
+ * 解析星链课表 JSON 中的 timetable（自定义时间表）字段
+ * @param {object} timetable - { name, classDuration, breakDuration, items: [{ section, startHour, startMinute, endHour, endMinute }] }
+ * @returns {Array|null} [{ number, startTime, endTime }] 格式的时间段数组；字段缺失或无有效项时返回 null
+ */
+export function parseStarlinkTimetable(timetable) {
+  if (!timetable || !Array.isArray(timetable.items) || timetable.items.length === 0) return null;
+  const formatHM = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const timeSlots = [];
+  const seenSections = new Set();
+  for (const item of timetable.items) {
+    const section = Number(item?.section);
+    const startHour = Number(item?.startHour);
+    const startMinute = Number(item?.startMinute ?? 0);
+    const endHour = Number(item?.endHour);
+    const endMinute = Number(item?.endMinute ?? 0);
+    // 校验节次与时间数值的合法性，异常项跳过
+    if (!Number.isInteger(section) || section <= 0 || seenSections.has(section)) continue;
+    if (![startHour, startMinute, endHour, endMinute].every(Number.isInteger)) continue;
+    if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) continue;
+    if (startMinute < 0 || startMinute > 59 || endMinute < 0 || endMinute > 59) continue;
+    const startTime = formatHM(startHour, startMinute);
+    const endTime = formatHM(endHour, endMinute);
+    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) continue;
+    timeSlots.push({ number: section, startTime, endTime });
+    seenSections.add(section);
+  }
+  if (!timeSlots.length) return null;
+  timeSlots.sort((a, b) => a.number - b.number);
+  return timeSlots;
+}
+
+/**
+ * 将时间段数组转换为节次→时间映射（用于课程节次换算）
+ * @param {Array} timeSlots - [{ number, startTime, endTime }]
+ * @returns {object} { [number]: { start, end } }
+ */
+export function timeSlotsToSectionMap(timeSlots) {
+  const map = {};
+  for (const ts of timeSlots) {
+    map[ts.number] = { start: ts.startTime, end: ts.endTime };
+  }
+  return map;
+}
+
+/**
  * 通过星链分享码获取课表数据并转换为统一格式
  * @param {string} shareCode
- * @returns {Promise<{ tableName: string, semesterStart: string, courses: array }>}
+ * @returns {Promise<{ tableName: string, semesterStart: string, courses: array, timeSlots?: array }>}
  */
 export async function fetchStarlinkSchedule(shareCode) {
   const url = `https://api.starlinkkb.cn/share/curriculum/${shareCode}`;
@@ -82,9 +127,15 @@ export async function fetchStarlinkSchedule(shareCode) {
   const resJson = await response.json();
   const data = resJson.data;
   if (!data || !data.courses) throw new Error('无效的星链课表数据');
-  // 时间段定义
+  // 时间段定义：优先解析课表自带的 timetable 字段，其次兼容旧版 timeSlots，均无则使用默认
   let timeSlots = DEFAULT_TIME_SLOTS;
-  if (data.timeSlots && Array.isArray(data.timeSlots)) {
+  const timetableSlots = parseStarlinkTimetable(data.timetable);
+  if (!timetableSlots && data.timetable) {
+    logger.warn('[星链导入] 检测到 timetable 字段但解析失败，回退到兼容流程');
+  }
+  if (timetableSlots) {
+    timeSlots = timeSlotsToSectionMap(timetableSlots);
+  } else if (data.timeSlots && Array.isArray(data.timeSlots)) {
     const custom = {};
     for (const ts of data.timeSlots) {
       custom[ts.section] = { start: ts.startTime, end: ts.endTime };
@@ -139,6 +190,8 @@ export async function fetchStarlinkSchedule(shareCode) {
     tableName,
     semesterStart,
     courses: merged,
-    updateTime: new Date().toISOString()
+    updateTime: new Date().toISOString(),
+    // 课表自带的 timetable 解析成功时随课表返回，导入时一并保存为用户时间表配置
+    timeSlots: timetableSlots || undefined
   };
 }

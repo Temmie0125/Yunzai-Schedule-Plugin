@@ -1,6 +1,6 @@
 // services/scheduleImporter.js
 import { fetchScheduleFromAPI } from './wakeupApi.js'
-import { fetchStarlinkSchedule } from './starlinkApi.js'
+import { fetchStarlinkSchedule, parseStarlinkTimetable, timeSlotsToSectionMap } from './starlinkApi.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
 import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate } from '../utils/timeUtils.js'
@@ -78,12 +78,18 @@ function mergeConsecutiveCourses(courses) {
  * 将星链课表 JSON 转换为标准课表格式
  * @param {object} jsonData - 星链原始 JSON
  * @param {object} config - 全局配置
- * @returns {object} 标准课表对象 { tableName, semesterStart, courses }
+ * @returns {object} 标准课表对象 { tableName, semesterStart, courses, timeSlots }
  */
 function convertStarlinkJsonToStandard(jsonData, config) {
-  // 获取时间槽映射（优先使用 JSON 中的 timeSlots，否则默认）
+  // 获取时间槽映射（优先解析 timetable 自定义时间表，其次兼容旧版 timeSlots，均无则默认）
   let timeSlots = DEFAULT_TIME_SLOTS;
-  if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots)) {
+  const timetableSlots = parseStarlinkTimetable(jsonData.timetable);
+  if (!timetableSlots && jsonData.timetable) {
+    logger.warn(`[课表导入] 星链格式：timetable 字段解析失败，回退到兼容流程`);
+  }
+  if (timetableSlots) {
+    timeSlots = timeSlotsToSectionMap(timetableSlots);
+  } else if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots)) {
     const custom = {};
     for (const ts of jsonData.timeSlots) {
       custom[ts.section] = { start: ts.startTime, end: ts.endTime };
@@ -136,7 +142,7 @@ function convertStarlinkJsonToStandard(jsonData, config) {
   }
   const tableName = jsonData.name || jsonData.tableName || '星链课表';
 
-  return { tableName, semesterStart, courses: merged };
+  return { tableName, semesterStart, courses: merged, timeSlots: timetableSlots };
 }
 
 /**
@@ -153,6 +159,7 @@ function isStarlinkJsonFormat(jsonData) {
 }
 /**
  * 通用：保存课表并保留用户原有昵称/签名
+ * 课表数据自带时间表配置时（如星链 timetable 解析结果）随课表一并保存，否则保留用户原有配置
  */
 async function saveScheduleWithUserData(userId, scheduleData, event) {
   const oldData = DataManager.loadSchedule(userId);
@@ -161,7 +168,9 @@ async function saveScheduleWithUserData(userId, scheduleData, event) {
   if (!nickname) {
     nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
   }
-  DataManager.saveSchedule(userId, scheduleData, nickname, signature);
+  const timeSlots = (Array.isArray(scheduleData.timeSlots) && scheduleData.timeSlots.length)
+    ? scheduleData.timeSlots : undefined;
+  DataManager.saveSchedule(userId, scheduleData, nickname, signature, timeSlots);
   return { nickname, signature };
 }
 
@@ -284,6 +293,8 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
       courses = converted.courses;
       semesterStart = converted.semesterStart;
       tableName = converted.tableName;
+      // 课表自带的 timetable 解析成功时携带，用于同步保存为用户时间表配置
+      importedTimeSlots = converted.timeSlots;
       if (!semesterStart || semesterStart === config.defaultSemesterStart) {
         missingSemesterStart = true;
       }
@@ -424,6 +435,11 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     replyMsg += `✅ 课表导入成功！\n`;
     if (isStarlink) {
       replyMsg += `✨ 检测到星链课表格式，导入成功！\n`;
+      if (importedTimeSlots) {
+        replyMsg += `🕘 已同步课表自带的时间表，共 ${importedTimeSlots.length} 节\n`;
+      } else {
+        replyMsg += `⏰ 未识别到课表自带的时间表，已按默认节次解析，可发送 #导入时间表 更新上课时间\n`;
+      }
     }
     replyMsg += `📚 课表名称：${tableName}\n`;
     replyMsg += `📅 学期开始：${semesterStart}\n`;
@@ -468,6 +484,11 @@ export async function importScheduleFromStarlinkCode(userId, code, event) {
 
     const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
     let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "✨ 星链", true, !!event.group);
+    if (Array.isArray(scheduleData.timeSlots) && scheduleData.timeSlots.length) {
+      replyMsg += `\n🕘 已同步课表自带的时间表，共 ${scheduleData.timeSlots.length} 节`;
+    } else {
+      replyMsg += `\n⏰ 未识别到课表自带的时间表，已按默认节次解析，可发送 #导入时间表 更新上课时间`;
+    }
     replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
 
     return { success: true, message: replyMsg };
