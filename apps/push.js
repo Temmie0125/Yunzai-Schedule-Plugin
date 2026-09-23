@@ -114,6 +114,13 @@ export class SchedulePush extends plugin {
    */
   async disableReminder(e) {
     const userId = e.user_id;
+    const botName = getBotName(e);
+    if (!checkFriend(userId)) {
+      await e.reply(
+        `❌ 操作失败！请先添加${botName}为好友，才能管理课表订阅哦~\n`
+      );
+      return false;
+    }
     await DataManager.setReminderStatus(userId, false);
     await e.reply("✅ 已关闭课表订阅");
     return true;
