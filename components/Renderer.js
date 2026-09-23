@@ -210,7 +210,7 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
         currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         updateTime: now.toLocaleString('zh-CN'),
         totalMembers: members.length,
-        studyingCount: members.filter(m => m.status === '进行中').length,
+        studyingCount: members.filter(m => m.status === '上课中' || m.status === '分身中').length,
         skippingCount: members.filter(m => m.status === '翘课中').length,
         skipModeCount: members.filter(m => m.skipStatus).length,
         members: members.map(m => ({
@@ -247,7 +247,7 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
     replymsg.push(`📚 群课表状态`);
     replymsg.push(
         `第${currentWeek}周 星期${weekday} | 当前时间: ${now}\n`,
-        `有课表成员: ${members.length}人 | 上课中: ${members.filter(m => m.status === '进行中').length}人\n`,
+        `有课表成员: ${members.length}人 | 上课中: ${members.filter(m => m.status === '上课中' || m.status === '分身中').length}人\n`,
         `翘课中: ${members.filter(m => m.status === '翘课中').length}人 | 开启翘课: ${members.filter(m => m.skipStatus).length}人\n`
     );
     members.forEach((member, index) => {
@@ -260,13 +260,24 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
             text += `   签名: ${member.signature}\n`;
         }
         if (member.currentCourse) {
-            text += `   课程: ${member.currentCourse.name}\n`;
-            text += `   时间: ${member.currentCourse.startTime}-${member.currentCourse.endTime}\n`;
-            if (member.currentCourse.location) {
-                text += `   地点: ${member.currentCourse.location}\n`;
+            if (member.overlapCourses && member.overlapCourses.length > 1) {
+                // 多课程真实重叠（分身中 / 翘课中+重叠）：逐门输出全部重合课程
+                member.overlapCourses.forEach((course, index) => {
+                    text += `   课程${index + 1}: ${course.name}\n`;
+                    text += `   时间: ${course.startTime}-${course.endTime}\n`;
+                    if (course.location) {
+                        text += `   地点: ${course.location}\n`;
+                    }
+                });
+            } else {
+                text += `   课程: ${member.currentCourse.name}\n`;
+                text += `   时间: ${member.currentCourse.startTime}-${member.currentCourse.endTime}\n`;
+                if (member.currentCourse.location) {
+                    text += `   地点: ${member.currentCourse.location}\n`;
+                }
             }
             if (member.remainingTime) {
-                if (member.status === '进行中') {
+                if (member.status === '上课中' || member.status === '分身中') {
                     text += `   剩余: ${member.remainingTime}\n`;
                 } else if (member.status === '未开始') {
                     text += `   距离上课: ${member.remainingTime}\n`;

@@ -89,17 +89,33 @@ export class GroupSchedulePlugin extends plugin {
     let currentCourse = null;
     let status = '无课程';
     let remainingTime = null;
+    // 真实时间交叠的多门课程（仅真实重叠时非 null，按 startTime 升序）
+    let overlapCourses = null;
     if (todayCourses.length > 0) {
-      const ongoingCourse = todayCourses.find(course =>
+      // 查询时刻满足 start <= t <= end 的全部课程（相邻课程交界分钟会同时命中，靠下方严格交叠排除）
+      const ongoingCourses = todayCourses.filter(course =>
         currentTime >= course.startTime && currentTime <= course.endTime
       );
-      if (ongoingCourse) {
-        currentCourse = ongoingCourse;
+      if (ongoingCourses.length > 0) {
+        // 真实重叠判定：max(startTime) < min(endTime)，排除相邻课程交界分钟的伪重叠
+        const maxStart = ongoingCourses[ongoingCourses.length - 1].startTime;
+        const minEnd = ongoingCourses.reduce((min, course) => course.endTime < min ? course.endTime : min, ongoingCourses[0].endTime);
+        const isRealOverlap = ongoingCourses.length >= 2 && maxStart < minEnd;
+        currentCourse = ongoingCourses[0];
+        if (isRealOverlap) {
+          overlapCourses = ongoingCourses;
+        }
         if (skipStatus.enabled) {
+          // 翘课优先：状态显示翘课中，overlapCourses 已带上，课程区仍按多课程样式渲染
           status = '翘课中';
+        } else if (isRealOverlap) {
+          status = '分身中';
+          // 剩余时间取最早结束的那门课
+          const earliestEnd = ongoingCourses.reduce((a, b) => a.endTime <= b.endTime ? a : b);
+          remainingTime = calculateRemainingTime(currentTime, earliestEnd.endTime);
         } else {
-          status = '进行中';
-          remainingTime = calculateRemainingTime(currentTime, ongoingCourse.endTime);
+          status = '上课中';
+          remainingTime = calculateRemainingTime(currentTime, currentCourse.endTime);
         }
       } else {
         const nextCourse = todayCourses.find(course => currentTime < course.startTime);
@@ -123,7 +139,22 @@ export class GroupSchedulePlugin extends plugin {
       skipStatus: skipStatus.enabled,
       signature,
       currentWeek: userCurrentWeek,
-      hasSemesterStart: !!semesterStart
+      hasSemesterStart: !!semesterStart,
+      // 真实时间交叠时的多课程展示数据（其余情况不带这些字段）
+      ...(overlapCourses ? {
+        overlapCourses,
+        // 表头并集时间：最早 start（升序首元素）- 最晚 end（包含型重叠的最晚 end 可能在首门上）
+        overlapTimeRange: {
+          startTime: overlapCourses[0].startTime,
+          endTime: overlapCourses.reduce((max, course) => course.endTime > max ? course.endTime : max, overlapCourses[0].endTime)
+        },
+        // 图片课程行：前 2 门 " / " 连写，超出截断并追加 +n
+        overlapCourseLabel: overlapCourses.slice(0, 2).map(course => course.name).join(' / ')
+          + (overlapCourses.length > 2 ? ` +${overlapCourses.length - 2}` : ''),
+        overlapLocationLabel: overlapCourses.slice(0, 2)
+          .map(course => (course.location && course.location.trim() !== '') ? course.location.trim() : '未知地点')
+          .join(' / ')
+      } : {})
     };
   }
   /**
@@ -473,11 +504,11 @@ export class GroupSchedulePlugin extends plugin {
     // 防御性拷贝，避免修改原数组
     const list = [...members];
     if (sortMode === 'courseStatus') {
-      // 分为两组：有剩余课程（进行中/未开始/翘课中） 和 其他
+      // 分为两组：有剩余课程（上课中/分身中/未开始/翘课中） 和 其他
       const hasClass = [];
       const noClass = [];
       for (const m of list) {
-        if (m.status === '进行中' || m.status === '未开始' || m.status === '翘课中') {
+        if (m.status === '上课中' || m.status === '分身中' || m.status === '未开始' || m.status === '翘课中') {
           hasClass.push(m);
         } else {
           noClass.push(m);
