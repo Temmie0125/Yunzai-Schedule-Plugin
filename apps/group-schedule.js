@@ -4,7 +4,7 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, timeToMinutes, compareByStartTime } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -85,22 +85,24 @@ export class GroupSchedulePlugin extends plugin {
     const todayCourses = scheduleData.courses.filter(course =>
       parseInt(course.day) === currentDay && course.weeks.includes(userCurrentWeek)
     );
-    todayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    todayCourses.sort(compareByStartTime);
     let currentCourse = null;
     let status = '无课程';
     let remainingTime = null;
+    // 当前时间（分钟数比较，兼容历史数据中未补零的 "9:00" 格式，字符串字典序比较会误判）
+    const nowMinutes = timeToMinutes(currentTime);
     // 真实时间交叠的多门课程（仅真实重叠时非 null，按 startTime 升序）
     let overlapCourses = null;
     if (todayCourses.length > 0) {
       // 查询时刻满足 start <= t <= end 的全部课程（相邻课程交界分钟会同时命中，靠下方严格交叠排除）
       const ongoingCourses = todayCourses.filter(course =>
-        currentTime >= course.startTime && currentTime <= course.endTime
+        nowMinutes >= timeToMinutes(course.startTime) && nowMinutes <= timeToMinutes(course.endTime)
       );
       if (ongoingCourses.length > 0) {
         // 真实重叠判定：max(startTime) < min(endTime)，排除相邻课程交界分钟的伪重叠
         const maxStart = ongoingCourses[ongoingCourses.length - 1].startTime;
-        const minEnd = ongoingCourses.reduce((min, course) => course.endTime < min ? course.endTime : min, ongoingCourses[0].endTime);
-        const isRealOverlap = ongoingCourses.length >= 2 && maxStart < minEnd;
+        const minEnd = ongoingCourses.reduce((min, course) => timeToMinutes(course.endTime) < timeToMinutes(min) ? course.endTime : min, ongoingCourses[0].endTime);
+        const isRealOverlap = ongoingCourses.length >= 2 && timeToMinutes(maxStart) < timeToMinutes(minEnd);
         currentCourse = ongoingCourses[0];
         if (isRealOverlap) {
           overlapCourses = ongoingCourses;
@@ -111,14 +113,14 @@ export class GroupSchedulePlugin extends plugin {
         } else if (isRealOverlap) {
           status = '分身中';
           // 剩余时间取最早结束的那门课
-          const earliestEnd = ongoingCourses.reduce((a, b) => a.endTime <= b.endTime ? a : b);
+          const earliestEnd = ongoingCourses.reduce((a, b) => timeToMinutes(a.endTime) <= timeToMinutes(b.endTime) ? a : b);
           remainingTime = calculateRemainingTime(currentTime, earliestEnd.endTime);
         } else {
           status = '上课中';
           remainingTime = calculateRemainingTime(currentTime, currentCourse.endTime);
         }
       } else {
-        const nextCourse = todayCourses.find(course => currentTime < course.startTime);
+        const nextCourse = todayCourses.find(course => nowMinutes < timeToMinutes(course.startTime));
         if (nextCourse) {
           currentCourse = nextCourse;
           status = '未开始';
@@ -146,7 +148,7 @@ export class GroupSchedulePlugin extends plugin {
         // 表头并集时间：最早 start（升序首元素）- 最晚 end（包含型重叠的最晚 end 可能在首门上）
         overlapTimeRange: {
           startTime: overlapCourses[0].startTime,
-          endTime: overlapCourses.reduce((max, course) => course.endTime > max ? course.endTime : max, overlapCourses[0].endTime)
+          endTime: overlapCourses.reduce((max, course) => timeToMinutes(course.endTime) > timeToMinutes(max) ? course.endTime : max, overlapCourses[0].endTime)
         },
         // 图片课程行：前 2 门 " / " 连写，超出截断并追加 +n
         overlapCourseLabel: overlapCourses.slice(0, 2).map(course => course.name).join(' / ')
@@ -445,16 +447,17 @@ export class GroupSchedulePlugin extends plugin {
       const currentWeek = calculateCurrentWeek(scheduleData.semesterStart);
       const currentDay = now.getDay() === 0 ? 7 : now.getDay();
       const currentTime = now.toTimeString().slice(0, 5);
+      const nowMinutes = timeToMinutes(currentTime);
       const todayCourses = scheduleData.courses.filter(course =>
         parseInt(course.day) === currentDay && course.weeks.includes(currentWeek)
       );
       // 过滤出未结束的课程（结束时间 > 当前时间）
-      const futureCourses = todayCourses.filter(course => course.endTime > currentTime);
+      const futureCourses = todayCourses.filter(course => timeToMinutes(course.endTime) > nowMinutes);
       if (futureCourses.length === 0) {
         await this.reply("今日课程已经全部结束，无法翘课~");
         return true;
       }
-      futureCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      futureCourses.sort(compareByStartTime);
       const targetCourse = futureCourses[0]; // 第一个未结束的课程
       // 构造结束时间点：今日的 targetCourse.endTime 对应的 Date 对象
       const [hour, minute] = targetCourse.endTime.split(':');
@@ -514,12 +517,8 @@ export class GroupSchedulePlugin extends plugin {
           noClass.push(m);
         }
       }
-      // 有课组：按当前课程的开始时间升序（时间格式 HH:MM 可直接字符串比较）
-      hasClass.sort((a, b) => {
-        const startA = a.currentCourse?.startTime || '99:99';
-        const startB = b.currentCourse?.startTime || '99:99';
-        return startA.localeCompare(startB);
-      });
+      // 有课组：按当前课程的开始时间升序（分钟数比较，兼容未补零时间）
+      hasClass.sort((a, b) => compareByStartTime(a.currentCourse ?? {}, b.currentCourse ?? {}));
       // 无课组：按状态优先级排序 → 同类按 QQ 号升序
       const statusOrder = ['已结束', '无课程', '学期未开始', '学期结束'];
       noClass.sort((a, b) => {

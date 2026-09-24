@@ -1,3 +1,5 @@
+import { normalizeHM } from '../utils/timeUtils.js'
+
 /**
  * 解析用户提交的时间表 JSON 数据，返回 Map<section, {start, end}>
  * @param {any} jsonData - 解析后的 JSON 对象
@@ -18,7 +20,7 @@ export function parseTimeTableJson(jsonData) {
                 const end = `${String(item.endHour).padStart(2, '0')}:${String(item.endMinute || 0).padStart(2, '0')}`;
                 timeSlotMap.set(item.section, { start, end });
             } else if (item.startTime) {
-                timeSlotMap.set(item.section, { start: item.startTime, end: item.endTime });
+                timeSlotMap.set(item.section, { start: normalizeHM(item.startTime), end: normalizeHM(item.endTime) });
             }
         }
     }
@@ -27,7 +29,7 @@ export function parseTimeTableJson(jsonData) {
         // 格式2：拾光格式 timeSlots 数组
         for (const item of jsonData.timeSlots) {
             if (item.startTime && item.endTime) {
-                timeSlotMap.set(item.number || item.section, { start: item.startTime, end: item.endTime });
+                timeSlotMap.set(item.number || item.section, { start: normalizeHM(item.startTime), end: normalizeHM(item.endTime) });
             }
         }
     }
@@ -43,7 +45,7 @@ export function parseTimeTableJson(jsonData) {
                 }
             } else if (jsonData[0].startTime !== undefined) {
                 for (const item of jsonData) {
-                    timeSlotMap.set(item.number || item.section, { start: item.startTime, end: item.endTime });
+                    timeSlotMap.set(item.number || item.section, { start: normalizeHM(item.startTime), end: normalizeHM(item.endTime) });
                 }
             }
         }
@@ -57,7 +59,7 @@ export function parseTimeTableJson(jsonData) {
                 const end = `${String(item.endHour).padStart(2, '0')}:${String(item.endMinute || 0).padStart(2, '0')}`;
                 timeSlotMap.set(item.section, { start, end });
             } else if (item.startTime) {
-                timeSlotMap.set(item.number || item.section, { start: item.startTime, end: item.endTime });
+                timeSlotMap.set(item.number || item.section, { start: normalizeHM(item.startTime), end: normalizeHM(item.endTime) });
             }
         }
     }
@@ -68,7 +70,7 @@ export function parseTimeTableJson(jsonData) {
         for (const [key, val] of Object.entries(jsonData)) {
             const section = parseInt(key);
             if (!isNaN(section) && val && typeof val === 'object' && val.start && val.end) {
-                timeSlotMap.set(section, { start: val.start, end: val.end });
+                timeSlotMap.set(section, { start: normalizeHM(val.start), end: normalizeHM(val.end) });
                 found = true;
             }
         }
@@ -81,7 +83,7 @@ export function parseTimeTableJson(jsonData) {
                         const end = `${String(item.endHour).padStart(2, '0')}:${String(item.endMinute || 0).padStart(2, '0')}`;
                         timeSlotMap.set(item.section, { start, end });
                     } else if (item.startTime) {
-                        timeSlotMap.set(item.number || item.section, { start: item.startTime, end: item.endTime });
+                        timeSlotMap.set(item.number || item.section, { start: normalizeHM(item.startTime), end: normalizeHM(item.endTime) });
                     }
                 }
             }

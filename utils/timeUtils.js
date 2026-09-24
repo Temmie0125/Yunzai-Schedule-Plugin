@@ -153,6 +153,45 @@ export function calculateTimeUntil(currentTime, startTime) {
     }
     return `${until}分钟`
 }
+
+/**
+ * 归一化时间字符串为补零的 "HH:MM" 格式
+ * 插件内部部分逻辑依赖补零格式做字符串比较（"9:00" 字典序大于 "13:00" 会误判），
+ * 所有导入/保存入口的时间统一经过此函数
+ * @param {string} time - "9:00" / "09:00" 等格式
+ * @returns {string} 补零后的 "HH:MM"；无法解析或非字符串时原样返回
+ */
+export function normalizeHM(time) {
+    if (typeof time !== 'string') return time
+    const match = time.trim().match(/^(\d{1,2}):(\d{1,2})$/)
+    if (!match) return time
+    return `${String(Number(match[1])).padStart(2, '0')}:${String(Number(match[2])).padStart(2, '0')}`
+}
+
+/**
+ * 将 "H:MM" / "HH:MM" 时间字符串转换为当日的分钟数
+ * 分钟数比较不受是否补零影响，状态判定与排序应优先使用本函数
+ * @param {string} time
+ * @returns {number} 分钟数；无法解析时返回 NaN（与任何数比较均为 false，等效于"不命中"）
+ */
+export function timeToMinutes(time) {
+    if (typeof time !== 'string') return NaN
+    const [h, m] = time.trim().split(':').map(Number)
+    return h * 60 + m
+}
+
+/**
+ * 按开始时间升序排序课程（按分钟数比较，兼容未补零时间）
+ * 开始时间无法解析的课程排在最后
+ * @param {object} a 课程对象（需含 startTime 字段）
+ * @param {object} b
+ * @returns {number}
+ */
+export function compareByStartTime(a, b) {
+    const ma = timeToMinutes(a.startTime)
+    const mb = timeToMinutes(b.startTime)
+    return (Number.isNaN(ma) ? 24 * 60 + 1 : ma) - (Number.isNaN(mb) ? 24 * 60 + 1 : mb)
+}
 /**
  * 根据学期开始日期、周数和星期，计算出对应的具体日期
  * @param {string} semesterStart 学期开始日期 YYYY-MM-DD

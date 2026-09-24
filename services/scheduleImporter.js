@@ -3,7 +3,7 @@ import { fetchScheduleFromAPI } from './wakeupApi.js'
 import { fetchStarlinkSchedule, parseStarlinkTimetable, timeSlotsToSectionMap } from './starlinkApi.js'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
-import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate } from '../utils/timeUtils.js'
+import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate, normalizeHM } from '../utils/timeUtils.js'
 import { normalizeIcsTimezoneIds } from '../utils/icsTimezone.js'
 import ICalExpander from 'ical-expander';
 // 默认节次时间映射
@@ -92,7 +92,8 @@ function convertStarlinkJsonToStandard(jsonData, config) {
   } else if (jsonData.timeSlots && Array.isArray(jsonData.timeSlots)) {
     const custom = {};
     for (const ts of jsonData.timeSlots) {
-      custom[ts.section] = { start: ts.startTime, end: ts.endTime };
+      // 外部数据的时间可能未补零（"9:00"），统一归一化，避免影响后续字符串比较
+      custom[ts.section] = { start: normalizeHM(ts.startTime), end: normalizeHM(ts.endTime) };
     }
     timeSlots = custom;
   }
@@ -114,8 +115,8 @@ function convertStarlinkJsonToStandard(jsonData, config) {
       startTime = startSlot.start;
       endTime = endSlot.end;
     } else if (c.startTime && c.endTime) {
-      startTime = c.startTime;
-      endTime = c.endTime;
+      startTime = normalizeHM(c.startTime);
+      endTime = normalizeHM(c.endTime);
     } else {
       logger.warn(`[课表导入] 星链格式：课程 ${c.name} 缺少时间信息，跳过`);
       continue;
@@ -307,8 +308,8 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
           teacher: c.teacher || "",
           location: c.location || "",
           day: c.day,
-          startTime: c.startTime,
-          endTime: c.endTime,
+          startTime: normalizeHM(c.startTime),
+          endTime: normalizeHM(c.endTime),
           weeks: c.weeks || []
         };
         // 保留节次数据（如果有）
@@ -329,13 +330,13 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
     else if (isShiguangCourseFormat && jsonData.timeSlots && Array.isArray(jsonData.timeSlots)) {
       const timeSlotMap = new Map();
       for (const ts of jsonData.timeSlots) {
-        timeSlotMap.set(ts.number, { start: ts.startTime, end: ts.endTime });
+        timeSlotMap.set(ts.number, { start: normalizeHM(ts.startTime), end: normalizeHM(ts.endTime) });
       }
       courses = jsonData.courses.map(course => {
         let startTime, endTime;
         if (course.isCustomTime && course.customStartTime && course.customEndTime) {
-          startTime = course.customStartTime;
-          endTime = course.customEndTime;
+          startTime = normalizeHM(course.customStartTime);
+          endTime = normalizeHM(course.customEndTime);
         } else if (course.startSection && course.endSection) {
           // 根据节次获取时间
           const startSlot = timeSlotMap.get(course.startSection);
@@ -379,8 +380,8 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
           teacher: c.teacher || "",
           location: c.location || c.position || "",
           day: c.day,
-          startTime: c.startTime,
-          endTime: c.endTime,
+          startTime: normalizeHM(c.startTime),
+          endTime: normalizeHM(c.endTime),
           weeks: c.weeks || []
         };
         if (c.startNode != null && !isNaN(Number(c.startNode))) {

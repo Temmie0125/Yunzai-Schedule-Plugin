@@ -1,5 +1,6 @@
 // 默认节次→时间映射
 import { ConfigManager } from "../components/ConfigManager.js";
+import { normalizeHM } from "../utils/timeUtils.js";
 const DEFAULT_TIME_SLOTS = {
   1: { start: "08:00", end: "08:45" },
   2: { start: "08:50", end: "09:35" },
@@ -138,7 +139,8 @@ export async function fetchStarlinkSchedule(shareCode) {
   } else if (data.timeSlots && Array.isArray(data.timeSlots)) {
     const custom = {};
     for (const ts of data.timeSlots) {
-      custom[ts.section] = { start: ts.startTime, end: ts.endTime };
+      // 星链返回的时间可能未补零（"9:00"），统一归一化，避免影响后续字符串比较
+      custom[ts.section] = { start: normalizeHM(ts.startTime), end: normalizeHM(ts.endTime) };
     }
     timeSlots = custom;
   }
@@ -158,8 +160,8 @@ export async function fetchStarlinkSchedule(shareCode) {
       startTime = startSlot.start;
       endTime = endSlot.end;
     } else if (c.startTime && c.endTime) {
-      startTime = c.startTime;
-      endTime = c.endTime;
+      startTime = normalizeHM(c.startTime);
+      endTime = normalizeHM(c.endTime);
     } else {
       logger.warn(`[星链导入] 课程 ${c.name} 缺少时间信息，跳过`);
       continue;

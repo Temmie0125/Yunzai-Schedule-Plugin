@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from './ConfigManager.js'
-import { calculateWeekFromDate, getMondayOfSameWeek } from '../utils/timeUtils.js';
+import { calculateWeekFromDate, getMondayOfSameWeek, normalizeHM, compareByStartTime } from '../utils/timeUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
@@ -136,6 +136,39 @@ export class DataManager {
      * @param {string} [signature] - 签名（若未传则保留原有）
      * @param {Array} [timeSlots] - 时间表配置（若未传则保留原有）
      */
+    /**
+     * 归一化课程时间字符串为补零的 "HH:MM" 格式
+     * 历史数据可能存在未补零时间（如星链旧版导入留下的 "9:00"），
+     * 会导致按字符串比较/排序时错乱，保存时统一修正实现自愈
+     * @param {Array} courses
+     * @returns {Array}
+     */
+    static normalizeCourseTimes(courses) {
+        if (!Array.isArray(courses)) return courses
+        return courses.map(course => {
+            if (!course || typeof course !== 'object') return course
+            return {
+                ...course,
+                startTime: normalizeHM(course.startTime),
+                endTime: normalizeHM(course.endTime)
+            }
+        })
+    }
+
+    /**
+     * 归一化时间表配置的时间字符串为补零的 "HH:MM" 格式
+     * @param {Array} timeSlots - [{ number, startTime, endTime }]
+     * @returns {Array}
+     */
+    static normalizeTimeSlots(timeSlots) {
+        if (!Array.isArray(timeSlots)) return timeSlots
+        return timeSlots.map(slot => ({
+            ...slot,
+            startTime: normalizeHM(slot.startTime),
+            endTime: normalizeHM(slot.endTime)
+        }))
+    }
+
     static saveSchedule(userId, scheduleData, nickname = null, signature = null, timeSlots = undefined) {
         const filePath = path.join(DATA_PATH, `${userId}.json`)
         const existing = this.loadSchedule(userId) || {}
@@ -146,14 +179,14 @@ export class DataManager {
             updateTime: new Date().toISOString(),
             nickname: nickname || existing.nickname || userId.toString(),
             signature: signature !== null ? signature : (existing.signature || ''),
-            courses: scheduleData.courses
+            courses: this.normalizeCourseTimes(scheduleData.courses)
         }
 
         // 保留用户已有的时间表配置（若未显式传入新的 timeSlots）
         if (timeSlots !== undefined) {
-            fullData.timeSlots = timeSlots
+            fullData.timeSlots = this.normalizeTimeSlots(timeSlots)
         } else if (existing.timeSlots && Array.isArray(existing.timeSlots)) {
-            fullData.timeSlots = existing.timeSlots
+            fullData.timeSlots = this.normalizeTimeSlots(existing.timeSlots)
         }
 
         // 确保目录存在
@@ -230,7 +263,7 @@ export class DataManager {
             parseInt(course.day) === day && course.weeks.includes(week)
         );
         // 按开始时间排序（升序）
-        courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+        courses.sort(compareByStartTime);
         const displayName = schedule.nickname || `用户${userId}`;
         return { courses, week, day, displayName };
     }
@@ -334,7 +367,7 @@ export class DataManager {
         }
 
         // 按时间排序
-        courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+        courses.sort(compareByStartTime);
 
         const hasRescheduled = courses.some(c => c.rescheduled === true);
         let reply = `${displayName} 的第${week}周 星期${day} 课程安排\n`;
@@ -1020,8 +1053,8 @@ export class DataManager {
                 skippedCount++;
                 continue;
             }
-            course.startTime = startSlot.start;
-            course.endTime = endSlot.end;
+            course.startTime = normalizeHM(startSlot.start);
+            course.endTime = normalizeHM(endSlot.end);
             updatedCount++;
         }
 
@@ -1062,7 +1095,7 @@ export class DataManager {
         }
         try {
             const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-            data.timeSlots = timeSlots
+            data.timeSlots = this.normalizeTimeSlots(timeSlots)
             data.updateTime = new Date().toISOString()
             const dir = path.dirname(filePath)
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })

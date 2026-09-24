@@ -7,7 +7,8 @@ import {
     calculateDateFromWeekAndDay,
     parseWeekday,
     getDateByRelativeWeek,
-    parseChineseDateToMD
+    parseChineseDateToMD,
+    compareByStartTime
 } from '../utils/timeUtils.js';
 import { generateUserScheduleImage, generateUserInfoImage, generateWeeklyScheduleImage } from '../components/Renderer.js'
 
@@ -452,7 +453,7 @@ export class ScheduleQuery extends plugin {
             const dayCourses = schedule.courses.filter(c =>
                 parseInt(c.day) === d && c.weeks.includes(week)
             );
-            dayCourses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+            dayCourses.sort(compareByStartTime);
 
             days.push({
                 label: weekdayLabels[d - 1],
