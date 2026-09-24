@@ -4,7 +4,7 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, timeToMinutes, compareByStartTime } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -70,6 +70,22 @@ export class GroupSchedulePlugin extends plugin {
     }
     const semesterEnded = maxWeek > 0 && userCurrentWeek > maxWeek;
     if (semesterEnded) {
+      // 学期结束日 = 最大周所在周的周日，据此计算已结束天数（供展示层按配置 hideEndedDays 过滤）
+      // 无个人开学日的老数据按配置默认开学日计算，与上方结束判定保持同一口径；无法计算时为 null（不过滤）
+      let daysSinceSemesterEnd = null;
+      let effectiveStart = semesterStart;
+      if (!hasValidStart) {
+        effectiveStart = ConfigManager.getConfig().defaultSemesterStart;
+      }
+      if (effectiveStart && !isNaN(new Date(effectiveStart))) {
+        const endDate = calculateDateFromWeekAndDay(effectiveStart, maxWeek, 7);
+        if (endDate) {
+          endDate.setHours(0, 0, 0, 0);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          daysSinceSemesterEnd = Math.floor((today - endDate) / 86400000);
+        }
+      }
       return {
         userId,
         nickname: fallbackNickname || scheduleData.nickname || `用户${userId}`,
@@ -78,7 +94,8 @@ export class GroupSchedulePlugin extends plugin {
         status: '学期结束',
         signature,
         currentWeek: userCurrentWeek,
-        hasSemesterStart: !!semesterStart
+        hasSemesterStart: !!semesterStart,
+        daysSinceSemesterEnd
       };
     }
     // 筛选今日课程
@@ -248,7 +265,16 @@ export class GroupSchedulePlugin extends plugin {
     }
     // 发送课表消息
     const config = ConfigManager.getConfig();
-    const sortedMembers = this._sortMembers(membersWithSchedule, config.sortMode);
+    // 学期已结束超过配置天数的成员不再展示（hideEndedDays=0 表示不过滤）
+    const { displayMembers, hiddenCount } = this._filterEndedMembers(membersWithSchedule, Number(config.hideEndedDays));
+    if (displayMembers.length === 0) {
+      await this.reply(`群内 ${membersWithSchedule.length} 位成员的学期均已结束超过 ${config.hideEndedDays} 天，无课表可展示~`);
+      return true;
+    }
+    if (hiddenCount > 0) {
+      logger.info(`[群课表] 已隐藏 ${hiddenCount} 位学期结束超过 ${config.hideEndedDays} 天的成员`);
+    }
+    const sortedMembers = this._sortMembers(displayMembers, config.sortMode);
     this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
     await this.sendScheduleMessage(sortedMembers, currentWeek, currentDay, globalNotice);
     return true;
@@ -310,7 +336,13 @@ export class GroupSchedulePlugin extends plugin {
     }
     */
     const config = ConfigManager.getConfig();
-    const sortedMembers = this._sortMembers(allUsersData, config.sortMode);
+    // 学期已结束超过配置天数的用户不再展示（hideEndedDays=0 表示不过滤）
+    const { displayMembers } = this._filterEndedMembers(allUsersData, Number(config.hideEndedDays));
+    if (displayMembers.length === 0) {
+      await this.reply(`所有用户的学期均已结束超过 ${config.hideEndedDays} 天，无课表可展示~`);
+      return true;
+    }
+    const sortedMembers = this._sortMembers(displayMembers, config.sortMode);
     this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
     await this.sendScheduleMessage(sortedMembers, currentWeek, currentDay, globalNotice);
   }
@@ -496,6 +528,22 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     return false;
+  }
+  /**
+   * 按配置过滤学期已结束超过 hideEndedDays 天的成员
+   * @param {Array} members 成员数据数组（_buildUserData 的返回结果）
+   * @param {number} hideEndedDays 过滤阈值（天），<=0 表示不过滤
+   * @returns {{ displayMembers: Array, hiddenCount: number }} 过滤后的列表与隐藏数量；
+   *   无法计算结束天数（daysSinceSemesterEnd 为 null）的成员一律保留
+   */
+  _filterEndedMembers(members, hideEndedDays) {
+    if (!(hideEndedDays > 0)) {
+      return { displayMembers: members, hiddenCount: 0 };
+    }
+    const displayMembers = members.filter(m =>
+      !(m.semesterEnded && m.daysSinceSemesterEnd != null && m.daysSinceSemesterEnd > hideEndedDays)
+    );
+    return { displayMembers, hiddenCount: members.length - displayMembers.length };
   }
   /**
  * 根据配置对成员列表排序

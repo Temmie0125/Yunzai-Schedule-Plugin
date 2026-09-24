@@ -254,6 +254,22 @@ export const schemas = [
         bottomHelpMessage: "使用#clstb命令时对成员的排序方法。"
     },
     {
+        field: "hideEndedDays",
+        label: "结束成员隐藏天数",
+        helpMessage: "学期已结束超过该天数的成员不再显示在群课表图片中",
+        component: "InputNumber",
+        required: true,
+        componentProps: {
+            min: 0,
+            max: 365,
+            step: 1,
+            placeholder: '请输入天数',
+            addonAfter: '天'
+        },
+        defaultValue: 30,
+        bottomHelpMessage: "群课表/所有人课表中，学期已结束超过该天数的成员不再显示，减少假期查询时图片被\"学期结束\"成员占满。设置为 0 表示不过滤。"
+    },
+    {
         field: "showTableName",
         label: "显示课表名称",
         helpMessage: "针对群内设置课表、查看个人课表等功能，可以隐藏课表名称",

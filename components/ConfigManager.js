@@ -61,6 +61,7 @@ export class ConfigManager {
             botName: "",    // bot自定义名称，默认取机器人昵称
             font: "像素",    // 字体风格，默认为像素字体
             sortMode: "userId",    // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态
+            hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
             birthdayCustomName: true  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称

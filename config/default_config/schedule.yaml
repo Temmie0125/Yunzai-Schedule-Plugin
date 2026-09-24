@@ -34,6 +34,8 @@ botName: ""
 font: "像素"
 # 群课表排序方式 userId：按QQ号；courseStatus：按上课状态
 sortMode: "userId"
+# 群课表图片中隐藏学期已结束超过该天数的成员，设置为 0 表示不过滤
+hideEndedDays: 30
 # 生日列表是否展示QQ号
 showQQ: true
 # 监听所有文件以尝试自动导入课表
