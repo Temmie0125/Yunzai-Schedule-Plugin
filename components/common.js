@@ -100,8 +100,22 @@ export function checkPermission(e) {
  * @returns Boolean
  */
 export function checkFriend(userId) {
-    if (!Bot.fl || !Bot.fl.has(Number(userId))) return false
+    // 官方机器人（QQBot）场景 user_id 形如 “botUin:OpenID”（非纯数字），Number() 转换为 NaN；
+    // 且能向官方机器人发起私信即代表用户已添加机器人，直接视为好友
+    const numericId = Number(userId)
+    if (!Number.isInteger(numericId)) return true
+    if (!Bot.fl || !Bot.fl.has(numericId)) return false
     return true
+}
+/**
+ * 生成文件系统安全的存储键（官方机器人 user_id/group_id 形如 “botUin:OpenID”，
+ * 含 Windows 路径非法字符 “:”，统一替换为下划线；纯数字 QQ 原样保留）。
+ * 同一 ID 在所有磁盘路径构建处必须经过同一转换，保证读写一致。
+ * @param {string|number} id
+ * @returns {string}
+ */
+export function safeId(id) {
+    return String(id ?? '').replace(/[\\/:*?"<>|]/g, '_')
 }
 /**
  * 从事件对象中提取文件信息（兼容私聊和群聊）
@@ -150,11 +164,17 @@ export function getFileInfo(e) {
     } else {
         busid = parseInt(busid) || 0;
     }
-    if (!fileName || !fileSize || !fileId) {
+    // 官方机器人（QQBot）的 file 元素无 file_id/id 字段，但 url/file 为可直接下载的 http 链接；
+    // 有直链时允许 file_id 为空，由 getFileContent 的 directUrl 通道下载
+    if (!fileUrl && typeof e.file.file === 'string' && /^https?:\/\//.test(e.file.file)) {
+        fileUrl = e.file.file;
+    }
+    const hasDirectUrl = !!(fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')));
+    if (!fileName || (!fileId && !hasDirectUrl)) {
         logger.warn("[课表导入] 无法提取完整的文件信息", { eFile: e.file });
         return null;
     }
-    return { fileName, fileSize, fileId, busid, fileHash, fileUrl };
+    return { fileName, fileSize, fileId, busid, fileHash, fileUrl: hasDirectUrl ? fileUrl : null };
 }
 /**
    * 辅助方法：从消息中获取文件文本内容（适配 TRSS 框架）

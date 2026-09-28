@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from './ConfigManager.js'
+import { safeId } from './common.js'
 import { calculateWeekFromDate, getMondayOfSameWeek, normalizeHM, compareByStartTime } from '../utils/timeUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
@@ -19,7 +20,7 @@ export class DataManager {
      * @returns {object|null}
      */
     static loadSchedule(userId) {
-        const filePath = path.join(DATA_PATH, `${userId}.json`)
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`)
         if (!fs.existsSync(filePath)) return null
         try {
             return JSON.parse(fs.readFileSync(filePath, 'utf8'))
@@ -35,20 +36,20 @@ export class DataManager {
  */
     static getAllUserSchedules() {
         if (!fs.existsSync(DATA_PATH)) return [];
+        // 官方机器人用户的文件名为 safeId(botUin:OpenID)（含 “_”），
+        // 真实用户ID以文件内记录的 userId 字段为准；旧数据（纯数字文件名、无 userId 字段）兼容取文件名
         const files = fs.readdirSync(DATA_PATH).filter(f =>
             f.endsWith('.json') &&
-            !['skip-status.json', 'reminder-status.json', 'birthdayData.json'].includes(f)
+            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json'].includes(f)
         );
         const result = [];
         for (const file of files) {
-            const userId = path.basename(file, '.json');
-            // 检查文件名是否为纯数字（QQ号）
-            if (!/^\d+$/.test(userId)) continue;
-
-            const schedule = this.loadSchedule(userId);
-            if (schedule && schedule.courses && schedule.courses.length > 0) {
-                result.push({ userId, schedule });
-            }
+            const fileKey = path.basename(file, '.json');
+            const schedule = this.loadSchedule(fileKey);
+            if (!schedule || !Array.isArray(schedule.courses) || schedule.courses.length === 0) continue;
+            const userId = schedule.userId || (/^\d+$/.test(fileKey) ? fileKey : null);
+            if (!userId) continue;
+            result.push({ userId, schedule });
         }
         return result;
     }
@@ -58,7 +59,7 @@ export class DataManager {
      */
     static async saveUserNickname(userId, nickname) {
         try {
-            const filePath = path.join(DATA_PATH, `${userId}.json`)
+            const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`)
             // 确保目录存在
             const dir = path.dirname(filePath)
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -95,7 +96,7 @@ export class DataManager {
    */
     static async saveUserSignature(userId, signature) {
         try {
-            const filePath = path.join(DATA_PATH, `${userId}.json`)
+            const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`)
             // 确保目录存在
             const dir = path.dirname(filePath)
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -170,10 +171,12 @@ export class DataManager {
     }
 
     static saveSchedule(userId, scheduleData, nickname = null, signature = null, timeSlots = undefined) {
-        const filePath = path.join(DATA_PATH, `${userId}.json`)
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`)
         const existing = this.loadSchedule(userId) || {}
 
         const fullData = {
+            // 记录真实用户ID（官方机器人场景文件名为 safeId 后的键，推送/查询需要原始 ID）
+            userId: String(userId),
             tableName: scheduleData.tableName,
             semesterStart: scheduleData.semesterStart,
             updateTime: new Date().toISOString(),
@@ -276,7 +279,7 @@ export class DataManager {
  *   exists:  文件是否存在（若文件不存在，success 为 false）
  */
     static clearUserCourses(userId) {
-        const filePath = path.join(DATA_PATH, `${userId}.json`);
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`);
 
         // 文件不存在，直接返回
         if (!fs.existsSync(filePath)) {
@@ -1088,7 +1091,7 @@ export class DataManager {
      * @returns {boolean}
      */
     static saveUserTimeSlots(userId, timeSlots) {
-        const filePath = path.join(DATA_PATH, `${userId}.json`)
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`)
         if (!fs.existsSync(filePath)) {
             logger.warn(`[时间表保存] 用户 ${userId} 数据文件不存在，无法保存时间表`)
             return false
@@ -1168,7 +1171,7 @@ export class DataManager {
     }
 
     static updateSemesterStart(userId, semesterStart) {
-        const filePath = path.join(DATA_PATH, `${userId}.json`);
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`);
         let data = {};
         if (fs.existsSync(filePath)) {
             try {
@@ -1266,7 +1269,7 @@ export class DataManager {
         }
         schedule.semesterStart = realDateStr;
         schedule.updateTime = new Date().toISOString();
-        const filePath = path.join(DATA_PATH, `${userId}.json`);
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`);
         try {
             const dir = path.dirname(filePath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
