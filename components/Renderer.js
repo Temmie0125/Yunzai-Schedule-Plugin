@@ -1,5 +1,6 @@
 // components/Renderer.js
 import { ConfigManager } from '../components/ConfigManager.js'
+import { getAvatarUrl } from './common.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import art from 'art-template'
@@ -215,7 +216,7 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
         skipModeCount: members.filter(m => m.skipStatus).length,
         members: members.map(m => ({
             ...m,
-            avatar: m.avatar || `https://q1.qlogo.cn/g?b=qq&nk=${m.userId}&s=640`,
+            avatar: m.avatar || getAvatarUrl(m.userId),
             signature: m.signature || ''
         }))
     }
@@ -372,7 +373,7 @@ export async function generateWeeklyScheduleImage(weeklyData, options = {}) {
  * @returns {Promise<Buffer|null>}
  */
 export async function generateUserInfoImage(userId, userInfoData, options = {}) {
-    const avatar = `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`;
+    const avatar = getAvatarUrl(userId);
     const now = new Date();
     const currentTime = now.toLocaleString('zh-CN');
     const templateData = {

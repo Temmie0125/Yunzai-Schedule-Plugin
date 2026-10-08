@@ -363,10 +363,15 @@ export async function getGroupMembers(groupId) {
 }
 /**
  * 获取用户头像URL
+ * 兼容官方Bot平台（用户只有OpenID没有QQ号）：QQBot适配器提供 Bot.getAvatarUrl 标准化接口，
+ * OpenID 走 qqapp 头像接口，真实QQ号走 qlogo。userId 支持 "self_id:ID" 复合格式
  */
-export async function getAvatarUrl(userId) {
-    // QQ头像地址
-    return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`
+export function getAvatarUrl(userId, size = 640) {
+    userId = String(userId)
+    const selfId = userId.includes(":") ? userId.split(":")[0] : undefined
+    if (globalThis.Bot?.getAvatarUrl)
+        return Bot.getAvatarUrl(selfId, userId, size)
+    return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=${size}`
 }
 /**
  * 获取Bot自定义名称

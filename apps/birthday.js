@@ -4,7 +4,7 @@ import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName } from '../components/common.js'
+import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName, getAvatarUrl } from '../components/common.js'
 import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration, parseLunarBirthdayString, lunarToUpcomingSolarDate, refreshLunarBirthdays, getLunarMonthName, getLunarDayName } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
@@ -322,7 +322,7 @@ export class BirthdayReminder extends plugin {
                 birthday: item.birthday,
                 days: item.days,
                 birthdayType: item.birthdayType,
-                avatar: `https://q1.qlogo.cn/g?b=qq&s=0&nk=${item.userId}`
+                avatar: getAvatarUrl(item.userId, 0)
             })))
         }
         await e.reply("正在生成生日列表图片，请稍候...", false, { recallMsg: 5 })
