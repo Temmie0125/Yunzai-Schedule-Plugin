@@ -4,7 +4,7 @@ import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName, getAvatarUrl, shortId } from '../components/common.js'
+import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName, getAvatarUrl, getGroupMemberMap, shortId } from '../components/common.js'
 import { birthdayButtons } from '../components/buttons.js'
 import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration, parseLunarBirthdayString, lunarToUpcomingSolarDate, refreshLunarBirthdays, getLunarMonthName, getLunarDayName } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
@@ -295,8 +295,8 @@ export class BirthdayReminder extends plugin {
             e.reply('请在群聊中使用此命令')
             return true
         }
-        // 官方Bot适配器的 getMemberMap 返回事件缓存，尚无成员发言时可能为空
-        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap().catch(() => null)
+        // QQBot 适配器的 getMemberMap 同步返回事件缓存（可能为空），统一走 getGroupMemberMap 兼容
+        const memberMap = await getGroupMemberMap(e.group_id)
         if (!memberMap) {
             return e.reply('获取群成员列表失败，请稍后重试~')
         }
@@ -1025,8 +1025,9 @@ export class BirthdayReminder extends plugin {
         const oldEntries = Object.entries(this.birthdayData).filter(([key]) => /^\d+$/.test(key))
         result.total = oldEntries.length
         if (!result.total) return result
-        // 官方Bot成员缓存（gml）：键为 "botUin:OpenID" 复合ID，值含 nickname/avatar
-        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap().catch(() => null)
+        // 官方Bot成员缓存（gml）：键为 "botUin:OpenID" 复合ID，值含 nickname/avatar；
+        // getMemberMap 同步返回 Map 而非 Promise，统一走 getGroupMemberMap 兼容
+        const memberMap = await getGroupMemberMap(e.group_id)
         if (!memberMap) {
             result.unmatched = oldEntries.map(([qq, data]) => ({ qq, name: data.name }))
             return result

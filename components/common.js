@@ -367,6 +367,22 @@ export async function getGroupMembers(groupId) {
     }
 }
 /**
+ * 获取群成员缓存Map（兼容同步/异步适配器）
+ * OneBot/ICQQ 的 getMemberMap 返回 Promise；QQBot 适配器同步返回事件缓存 gml
+ * （尚无成员触发过事件时为 undefined）。调用方不可对其链式 .catch/.then
+ * @param {number|string} groupId 群号/复合群ID
+ * @returns {Promise<Map|null>} 成员Map，获取失败或无缓存时为 null
+ */
+export async function getGroupMemberMap(groupId) {
+    try {
+        const group = Bot.pickGroup(groupId)
+        if (!group?.getMemberMap) return null
+        return (await group.getMemberMap()) || null
+    } catch {
+        return null
+    }
+}
+/**
  * 获取用户头像URL
  * 兼容官方Bot平台（用户只有OpenID没有QQ号）：QQBot适配器提供 Bot.getAvatarUrl 标准化接口，
  * OpenID 走 qqapp 头像接口，真实QQ号走 qlogo。userId 支持 "self_id:ID" 复合格式
