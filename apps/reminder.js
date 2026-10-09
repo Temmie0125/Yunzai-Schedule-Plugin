@@ -12,6 +12,27 @@ const MIN_THRESHOLD = 5;
 const MAX_THRESHOLD = 60;
 const DEFAULT_THRESHOLD = 10;
 
+// 进程级配置变化监听（只注册一次）：TRSS-Yunzai 每条消息都会重新实例化插件类，
+// 构造函数里向 scheduleEvents 注册会让回调随消息数无限累积（历史实例无法 GC）。
+// handleConfigChange 不依赖实例状态，直接挂模块级回调。
+let reminderConfigBound = false
+
+function onReminderConfigChanged() {
+  try {
+    reloadClassReminderScheduler();
+  } catch (err) {
+    logger.error(`[上课提醒] 配置变更处理异常: ${err}`);
+  }
+}
+
+function bindReminderConfigListener() {
+  if (reminderConfigBound) return
+  reminderConfigBound = true
+  if (global.scheduleEvents) {
+    global.scheduleEvents.on(onReminderConfigChanged);
+  }
+}
+
 export class ClassReminder extends plugin {
   constructor() {
     super({
@@ -30,10 +51,7 @@ export class ClassReminder extends plugin {
         }
       ]
     });
-    this.handleConfigChange = this.handleConfigChange.bind(this);
-    if (global.scheduleEvents) {
-      global.scheduleEvents.on(this.handleConfigChange);
-    }
+    bindReminderConfigListener();
     // 确保定时器按最新配置运行
     startClassReminderScheduler();
   }
@@ -134,7 +152,7 @@ export class ClassReminder extends plugin {
   async disconnect() {
     stopClassReminderScheduler();
     if (global.scheduleEvents) {
-      global.scheduleEvents.off(this.handleConfigChange);
+      global.scheduleEvents.off(onReminderConfigChanged);
     }
   }
 }

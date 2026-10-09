@@ -8,6 +8,29 @@ import { calculateWeekFromDate } from '../utils/timeUtils.js'
 import { checkHolidayUpdate } from '../services/holidayUpdater.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
+
+// 进程级配置变化监听（只注册一次）：TRSS-Yunzai 每条消息都会重新实例化插件类，
+// 构造函数里向 scheduleEvents 注册会让回调随消息数无限累积（Set 无法按实例去重，
+// 历史实例也被引用而无法 GC）。回调始终转发给最新的实例。
+let configListenerBound = false
+let latestPushInstance = null
+
+function onPushConfigChanged() {
+  try {
+    latestPushInstance?.handleConfigChange();
+  } catch (err) {
+    logger.error(`[课程表插件] 配置变更处理异常: ${err}`);
+  }
+}
+
+function bindPushConfigListener() {
+  if (configListenerBound) return
+  configListenerBound = true
+  if (global.scheduleEvents) {
+    global.scheduleEvents.on(onPushConfigChanged);
+  }
+}
+
 export class SchedulePush extends plugin {
   constructor() {
     super({
@@ -28,10 +51,8 @@ export class SchedulePush extends plugin {
     })
     this.pushJob = null;
     this.initPushTask();
-    this.handleConfigChange = this.handleConfigChange.bind(this);
-    if (global.scheduleEvents) {
-      global.scheduleEvents.on(this.handleConfigChange);
-    }
+    latestPushInstance = this;
+    bindPushConfigListener();
   }
   /**
    * 处理配置变化事件
@@ -249,7 +270,8 @@ export class SchedulePush extends plugin {
       global.__schedulePushCron = null;
     }
     if (global.scheduleEvents) {
-      global.scheduleEvents.off(this.handleConfigChange);
+      global.scheduleEvents.off(onPushConfigChanged);
+      latestPushInstance = null;
     }
   }
 }

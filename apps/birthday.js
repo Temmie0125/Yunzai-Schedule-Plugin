@@ -25,6 +25,41 @@ function getRandomBirthdayMessage() {
     const index = Math.floor(Math.random() * birthdayMessages.length)
     return birthdayMessages[index]
 }
+
+// ====== 进程级单例监听（只注册一次） ======
+// TRSS-Yunzai 每条消息都会重新实例化插件类（lib/plugins/loader.js `new i.class(e)`），
+// 且本类带 reg:"" 兜底规则（匹配所有消息）。若在构造函数里注册全局监听，监听器会随
+// 消息数无限累积：触发 MaxListenersExceededWarning、待送达队列被历史实例重复消费
+// （失败重复入队导致祝福重复发送）、历史实例被监听器引用而无法 GC。
+// 因此全局监听只在首次实例化时注册，回调始终转发给最新的实例（其状态也是最新加载的）。
+let globalListenersBound = false
+let latestInstance = null
+
+function onBotMessage(data) {
+    try {
+        latestInstance?._deliverPendingPushes(data)
+    } catch (err) {
+        logger.error(`[Schedule生日提醒] 处理待送达队列异常: ${err}`)
+    }
+}
+
+function onConfigChanged() {
+    try {
+        latestInstance?.handleConfigChange()
+    } catch (err) {
+        logger.error(`[Schedule生日提醒] 配置变更处理异常: ${err}`)
+    }
+}
+
+function bindGlobalListeners() {
+    if (globalListenersBound) return
+    globalListenersBound = true
+    Bot.on('message', onBotMessage)
+    if (global.scheduleEvents) {
+        global.scheduleEvents.on(onConfigChanged)
+    }
+}
+
 export class BirthdayReminder extends plugin {
     constructor() {
         super({
@@ -71,8 +106,8 @@ export class BirthdayReminder extends plugin {
         // 失败的祝福入队持久化，借目标群/用户的下一条消息走被动回复送达（被动回复有5分钟窗口，
         // 因此必须等真实消息事件到来时立即发送，而不是定时重试）
         this._pendingPushes = DataManager.loadBirthdayPendingPushes()
-        this._deliverPendingPushes = this._deliverPendingPushes.bind(this)
-        Bot.on('message', this._deliverPendingPushes)
+        latestInstance = this
+        bindGlobalListeners()
         // 同步昵称（当自定义昵称关闭时，用QQ昵称覆盖存储名）
         this._syncBirthdayNames().catch(err =>
             logger.error('[Schedule生日提醒] 同步昵称失败:', err)
@@ -80,11 +115,7 @@ export class BirthdayReminder extends plugin {
         // 初始化定时推送任务
         this.pushJob = null
         this.initPushTask()
-        // 监听配置变化事件（与课表插件共用事件总线）
-        this.handleConfigChange = this.handleConfigChange.bind(this)
-        if (global.scheduleEvents) {
-            global.scheduleEvents.on(this.handleConfigChange)
-        }
+        // 配置变化监听已由 bindGlobalListeners 进程级注册一次（见文件头部说明）
     }
     // 初始化定时任务
     initPushTask() {
@@ -137,10 +168,11 @@ export class BirthdayReminder extends plugin {
             global[GLOBAL_BIRTHDAY_CRON] = null
         }
         if (this._deliverPendingPushes) {
-            Bot.off('message', this._deliverPendingPushes)
+            Bot.off('message', onBotMessage)
+            latestInstance = null
         }
         if (global.scheduleEvents) {
-            global.scheduleEvents.off(this.handleConfigChange)
+            global.scheduleEvents.off(onConfigChanged)
         }
     }
     // ========== 业务方法 ==========
