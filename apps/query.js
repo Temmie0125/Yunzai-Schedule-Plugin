@@ -11,6 +11,7 @@ import {
     compareByStartTime
 } from '../utils/timeUtils.js';
 import { generateUserScheduleImage, generateUserInfoImage, generateWeeklyScheduleImage } from '../components/Renderer.js'
+import { scheduleButtons } from '../components/buttons.js'
 
 export class ScheduleQuery extends plugin {
     constructor() {
@@ -100,7 +101,8 @@ export class ScheduleQuery extends plugin {
         // 尝试生成图片
         const img = await generateUserInfoImage(userId, userInfoData, { e: this.e });
         if (img) {
-            await this.reply(segment.image(img));
+            // 官方Bot场景附带快捷操作按钮（非官方平台返回空数组自动跳过）
+            await this.reply([segment.image(img), ...scheduleButtons(this.e)]);
         } else {
             // 降级为文本（原有逻辑）
             let reply = `📊 你的课表信息\n`;

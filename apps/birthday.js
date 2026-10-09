@@ -4,7 +4,8 @@ import { segment } from 'oicq'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { DataManager } from '../components/DataManager.js'
 import { renderBirthdayList } from '../components/Renderer.js'
-import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName, getAvatarUrl } from '../components/common.js'
+import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName, getAvatarUrl, shortId } from '../components/common.js'
+import { birthdayButtons } from '../components/buttons.js'
 import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration, parseLunarBirthdayString, lunarToUpcomingSolarDate, refreshLunarBirthdays, getLunarMonthName, getLunarDayName } from '../utils/timeUtils.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
@@ -53,7 +54,10 @@ export class BirthdayReminder extends plugin {
                 { reg: "^#生日黑名单(列表)?$", fnc: "blacklistList", permission: "master" },
                 { reg: "^#生日黑名单添加\\s+(\\d+)$", fnc: "blacklistAdd", permission: "master" },
                 { reg: "^#生日黑名单删除\\s+(\\d+)$", fnc: "blacklistRemove", permission: "master" },
-                { reg: "^#生日黑白名单清空$", fnc: "clearAllLists", permission: "master" }
+                { reg: "^#生日黑白名单清空$", fnc: "clearAllLists", permission: "master" },
+                // 全量消息钩子：官方Bot管理员代添加生日时目标昵称未知，先入库待目标用户触发事件时回填。
+                // 必须放在规则末位，且无论是否命中都 return false 放行消息，避免吞掉用户命令
+                { reg: "", fnc: "handleNicknameBackfill", log: false }
             ],
         })
         // 加载生日数据
@@ -172,9 +176,11 @@ export class BirthdayReminder extends plugin {
                 const group = Bot.pickGroup(groupId)
                 if (!group) continue
                 const memberMap = await group.getMemberMap()
-                const memberQQs = [...memberMap.keys()]
+                if (!memberMap) continue
+                // 统一按字符串比较：OneBot 成员键为数值QQ号，官方Bot为 "botUin:OpenID" 复合ID
+                const memberQQs = [...memberMap.keys()].map(String)
                 const birthdaysInGroup = todayBirthdayUsers.filter(user =>
-                    memberQQs.includes(Number(user.userId))
+                    memberQQs.includes(String(user.userId))
                 )
                 if (birthdaysInGroup.length) {
                     let message = []
@@ -192,7 +198,7 @@ export class BirthdayReminder extends plugin {
         }
         // 好友私聊推送
         for (const user of todayBirthdayUsers) {
-            if (Bot.fl && Bot.fl.has(Number(user.userId))) {
+            if (checkFriend(user.userId)) {
                 const friend = Bot.pickFriend(user.userId)
                 const message = `亲爱的 ${user.name}，祝你生日快乐！🎂🎉\n${getRandomBirthdayMessage()}`
                 await friend.sendMsg(message)
@@ -210,12 +216,14 @@ export class BirthdayReminder extends plugin {
         if (!e.group_id) return e.reply('请在群聊中使用此命令');
         const { targetUserId, birthday, birthdayType, lunarMonth, lunarDay, birthdayYear, errorMsg } = this._parseAdminBirthdayCommand(e);
         if (errorMsg) return e.reply(errorMsg);
-        // 检查用户是否在群内
-        const { exists, nickname, errorMsg: userError } = await this._checkUserInGroup(e.group_id, targetUserId);
+        // 检查用户是否在群内并尝试获取昵称（官方Bot场景可能取不到，见 _checkUserInGroup）
+        const { exists, nickname, errorMsg: userError, nicknameUnknown } = await this._checkUserInGroup(e.group_id, targetUserId);
         if (!exists) return e.reply(userError);
         // 如果已存在记录，直接覆盖
         const entry = {
-            name: nickname,
+            // 官方Bot缓存未命中时以占位名入库（nicknamePending 标记），待目标用户触发事件时自动回填
+            name: nickname || '群成员',
+            nicknamePending: !!nicknameUnknown,
             birthday: birthday,
             birthdayType: birthdayType || 'solar',
             addedBy: e.user_id,
@@ -233,7 +241,14 @@ export class BirthdayReminder extends plugin {
         if (birthdayType === 'lunar') {
             displayBirthday = `${birthday}（农历${getLunarMonthName(lunarMonth)}${getLunarDayName(lunarDay)}）`;
         }
-        this._saveBirthdayDataAndReply(e, this.birthdayData, `已成功为${nickname}(${targetUserId})添加生日：${displayBirthday}`);
+        // 回复信息：昵称走缓存，取不到时用 @ 代替
+        let successMsg;
+        if (nickname) {
+            successMsg = `已成功为${nickname}(${shortId(targetUserId)})添加生日：${displayBirthday}`;
+        } else {
+            successMsg = [segment.at(targetUserId), ` 已成功添加生日：${displayBirthday}\n暂时无法获取该成员昵称，待TA在群内发言后将自动补全`];
+        }
+        this._saveBirthdayDataAndReply(e, this.birthdayData, successMsg);
         return true;
     }
 
@@ -249,14 +264,15 @@ export class BirthdayReminder extends plugin {
             const match = message.match(/^#移除生日\s*(\d+)?$/)
             targetUserId = match?.[1] || message.replace(/[#移除生日\s]/g, '')
         }
-        if (!targetUserId || !/^\d+$/.test(targetUserId)) {
+        // 官方Bot场景目标用户为 "botUin:OpenID" 复合ID（通过@指定），非纯数字同样合法
+        if (!targetUserId || (!/^\d+$/.test(targetUserId) && !String(targetUserId).includes(':'))) {
             e.reply('请@要移除生日的人，或输入正确的QQ号！')
             return true
         }
         if (this.birthdayData[targetUserId]) {
             delete this.birthdayData[targetUserId]
             DataManager.saveBirthdayData(this.birthdayData)
-            e.reply(`✅ 已成功移除用户${targetUserId}的生日记录`)
+            e.reply(`✅ 已成功移除用户${shortId(targetUserId)}的生日记录`)
         } else {
             e.reply('❌ 未找到该用户的生日记录')
         }
@@ -272,7 +288,11 @@ export class BirthdayReminder extends plugin {
             e.reply('请在群聊中使用此命令')
             return true
         }
-        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap()
+        // 官方Bot适配器的 getMemberMap 返回事件缓存，尚无成员发言时可能为空
+        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap().catch(() => null)
+        if (!memberMap) {
+            return e.reply('获取群成员列表失败，请稍后重试~')
+        }
         const memberQQs = [...memberMap.keys()]
         const groupBirthdays = {}
         for (const qq of memberQQs) {
@@ -317,8 +337,9 @@ export class BirthdayReminder extends plugin {
             todayCount,
             upcomingCount,
             birthdays: await Promise.all(finaldata.map(async item => ({
-                name: await this._getDisplayName(item.userId, item.name),
-                qq: showQQ ? item.userId : null,
+                name: await this._getDisplayName(item.userId, item.name, e.group_id),
+                // qq 标签仅作展示，官方Bot复合ID只显示 OpenID 部分
+                qq: showQQ ? shortId(item.userId) : null,
                 birthday: item.birthday,
                 days: item.days,
                 birthdayType: item.birthdayType,
@@ -328,7 +349,7 @@ export class BirthdayReminder extends plugin {
         await e.reply("正在生成生日列表图片，请稍候...", false, { recallMsg: 5 })
         const img = await renderBirthdayList(templateData, { e })
         if (img) {
-            await e.reply(segment.image(img))
+            await e.reply([segment.image(img), ...birthdayButtons(e)])
         } else {
             e.reply("生成图片失败，请检查日志")
         }
@@ -346,7 +367,7 @@ export class BirthdayReminder extends plugin {
             return e.reply('你还没有设置生日~使用[#设置生日 月份-日期]来进行设置~\n支持农历：#设置生日 农历三月十五')
         }
         const daysLeft = getDaysToBirthday(data.birthday)
-        const displayName = await this._getDisplayName(userId, data.name)
+        const displayName = await this._getDisplayName(userId, data.name, e.group_id)
         let birthdayDisplay = data.birthday;
         if (data.birthdayType === 'lunar' && data.lunarMonth && data.lunarDay) {
             birthdayDisplay = `${data.birthday}（农历${getLunarMonthName(data.lunarMonth)}${getLunarDayName(data.lunarDay)}）`;
@@ -359,7 +380,7 @@ export class BirthdayReminder extends plugin {
         if (config.birthdayCustomName) {
             msg += '\n\n使用 #生日修改昵称 新昵称 可以修改生日显示的昵称'
         }
-        e.reply(msg)
+        e.reply([msg, ...birthdayButtons(e, { withClear: true })])
         return true
     }
 
@@ -425,9 +446,9 @@ export class BirthdayReminder extends plugin {
         if (config.birthdayCustomName) {
             userName = e.sender?.card || e.sender?.nickname || `用户${userId}`
         } else {
-            // 自定义昵称关闭时，强制使用QQ昵称
+            // 自定义昵称关闭时，强制使用QQ昵称（官方Bot消息事件自带昵称，getMemberName 内部兼容）
             try {
-                userName = await getMemberName(Number(userId))
+                userName = await getMemberName(userId)
             } catch {}
             if (!userName) {
                 userName = e.sender?.nickname || `用户${userId}`
@@ -463,7 +484,7 @@ export class BirthdayReminder extends plugin {
             displayBirthday = `${birthday}（农历${getLunarMonthName(lunarMonth)}${getLunarDayName(lunarDay)}）`;
         }
         let replymsg = [`✅ 已${isFirstSet ? '修改' : '设置'}你的生日：${displayBirthday}`]
-        if (!checkFriend(Number(e.user_id))) {
+        if (!checkFriend(e.user_id)) {
             replymsg.push(`\n您还未添加好友哦，添加后还可以在生日当天收到${botName}的私信祝福~`)
         }
         e.reply(replymsg)
@@ -528,7 +549,7 @@ export class BirthdayReminder extends plugin {
         if (!exists) return e.reply(userError);
         const oldRecord = this.birthdayData[targetUserId];
         if (!oldRecord) {
-            return e.reply(`❌ ${nickname}(${targetUserId}) 还没有设置生日，请先使用 #添加生日 命令`);
+            return e.reply(`❌ ${nickname || '该用户'}(${shortId(targetUserId)}) 还没有设置生日，请先使用 #添加生日 命令`);
         }
         const oldBirthday = oldRecord.birthday;
         // 构建新记录（基于旧记录覆盖新字段）
@@ -541,6 +562,11 @@ export class BirthdayReminder extends plugin {
             oldBirthday: oldBirthday,
             isModified: true
         };
+        // 旧记录为占位昵称且本次已能取到昵称时顺带补全
+        if (oldRecord.nicknamePending && nickname) {
+            newEntry.name = nickname;
+            delete newEntry.nicknamePending;
+        }
         // 清除旧农历字段（避免类型切换后残留）
         delete newEntry.lunarMonth;
         delete newEntry.lunarDay;
@@ -555,11 +581,16 @@ export class BirthdayReminder extends plugin {
         if (birthdayType === 'lunar') {
             displayBirthday = `${birthday}（农历${getLunarMonthName(lunarMonth)}${getLunarDayName(lunarDay)}）`;
         }
-        this._saveBirthdayDataAndReply(e, this.birthdayData,
-            `已成功修改${nickname}(${targetUserId})的生日：${oldBirthday} → ${displayBirthday}`
-        );
+        // 回复信息：昵称走缓存，取不到时用 @ 代替
+        let successMsg;
+        if (nickname) {
+            successMsg = `已成功修改${nickname}(${shortId(targetUserId)})的生日：${oldBirthday} → ${displayBirthday}`;
+        } else {
+            successMsg = [segment.at(targetUserId), ` 已成功修改生日：${oldBirthday} → ${displayBirthday}`];
+        }
+        this._saveBirthdayDataAndReply(e, this.birthdayData, successMsg);
         // 私聊通知（只有是好友才通知）
-        if ((targetUserId !== e.user_id) && !checkFriend(Number(e.user_id))) {
+        if ((targetUserId !== e.user_id) && checkFriend(targetUserId)) {
             try {
                 await Bot.pickFriend(targetUserId).sendMsg(`管理员已修改你的生日：${oldBirthday} → ${displayBirthday}`);
             } catch (err) { logger.error(`通知失败: ${err}`); }
@@ -605,7 +636,7 @@ export class BirthdayReminder extends plugin {
             );
         }
         msg.push(`========\n日期格式示例：1-14\n农历生日示例：#设置生日 农历5-3 或 #设置生日 农历三月十五`)
-        e.reply(msg)
+        e.reply([...msg, ...birthdayButtons(e)])
         return true
     }
     // 辅助方法：获取群名称
@@ -789,29 +820,44 @@ export class BirthdayReminder extends plugin {
     }
     /**
      * 检查目标用户是否在当前群内，并返回其昵称
+     * 昵称获取顺序：适配器事件缓存（gml）→ 官方Bot降级入库 → OneBot严格校验
      * @param {string} groupId
      * @param {string} userId
-     * @returns {Promise<{ exists: boolean, nickname: string, errorMsg: string }>}
+     * @returns {Promise<{ exists: boolean, nickname: string, errorMsg: string, nicknameUnknown?: boolean }>}
+     *   nicknameUnknown: 官方Bot场景缓存未命中（官方未开放成员查询接口，无法核实是否在群、无法取昵称），
+     *   调用方可视为在群内先入库，昵称由 handleNicknameBackfill 在目标用户下次触发事件时回填
      */
     async _checkUserInGroup(groupId, userId) {
         const group = Bot.pickGroup(groupId);
         if (!group) return { exists: false, nickname: '', errorMsg: '无法获取群信息' };
-        const memberMap = await group.getMemberMap();
-        const userNum = Number(userId);
-        if (!memberMap.has(userNum)) {
-            return { exists: false, nickname: '', errorMsg: `本群不存在用户 ${userId}` };
+        // 官方Bot场景目标用户为 "botUin:OpenID" 复合ID，成员缓存键即该复合ID
+        const isOfficialUser = String(userId).includes(':');
+        let memberMap = null;
+        try {
+            memberMap = await group.getMemberMap();
+        } catch { }
+        if (memberMap) {
+            const info = memberMap.get(isOfficialUser ? String(userId) : Number(userId));
+            if (info) {
+                return { exists: true, nickname: info.card || info.nickname || '', errorMsg: null };
+            }
         }
-        return { exists: true, nickname: memberMap.get(userNum).nickname, errorMsg: null };
+        if (isOfficialUser) {
+            // 官方Bot未开放群成员查询接口：缓存未命中时先放行入库，昵称待回填
+            return { exists: true, nickname: '', errorMsg: null, nicknameUnknown: true };
+        }
+        if (!memberMap) return { exists: false, nickname: '', errorMsg: '无法获取群成员信息' };
+        return { exists: false, nickname: '', errorMsg: `本群不存在用户 ${userId}` };
     }
     /**
      * 保存生日数据并返回标准回复
      * @param {Object} newData 新数据对象
-     * @param {string} successMsg 成功消息
+     * @param {string|Array} successMsg 成功消息（数组时首段前拼 "✅ "，用于携带 @ 的消息）
      * @returns {boolean} 是否保存成功
      */
     _saveBirthdayDataAndReply(e, newData, successMsg) {
         if (DataManager.saveBirthdayData(newData)) {
-            e.reply(`✅ ${successMsg}`);
+            e.reply(Array.isArray(successMsg) ? ['✅ ', ...successMsg] : `✅ ${successMsg}`);
             return true;
         } else {
             e.reply('❌ 保存生日数据失败，请检查日志');
@@ -837,21 +883,22 @@ export class BirthdayReminder extends plugin {
     }
     /**
      * 获取用户的显示名称（根据 birthdayCustomName 配置决定返回自定义名或QQ昵称）
-     * @param {string|number} userId QQ号
+     * @param {string|number} userId QQ号或官方Bot复合ID
      * @param {string} storedName 数据文件中存储的名称
+     * @param {number|string} [groupId] 可选群号，提供时优先精确查该群成员缓存
      * @returns {string} 显示名称
      */
-    async _getDisplayName(userId, storedName) {
+    async _getDisplayName(userId, storedName, groupId = null) {
         const config = ConfigManager.getConfig()
         // 自定义昵称开启：直接返回存储的名称
         if (config.birthdayCustomName) {
             return storedName
         }
-        // 自定义昵称关闭：尝试获取QQ昵称
+        // 自定义昵称关闭：尝试获取QQ昵称（官方Bot场景走适配器事件缓存）
         try {
-            const qqNick = await getMemberName(Number(userId))
+            const qqNick = await getMemberName(userId, groupId)
             if (qqNick) return qqNick
-        } catch {}
+        } catch { }
         // 获取失败时回退到存储的名称
         return storedName
     }
@@ -866,11 +913,18 @@ export class BirthdayReminder extends plugin {
         let changed = false
         for (const [userId, data] of Object.entries(this.birthdayData)) {
             try {
-                const qqNick = await getMemberName(Number(userId))
-                if (qqNick && qqNick !== data.name) {
-                    data.name = qqNick
-                    data.nicknameModified = false
-                    changed = true
+                const qqNick = await getMemberName(userId)
+                if (qqNick) {
+                    if (qqNick !== data.name) {
+                        data.name = qqNick
+                        data.nicknameModified = false
+                        changed = true
+                    }
+                    // 官方Bot代添加时的占位昵称已可解析，清除待回填标记
+                    if (data.nicknamePending) {
+                        delete data.nicknamePending
+                        changed = true
+                    }
                 }
             } catch {
                 // 获取QQ昵称失败则跳过该用户
@@ -880,6 +934,24 @@ export class BirthdayReminder extends plugin {
             DataManager.saveBirthdayData(this.birthdayData)
             logger.info('[Schedule生日提醒] 已同步生日数据中的昵称为QQ昵称')
         }
+    }
+    /**
+     * 全量消息钩子（配合规则末位的空 reg 规则）：官方Bot管理员代添加生日时目标昵称未知，
+     * 先以占位名入库；目标用户下次触发消息事件时事件自带昵称，在此回填并落盘。
+     * 无论是否命中都 return false 放行消息：触发回填的消息可能同时是发给其他插件的命令，
+     * 返回 true 会吞掉消息导致命令失效
+     */
+    async handleNicknameBackfill() {
+        const e = this.e
+        const data = this.birthdayData[e.user_id]
+        if (!data?.nicknamePending) return false
+        const nickname = e.sender?.card || e.sender?.nickname
+        if (!nickname) return false
+        data.name = nickname
+        delete data.nicknamePending
+        DataManager.saveBirthdayData(this.birthdayData)
+        logger.info(`[Schedule生日提醒] 已回填用户 ${shortId(e.user_id)} 的昵称：${nickname}`)
+        return false
     }
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))

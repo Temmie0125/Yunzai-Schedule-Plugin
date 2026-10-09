@@ -355,6 +355,11 @@ export async function getGroupMembers(groupId) {
     try {
         const group = await Bot.pickGroup(groupId)
         const memberList = await group.getMemberMap()
+        // 官方Bot适配器的 getMemberMap 返回事件缓存 gml，尚无成员触发过事件时为 undefined
+        if (!memberList) {
+            debugLog('warn', `[schedule] 群 ${groupId} 成员缓存为空（官方Bot依赖消息事件积累，重启后需有成员发言）`)
+            return []
+        }
         return Array.from(memberList.values())
     } catch (error) {
         logger.error(`获取群成员失败: ${error}`)
@@ -388,10 +393,65 @@ export function getBotName(e = null) {
     return config.botName || bot.nickname || "Bot";
 }
 /**
- * 获取成员昵称
- * @param {number} qq QQ号
+ * 判断事件是否来自官方Bot平台（QQBot适配器下 platform 为 "QQ-group"/"QQ-private"，
+ * OneBot 等适配器不设置 platform 字段）。用于按钮等官方平台特有能力的手动门控
+ * @param {object} e 事件对象
+ * @returns {boolean}
  */
-export async function getMemberName(qq) {
-    const info = await Bot.pickFriend(qq).getInfo();
-    return info.nickname;
+export function isOfficialMsg(e) {
+    return /^QQ-(group|private)$/.test(e?.platform || '')
+}
+/**
+ * 截取适合展示的用户ID：官方Bot复合ID "botUin:OpenID" 仅保留 OpenID 部分
+ * @param {string|number} id
+ * @returns {string}
+ */
+export function shortId(id) {
+    const str = String(id ?? '')
+    return str.includes(':') ? str.slice(str.indexOf(':') + 1) : str
+}
+/**
+ * 用户ID比较器：纯数字ID（QQ号）按数值升序，官方Bot OpenID 等非数字ID按字符串升序。
+ * 直接 Number(OpenID) 会得到 NaN，Array.sort 将 NaN 返回值视作 0，导致排序静默退化为遍历顺序
+ * @param {*} a
+ * @param {*} b
+ * @returns {number}
+ */
+export function compareUserId(a, b) {
+    const na = Number(a)
+    const nb = Number(b)
+    if (Number.isInteger(na) && Number.isInteger(nb)) return na - nb
+    return String(a).localeCompare(String(b))
+}
+/**
+ * 获取用户昵称
+ * OneBot/ICQQ：走 pickFriend().getInfo()（QQ号场景）。
+ * 官方Bot（复合ID "botUin:OpenID"）：官方未开放成员查询接口，改为查适配器事件缓存——
+ * gml（群成员缓存，按群精确匹配）→ fl（好友缓存，群消息同样会写入）。
+ * @param {number|string} qq QQ号或官方Bot复合ID
+ * @param {number|string} [groupId] 可选，群号/复合群ID，提供时优先精确查该群缓存
+ * @returns {Promise<string|null>} 昵称，获取失败返回 null
+ */
+export async function getMemberName(qq, groupId = null) {
+    qq = String(qq ?? '')
+    // 官方Bot场景：无QQ号，官方成员查询接口未开放（需专项权限），只能依赖适配器事件缓存
+    if (qq.includes(':') || (groupId != null && String(groupId).includes(':'))) {
+        if (groupId != null) {
+            const info = Bot.gml?.get(String(groupId))?.get(String(qq))
+            const name = info?.card || info?.nickname
+            if (name) return name
+        }
+        const friend = Bot.fl?.get(String(qq))
+        if (friend?.card || friend?.nickname) return friend.card || friend.nickname
+        return null
+    }
+    // OneBot/ICQQ 场景：QQ号需转数值（好友列表按数值键存储）
+    const numericId = Number(qq)
+    if (!Number.isInteger(numericId)) return null
+    try {
+        const info = await Bot.pickFriend(numericId).getInfo()
+        return info?.nick || info?.nickname || info?.card || null
+    } catch {
+        return null
+    }
 }

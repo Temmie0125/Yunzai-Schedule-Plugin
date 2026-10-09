@@ -2,7 +2,8 @@
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg } from '../components/common.js'
+import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg, compareUserId } from '../components/common.js'
+import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
@@ -359,6 +360,8 @@ export class GroupSchedulePlugin extends plugin {
       }
       if (image) {
         replyMsg.push(segment.image(image));
+        // 官方Bot场景附带快捷操作按钮（非官方平台返回空数组自动跳过）
+        replyMsg.push(...scheduleButtons(this.e));
         await this.reply(replyMsg);
         return true;
       } else {
@@ -399,10 +402,13 @@ export class GroupSchedulePlugin extends plugin {
       await this.reply("请@某人或提供QQ号");
       return true;
     }
-    targetId = Number(targetId);
+    // 官方Bot场景 e.at 为 "botUin:OpenID" 复合ID，不能转数值，统一按字符串比较
+    if (/^\d+$/.test(String(targetId))) {
+      targetId = Number(targetId);
+    }
     // 获取群成员列表，验证目标成员是否在群内
     const groupMembers = await getGroupMembers(groupId);
-    const targetMember = groupMembers.find(m => m.user_id === targetId);
+    const targetMember = groupMembers.find(m => String(m.user_id) === String(targetId));
     if (!targetMember) {
       await this.reply(`${botName}似乎未找到成员${targetId}，可能不在本群...`);
       return true;
@@ -567,7 +573,7 @@ export class GroupSchedulePlugin extends plugin {
       }
       // 有课组：按当前课程的开始时间升序（分钟数比较，兼容未补零时间）
       hasClass.sort((a, b) => compareByStartTime(a.currentCourse ?? {}, b.currentCourse ?? {}));
-      // 无课组：按状态优先级排序 → 同类按 QQ 号升序
+      // 无课组：按状态优先级排序 → 同类按 QQ 号升序（OpenID 等非数字ID按字符串升序）
       const statusOrder = ['已结束', '无课程', '学期未开始', '学期结束'];
       noClass.sort((a, b) => {
         const idxA = statusOrder.indexOf(a.status);
@@ -578,12 +584,12 @@ export class GroupSchedulePlugin extends plugin {
         if (priorityA !== priorityB) {
           return priorityA - priorityB;
         }
-        return Number(a.userId) - Number(b.userId);
+        return compareUserId(a.userId, b.userId);
       });
       return hasClass.concat(noClass);
     }
-    // 默认按 QQ 号升序
-    return list.sort((a, b) => Number(a.userId) - Number(b.userId));
+    // 默认按 QQ 号升序（compareUserId 兼容官方Bot OpenID 等非数字ID）
+    return list.sort((a, b) => compareUserId(a.userId, b.userId));
   }
 }
 export default GroupSchedulePlugin
