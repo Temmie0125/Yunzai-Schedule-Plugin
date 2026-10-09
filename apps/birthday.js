@@ -67,6 +67,12 @@ export class BirthdayReminder extends plugin {
         this.birthdayData = DataManager.loadBirthdayData()
         // 迁移预览缓存（#迁移生日数据 → #确认迁移生日数据 两步之间共享，5分钟有效）
         this._migrationScan = null
+        // 生日祝福待送达队列：官方Bot未开通主动消息权限（或额度耗尽）时定时推送会静默失败，
+        // 失败的祝福入队持久化，借目标群/用户的下一条消息走被动回复送达（被动回复有5分钟窗口，
+        // 因此必须等真实消息事件到来时立即发送，而不是定时重试）
+        this._pendingPushes = DataManager.loadBirthdayPendingPushes()
+        this._deliverPendingPushes = this._deliverPendingPushes.bind(this)
+        Bot.on('message', this._deliverPendingPushes)
         // 同步昵称（当自定义昵称关闭时，用QQ昵称覆盖存储名）
         this._syncBirthdayNames().catch(err =>
             logger.error('[Schedule生日提醒] 同步昵称失败:', err)
@@ -130,6 +136,9 @@ export class BirthdayReminder extends plugin {
             global[GLOBAL_BIRTHDAY_JOB] = null
             global[GLOBAL_BIRTHDAY_CRON] = null
         }
+        if (this._deliverPendingPushes) {
+            Bot.off('message', this._deliverPendingPushes)
+        }
         if (global.scheduleEvents) {
             global.scheduleEvents.off(this.handleConfigChange)
         }
@@ -148,6 +157,10 @@ export class BirthdayReminder extends plugin {
         }
         const today = getCurrentDate()
         logger.mark(`[Schedule生日提醒] 检查生日，今天是: ${today}`)
+        // 清理跨天遗留的过期待送达祝福（生日已过，文本内容也不再适用）
+        if (this._purgeStalePendingPushes(today)) {
+            DataManager.saveBirthdayPendingPushes(this._pendingPushes)
+        }
         const todayBirthdayUsers = []
         for (const [userId, data] of Object.entries(this.birthdayData)) {
             // 使用新的适配函数判断今天是否是该用户的实际庆祝日
@@ -197,8 +210,15 @@ export class BirthdayReminder extends plugin {
                     message.push('今天是')
                     birthdaysInGroup.forEach(b => message.push(segment.at(b.userId), ' '))
                     message.push(`的生日，${getRandomBirthdayMessage()}`)
-                    await group.sendMsg(message)
-                    logger.mark(`[Schedule生日提醒] 已在群 ${groupId} 发送生日祝福`)
+                    // sendMsg 不抛出异常，失败静默收集在 rets.error（官方Bot未开通主动消息/无被动锚点时失败）
+                    const rets = await group.sendMsg(message)
+                    if (rets?.error?.length) {
+                        // 入队等待该群下一条消息时借被动回复送达
+                        this._queuePendingPush(`group:${groupId}`, message, today)
+                        logger.warn(`[Schedule生日提醒] 群 ${groupId} 主动推送生日祝福失败（可能未开通主动消息权限且群内暂无可借用的消息），已入队待成员发言后被动送达`)
+                    } else {
+                        logger.mark(`[Schedule生日提醒] 已在群 ${groupId} 发送生日祝福`)
+                    }
                     await this.sleep(2000)
                 }
             }
@@ -208,10 +228,87 @@ export class BirthdayReminder extends plugin {
             if (checkFriend(user.userId)) {
                 const friend = Bot.pickFriend(user.userId)
                 const message = `亲爱的 ${user.name}，祝你生日快乐！🎂🎉\n${getRandomBirthdayMessage()}`
-                await friend.sendMsg(message)
-                logger.mark(`[Schedule生日提醒] 已向好友 ${user.userId} 发送私聊祝福`)
+                // 私聊主动消息同样受权限限制（官方Bot需用户开启主动推送授权），失败入队借用户下一条私信被动送达
+                const rets = await friend.sendMsg(message)
+                if (rets?.error?.length) {
+                    this._queuePendingPush(`user:${user.userId}`, message, today)
+                    logger.warn(`[Schedule生日提醒] 向好友 ${user.userId} 发送私聊祝福失败，已入队待其私信后被动送达`)
+                } else {
+                    logger.mark(`[Schedule生日提醒] 已向好友 ${user.userId} 发送私聊祝福`)
+                }
                 await this.sleep(1000)
             }
+        }
+    }
+    // ========== 生日祝福被动送达 ==========
+    /**
+     * 将发送失败的生日祝福加入待送达队列（同一天同一目标仅入队一条，避免重复执行检查时重复排队）
+     * @param {string} key 队列键："group:群ID" 或 "user:用户ID"
+     * @param {Array} message 消息段数组（须可 JSON 序列化）
+     * @param {string} date 当日日期，跨天即过期
+     */
+    _queuePendingPush(key, message, date) {
+        const list = (this._pendingPushes[key] ||= [])
+        if (list.some(en => en.date === date)) return
+        list.push({ date, message })
+        DataManager.saveBirthdayPendingPushes(this._pendingPushes)
+    }
+    /**
+     * 清理非当日的过期待送达祝福（生日已过，“今天是…的生日”文本不再适用）
+     * @param {string} today 当日日期
+     * @returns {boolean} 是否有变更
+     */
+    _purgeStalePendingPushes(today) {
+        let changed = false
+        for (const key of Object.keys(this._pendingPushes)) {
+            const valid = this._pendingPushes[key].filter(en => en.date === today)
+            if (valid.length) {
+                if (valid.length !== this._pendingPushes[key].length) {
+                    this._pendingPushes[key] = valid
+                    changed = true
+                }
+            } else {
+                delete this._pendingPushes[key]
+                changed = true
+            }
+        }
+        return changed
+    }
+    /**
+     * 全量消息监听（Bot.on('message')，仅做副作用、不消费事件）：
+     * 待送达队列命中的群/用户来新消息时，用该消息自带的被动回复凭证立即送达。
+     * 官方Bot被动回复窗口仅5分钟且需真实消息作锚点，因此无法定时重试，只能等下一条真实消息；
+     * 发送失败的条目保留在队列中，借再下一条消息继续重试
+     */
+    async _deliverPendingPushes(data) {
+        try {
+            if (typeof data?.reply !== 'function') return
+            const key = data.group_id ? `group:${data.group_id}` : (data.user_id ? `user:${data.user_id}` : null)
+            if (!key) return
+            const list = this._pendingPushes[key]
+            if (!list?.length) return
+            const today = getCurrentDate()
+            const remaining = []
+            for (const en of list) {
+                if (en.date !== today) continue
+                try {
+                    await data.reply(en.message)
+                } catch (err) {
+                    remaining.push(en)
+                    logger.warn(`[Schedule生日提醒] 被动送达生日祝福失败，保留队列等待下一条消息: ${err}`)
+                }
+            }
+            if (remaining.length) {
+                this._pendingPushes[key] = remaining
+            } else {
+                delete this._pendingPushes[key]
+            }
+            DataManager.saveBirthdayPendingPushes(this._pendingPushes)
+            if (remaining.length < list.length) {
+                logger.mark(`[Schedule生日提醒] 已通过被动回复向 ${shortId(key)} 送达生日祝福（${list.length - remaining.length}/${list.length} 条）`)
+            }
+        } catch (err) {
+            logger.error(`[Schedule生日提醒] 处理生日祝福待送达队列异常: ${err}`)
         }
     }
 

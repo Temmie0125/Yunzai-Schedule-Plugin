@@ -9,6 +9,7 @@ const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
 const CLASS_REMINDER_PATH = path.join(DATA_PATH, 'class-reminder.json'); // 上课提醒配置
 const BIRTHDAY_DATA_PATH = path.join(DATA_PATH, 'birthdayData.json');
+const BIRTHDAY_PENDING_PUSH_PATH = path.join(DATA_PATH, 'birthdayPendingPushes.json'); // 生日祝福待送达队列（主动推送失败时暂存，借后续消息被动回复送达）
 const HOLIDAY_DATA_PATH = path.join(DATA_PATH, 'holiday/'); // 节假日自动更新数据目录（优先，gitignored）
 const HOLIDAY_RESOURCE_PATH = path.join(process.cwd(), 'plugins/schedule/resources/holiday/'); // 节假日打包资源目录（兜底）
 // 节假日数据缓存（Map<年份, 节假日对象>）
@@ -40,7 +41,7 @@ export class DataManager {
         // 真实用户ID以文件内记录的 userId 字段为准；旧数据（纯数字文件名、无 userId 字段）兼容取文件名
         const files = fs.readdirSync(DATA_PATH).filter(f =>
             f.endsWith('.json') &&
-            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json'].includes(f)
+            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json', 'birthdayPendingPushes.json'].includes(f)
         );
         const result = [];
         for (const file of files) {
@@ -588,6 +589,30 @@ export class DataManager {
         const dir = path.dirname(BIRTHDAY_DATA_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(BIRTHDAY_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
+        return true;
+    }
+    /**
+     * 加载生日祝福待送达队列
+     * 结构：{ ["group:群ID" | "user:用户ID"]: [{ date: "YYYY-MM-DD", message: Array }] }
+     * message 为可 JSON 序列化的消息段数组（segment 对象均为普通对象）
+     */
+    static loadBirthdayPendingPushes() {
+        if (!fs.existsSync(BIRTHDAY_PENDING_PUSH_PATH)) return {};
+        try {
+            const data = JSON.parse(fs.readFileSync(BIRTHDAY_PENDING_PUSH_PATH, 'utf8'));
+            return data && typeof data === 'object' ? data : {};
+        } catch (err) {
+            logger.error('[生日待送达队列] 加载失败:', err);
+            return {};
+        }
+    }
+    /**
+     * 保存生日祝福待送达队列
+     */
+    static saveBirthdayPendingPushes(data) {
+        const dir = path.dirname(BIRTHDAY_PENDING_PUSH_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(BIRTHDAY_PENDING_PUSH_PATH, JSON.stringify(data, null, 2), 'utf8');
         return true;
     }
     /**
