@@ -55,6 +55,9 @@ export class BirthdayReminder extends plugin {
                 { reg: "^#生日黑名单添加\\s+(\\d+)$", fnc: "blacklistAdd", permission: "master" },
                 { reg: "^#生日黑名单删除\\s+(\\d+)$", fnc: "blacklistRemove", permission: "master" },
                 { reg: "^#生日黑白名单清空$", fnc: "clearAllLists", permission: "master" },
+                // 旧数据迁移（OneBot QQ号 → 官方Bot复合ID）
+                { reg: "^#迁移生日数据$", fnc: "migrateBirthdayData" },
+                { reg: "^#确认迁移生日数据$", fnc: "confirmMigrateBirthdayData" },
                 // 全量消息钩子：官方Bot管理员代添加生日时目标昵称未知，先入库待目标用户触发事件时回填。
                 // 必须放在规则末位，且无论是否命中都 return false 放行消息，避免吞掉用户命令
                 { reg: "", fnc: "handleNicknameBackfill", log: false }
@@ -62,6 +65,8 @@ export class BirthdayReminder extends plugin {
         })
         // 加载生日数据
         this.birthdayData = DataManager.loadBirthdayData()
+        // 迁移预览缓存（#迁移生日数据 → #确认迁移生日数据 两步之间共享，5分钟有效）
+        this._migrationScan = null
         // 同步昵称（当自定义昵称关闭时，用QQ昵称覆盖存储名）
         this._syncBirthdayNames().catch(err =>
             logger.error('[Schedule生日提醒] 同步昵称失败:', err)
@@ -184,7 +189,9 @@ export class BirthdayReminder extends plugin {
                 )
                 if (birthdaysInGroup.length) {
                     let message = []
-                    if (group.is_admin || group.is_owner) {
+                    // 官方Bot无法@全体成员（SDK 会转成 <@everyone>，非群管理员的Bot会被官方API拒绝导致整条发送失败），
+                    // 复合ID群（官方Bot）跳过 at-all；OneBot 行为不变
+                    if ((group.is_admin || group.is_owner) && !String(groupId).includes(':')) {
                         message.push(segment.at('all'), '  ')
                     }
                     message.push('今天是')
@@ -621,6 +628,10 @@ export class BirthdayReminder extends plugin {
                 `[#添加生日 QQ号 日期] 添加某人的生日\n`,
                 `[#移除生日 QQ号 日期] 移除某人的生日\n`
             )
+            // 官方Bot群聊额外提供旧数据迁移
+            if (String(e.group_id || '').includes(':')) {
+                msg.push(`[#迁移生日数据] 将OneBot旧生日数据迁移至官方Bot\n`)
+            }
         }
         // 主人命令仅私聊展示，防止刷屏
         if (e.isMaster && !e.isGroup) {
@@ -934,6 +945,142 @@ export class BirthdayReminder extends plugin {
             DataManager.saveBirthdayData(this.birthdayData)
             logger.info('[Schedule生日提醒] 已同步生日数据中的昵称为QQ昵称')
         }
+    }
+    /**
+     * 生日数据迁移（管理员，官方Bot专用）：扫描 OneBot 旧数据（QQ号键）能否匹配到本群
+     * 官方Bot成员缓存中的同一成员，预览结果并等待二次确认
+     */
+    async migrateBirthdayData(e) {
+        if (!checkPermission(e)) {
+            return e.reply('只有管理员或群主才能迁移生日数据')
+        }
+        if (!String(e.group_id || '').includes(':')) {
+            return e.reply('本命令用于将 OneBot 环境的旧生日数据迁移到官方Bot，请在官方Bot的群聊中使用')
+        }
+        const { total, matched, unmatched, skipped } = await this._scanMigratableBirthdays(e)
+        if (!total) {
+            return e.reply('没有找到需要迁移的旧生日数据（无QQ号键的记录）')
+        }
+        if (!matched.length) {
+            let msg = `扫描了 ${total} 条旧生日数据，本群成员缓存中没有能匹配的成员，本次无可迁移数据。\n匹配要求昵称与头像均一致，且目标成员需在Bot重启后于本群发言过（以积累成员缓存）。`
+            if (unmatched.length) {
+                msg += `\n未匹配：${unmatched.slice(0, 5).map(m => `「${m.name}」`).join('、')}${unmatched.length > 5 ? ` 等 ${unmatched.length} 条` : ''}`
+            }
+            return e.reply(msg)
+        }
+        // 缓存扫描结果供确认命令使用
+        this._migrationScan = { at: Date.now(), matched }
+        let msg = `📋 生日数据迁移预览\n共扫描旧数据 ${total} 条：\n✅ 可迁移 ${matched.length} 条（昵称+头像均与群成员缓存一致）`
+        if (skipped.length) msg += `\n⏭️ 已存在官方Bot记录而跳过 ${skipped.length} 条`
+        if (unmatched.length) msg += `\n❌ 无法匹配 ${unmatched.length} 条（保持不变，需重新设置）`
+        msg += '\n\n将执行：'
+        for (const m of matched.slice(0, 10)) {
+            msg += `\n「${m.name}」QQ${m.qq} → ${shortId(m.compositeId)}`
+        }
+        if (matched.length > 10) msg += `\n…等共 ${matched.length} 条`
+        const buttons = [segment.button([{
+            text: '确认迁移', callback: '#确认迁移生日数据', permission: [e.user_id],
+            content: `确认迁移 ${matched.length} 条生日数据？`, confirm_text: '确认', cancel_text: '取消',
+        }])]
+        await e.reply([msg, ...buttons])
+        return true
+    }
+
+    /** 确认执行生日数据迁移（配合 #迁移生日数据 的预览缓存） */
+    async confirmMigrateBirthdayData(e) {
+        if (!checkPermission(e)) {
+            return e.reply('只有管理员或群主才能迁移生日数据')
+        }
+        const scan = this._migrationScan
+        if (!scan || Date.now() - scan.at > 5 * 60 * 1000 || !scan.matched?.length) {
+            return e.reply('没有待确认的迁移任务或预览已过期，请先使用 #迁移生日数据 扫描')
+        }
+        let migrated = 0
+        for (const m of scan.matched) {
+            // 预览后数据可能变化：目标键已存在或旧键已不在时保守跳过
+            if (this.birthdayData[m.compositeId] || !this.birthdayData[m.qq]) continue
+            this.birthdayData[m.compositeId] = {
+                ...this.birthdayData[m.qq],
+                migratedFrom: String(m.qq),
+                migratedAt: new Date().toISOString(),
+            }
+            delete this.birthdayData[m.qq]
+            migrated++
+        }
+        DataManager.saveBirthdayData(this.birthdayData)
+        this._migrationScan = null
+        logger.mark(`[Schedule生日提醒] 生日数据迁移完成：${migrated}/${scan.matched.length} 条`)
+        return e.reply(`✅ 迁移完成：${migrated} 条旧生日数据已转为官方Bot记录，这些成员无需重新设置。\n未匹配成员的旧数据保持不变，可在其发言积累缓存后重新执行 #迁移生日数据`)
+    }
+
+    /**
+     * 扫描可迁移的旧生日数据（QQ号键 → 官方Bot复合ID键）
+     * 同一成员判定（二者须同时满足，任一取不到即判不匹配，避免误迁移）：
+     * 1. 昵称一致：旧记录 name 与成员缓存 nickname 完全相同
+     * 2. 头像一致：QQ号 qlogo 直链头像与 OpenID qqapp 头像逐字节相同（依次尝试 100/640 尺寸）
+     * @returns {Promise<{ total: number, matched: Array, unmatched: Array, skipped: Array }>}
+     */
+    async _scanMigratableBirthdays(e) {
+        const result = { total: 0, matched: [], unmatched: [], skipped: [] }
+        const oldEntries = Object.entries(this.birthdayData).filter(([key]) => /^\d+$/.test(key))
+        result.total = oldEntries.length
+        if (!result.total) return result
+        // 官方Bot成员缓存（gml）：键为 "botUin:OpenID" 复合ID，值含 nickname/avatar
+        const memberMap = await Bot.pickGroup(e.group_id).getMemberMap().catch(() => null)
+        if (!memberMap) {
+            result.unmatched = oldEntries.map(([qq, data]) => ({ qq, name: data.name }))
+            return result
+        }
+        const members = [...memberMap.values()]
+        for (const [qq, data] of oldEntries) {
+            // 昵称初筛，头像复检逐字节比对
+            const candidates = members.filter(m => m?.nickname && m.nickname === data.name)
+            let hit = null
+            for (const member of candidates) {
+                if (await this._sameAvatar(qq, member.user_id)) {
+                    hit = member
+                    break
+                }
+            }
+            if (!hit) {
+                result.unmatched.push({ qq, name: data.name })
+                continue
+            }
+            if (this.birthdayData[hit.user_id]) {
+                // 该成员已有官方Bot记录（如手动重新设置过），不覆盖
+                result.skipped.push({ qq, name: data.name })
+                continue
+            }
+            result.matched.push({ qq, name: data.name, compositeId: hit.user_id })
+        }
+        return result
+    }
+
+    /**
+     * 比较 QQ号直链头像与官方Bot OpenID 头像是否为同一张图（逐字节比对）
+     * @param {string} qq 旧数据QQ号
+     * @param {string} compositeId 官方Bot复合ID "botUin:OpenID"
+     * @returns {Promise<boolean>}
+     */
+    async _sameAvatar(qq, compositeId) {
+        const fetchBuf = async url => {
+            const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
+            return res.ok ? Buffer.from(await res.arrayBuffer()) : null
+        }
+        // 依次尝试 100/640 尺寸，任一尺寸字节一致即认定同一头像
+        for (const size of [100, 640]) {
+            try {
+                const [qqAvatar, openAvatar] = await Promise.all([
+                    fetchBuf(`https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=${size}`),
+                    fetchBuf(getAvatarUrl(compositeId, size)),
+                ])
+                if (!qqAvatar || !openAvatar) return false
+                if (qqAvatar.equals(openAvatar)) return true
+            } catch {
+                return false
+            }
+        }
+        return false
     }
     /**
      * 全量消息钩子（配合规则末位的空 reg 规则）：官方Bot管理员代添加生日时目标昵称未知，
