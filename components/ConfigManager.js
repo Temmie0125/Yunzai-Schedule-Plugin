@@ -40,6 +40,7 @@ export class ConfigManager {
             renderRestartCount: 100,  // 渲染重启计数
             maxRenderRetry: 1,        // 最大重试次数
             renderTimeOut: 10000,     // 渲染超时时间（ms）
+            renderer: "puppeteer",    // 图片渲染器: puppeteer 插件独立实例 / shotium 宿主共享引擎 / auto 自动选择
             autoCancelCheckEnabled: false,
             autoCancelCheckInterval: 60,
             // 调试模式：开启后会打印高频扫描等详细日志（默认关闭，避免刷屏）
@@ -80,6 +81,8 @@ export class ConfigManager {
         if (!config.classReminderScanInterval) config.classReminderScanInterval = defaultConfig.classReminderScanInterval;
         // 调试模式默认值兜底
         if (config.debugMode === undefined) config.debugMode = defaultConfig.debugMode;
+        // 渲染器模式兜底：仅允许 puppeteer / shotium / auto
+        if (!['puppeteer', 'shotium', 'auto'].includes(config.renderer)) config.renderer = defaultConfig.renderer;
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -124,7 +127,7 @@ export class ConfigManager {
         // 仅提取需要保存的字段
         const {
             pushHour, showTableName, autoRecallCode,
-            renderScale, renderRestartCount, maxRenderRetry, renderTimeOut,
+            renderScale, renderRestartCount, maxRenderRetry, renderTimeOut, renderer,
             autoCancelCheckEnabled, autoCancelCheckInterval,
             classReminderEnabled, classReminderScanInterval,
             debugMode,
@@ -141,6 +144,7 @@ export class ConfigManager {
             showTableName,
             autoRecallCode,
             renderScale, renderRestartCount, maxRenderRetry, renderTimeOut,
+            renderer,
             autoCancelCheckEnabled,
             autoCancelCheckInterval,
             classReminderEnabled, classReminderScanInterval,

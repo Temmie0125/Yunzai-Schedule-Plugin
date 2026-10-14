@@ -5,6 +5,12 @@ renderScale: 1.0
 renderRestartCount: 100
 maxRenderRetry: 1
 renderTimeOut: 10000
+# 图片渲染器：
+#   puppeteer 插件独立浏览器实例（默认，兼容性最好，上方渲染参数全部生效）
+#   shotium   复用宿主 TRSS-Yunzai 的共享 Shotium 引擎，插件不再维护独立浏览器，内存占用更低、渲染更快；
+#             渲染精度跟随宿主 renderers/shotium 的 scale 配置，仅渲染超时时间生效
+#   auto      宿主存在可用 Shotium 渲染器时自动使用，否则回退 puppeteer
+renderer: "puppeteer"
 autoCancelCheckEnabled: false    
 autoCancelCheckInterval: 60
 # 上课提醒功能总开关（管理员可全局禁用，默认关闭，用户需手动开启）

@@ -25,6 +25,19 @@ export const schemas = [
         label: '图片渲染设置'
     },
     {
+        field: "renderer",
+        label: "图片渲染器",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "Puppeteer（独立实例）", value: "puppeteer" },
+                { label: "Shotium（宿主共享）", value: "shotium" },
+                { label: "自动选择", value: "auto" }
+            ]
+        },
+        bottomHelpMessage: "Puppeteer：插件自建浏览器实例，下方的渲染精度/重试/重启阈值等参数全部生效。Shotium：复用宿主 TRSS-Yunzai 的共享 Shotium 引擎，插件不再维护独立浏览器，内存占用更低；渲染精度跟随宿主 renderers/shotium 的 scale 配置，仅渲染超时时间生效。自动选择：宿主存在可用的 Shotium 渲染器时使用，否则回退 Puppeteer。Shotium 渲染失败时也会自动回退 Puppeteer，保证图片正常产出。"
+    },
+    {
         field: "renderScale",
         label: "图片渲染精度",
         component: "InputNumber",

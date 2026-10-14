@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import art from 'art-template'
 import puppeteer from 'puppeteer'
+import { getHostShotium, renderWithShotium } from './ShotiumRenderer.js'
 
 // 获取插件根目录
 const pluginRoot = path.join(process.cwd(), 'plugins', 'schedule')
@@ -158,6 +159,16 @@ async function renderTemplate(templateName, data, options = {}) {
     } catch (err) {
         logger.error(`[Schedule] 模板 ${templateName} 解析失败:`, err)
         return null
+    }
+    // 渲染器选择：puppeteer 插件独立实例 / shotium 宿主共享引擎 / auto 宿主可用时自动使用
+    const rendererMode = config.renderer || 'puppeteer'
+    if (rendererMode !== 'puppeteer') {
+        const wantShotium = rendererMode === 'shotium' || (rendererMode === 'auto' && !!(await getHostShotium()))
+        if (wantShotium) {
+            const shotiumBuffer = await renderWithShotium(templateName, html, { timeout: maxRenderTime })
+            if (shotiumBuffer) return shotiumBuffer
+            logger.warn(`[Schedule] Shotium 渲染模板 ${templateName} 失败，回退 Puppeteer`)
+        }
     }
     let lastError = null
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
