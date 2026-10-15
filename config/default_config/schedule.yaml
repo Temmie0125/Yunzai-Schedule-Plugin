@@ -46,5 +46,9 @@ hideEndedDays: 30
 showQQ: true
 # 监听所有文件以尝试自动导入课表
 watchFiles: false
+# URL直链导入总开关（#导入课表 <直链> / 上下文发送直链）。
+# 插件内置安全防护：仅允许公网 http/https 直链（80/443端口），拒绝内网/回环/链路本地地址与重定向降级，
+# 限制文件大小2MB、请求超时20秒、重定向不超过3跳
+urlImportEnabled: true
 # 生日列表允许使用自定义昵称，关闭则同步QQ昵称
 birthdayCustomName: true

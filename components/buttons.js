@@ -60,3 +60,19 @@ export function scheduleButtons(e) {
     ]
     return [segment.button(...rows)]
 }
+
+/**
+ * 直链导入快捷按钮（非全量消息群导入引导等场景）
+ * @param {object} e 事件对象
+ * @returns {Array} 按钮消息段数组（非官方平台为空数组）
+ */
+export function urlImportButtons(e) {
+    if (!isOfficialMsg(e)) return []
+    const rows = [
+        [
+            { text: '直链导入教程', callback: '#导入课表直链教程' },
+            { text: '口令导入', input: '#设置课表 ' },
+        ],
+    ]
+    return [segment.button(...rows)]
+}

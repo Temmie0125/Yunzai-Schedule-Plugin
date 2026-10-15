@@ -1,8 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { getBotName, getFileInfo, getFileContent } from '../components/common.js'
+import { getBotName, getFileInfo, getFileContent, getGroupBotState } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
+import { urlImportButtons } from '../components/buttons.js'
 import {
     importScheduleFromCode,
     importScheduleFromStarlinkCode,
@@ -10,12 +11,22 @@ import {
     importScheduleFromIcsData,
     importScheduleFromWakeupData
 } from '../services/scheduleImporter.js'
+import { importScheduleFromUrl } from '../services/urlImporter.js'
 import { parseTimeTableJson } from '../services/timeTableParser.js'
 import {
     parseChineseDateToMD,
     parseSemesterStartDate,
     formatDate
 } from '../utils/timeUtils.js';
+
+// 直链导入教程图（tmpfile.link 上传指引截图）
+const URL_GUIDE_IMAGE = path.join(process.cwd(), 'plugins', 'schedule', 'resources', 'images', 'url_guide.png')
+// 官方Bot群内接收消息设置文案
+const RECV_SETTING_TEXT = {
+    all: '接收全部消息',
+    only_mention: '仅接收@消息',
+    mention_and_context: '仅接收@与上下文消息'
+}
 export class ScheduleManage extends plugin {
     constructor() {
         super({
@@ -34,8 +45,13 @@ export class ScheduleManage extends plugin {
                     fnc: "setStarlinkSchedule"
                 },
                 {
-                    reg: "^#导入课表$",
+                    reg: "^#导入课表(?:\\s+(.+))?$",
                     fnc: "importFromFile"
+                },
+                {
+                    // 直链导入教程：#导入课表(直链|链接)?教程 / #(导入)?(直链|链接)(导入)?教程 等
+                    reg: "^#导入课表(直链|链接)?(教程|指南|说明)$|^#(导入)?(直链|链接)(?:导入)?(教程|指南|说明)$",
+                    fnc: "showUrlImportGuide"
                 },
                 {
                     reg: "^#导出(拾光)?课表(\\s)?(拾光)?$",
@@ -511,7 +527,8 @@ export class ScheduleManage extends plugin {
         }
         // 确认后进入文件等待
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。星链用户请优先使用分享口令哦~\n输入“取消”以取消操作。", false, { at: true });
+        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。星链用户请优先使用分享口令哦~\n" +
+            "也支持直接发送文件直链。发送 #导入课表直链教程 查看教程。\n输入“取消”以取消操作。", false, { at: true });
         return true;
     }
     /**
@@ -540,14 +557,74 @@ export class ScheduleManage extends plugin {
     }
     /**
      * 导入课表文件（命令入口）
+     * 支持 #导入课表（进入文件等待）与 #导入课表 <URL直链>（立即尝试直链导入）
      */
     async importFromFile() {
+        const e = this.e;
+        const arg = e.msg.match(/^#导入课表(?:\s+(.+))?$/)?.[1];
+        if (arg) {
+            // 带直链参数：立即导入。群聊不做二次确认——直链本身已公开于群聊，
+            // 且减少官方非全量消息群下逐条@的往返成本
+            return await this.doImportFromUrl(arg.trim());
+        }
         if (this.e.group_id) {
+            // 官方Bot群聊：未开启「接收全部消息」时文件导入闭环失效
+            // （QQ客户端无法在发送文件的同时@机器人，Bot收不到文件），直接引导而非进入文件等待
+            const botState = await getGroupBotState(e);
+            if (botState?.recv_msg_setting && botState.recv_msg_setting !== 'all') {
+                return await this.replyNonFullImportGuide(botState);
+            }
             // 群聊需要二次确认
             return await this.waitForConfirm('导入', 'confirmImport');
         }
         this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。\n输入“取消”以取消操作。", false, { at: true });
+        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。\n" +
+            "也支持发送文件直链：#导入课表 <直链>，发送 #导入课表直链教程 查看教程。\n输入“取消”以取消操作。", false, { at: true });
+        return true;
+    }
+    /**
+     * 执行直链导入并回复结果
+     * @param {string} rawUrl 用户提供的文件直链
+     */
+    async doImportFromUrl(rawUrl) {
+        const botName = getBotName(this.e);
+        await this.reply(`${botName}正在从直链获取课表文件，请稍候~`);
+        const result = await importScheduleFromUrl(this.e.user_id, rawUrl, this.e);
+        await this.reply(result.message);
+        return true;
+    }
+    /**
+     * 直链导入教程：tmpfile.link 上传指引截图 + 使用说明
+     */
+    async showUrlImportGuide() {
+        let msg = `📖 课表文件直链导入教程\n` +
+            `① 打开 https://tmpfile.link/index-zh ，上传你的课表文件（JSON/ICS/WakeUp备份）\n` +
+            `② 上传完成后复制返回的 downloadLink 下载直链（见下图）\n` +
+            `③ 发送 #导入课表 <直链> 即可完成导入\n` +
+            `其他可公开访问的课表文件直链同样支持哦~`;
+        const replyMsg = [msg];
+        if (fs.existsSync(URL_GUIDE_IMAGE)) replyMsg.push(segment.image(URL_GUIDE_IMAGE));
+        await this.reply(replyMsg);
+        return true;
+    }
+    /**
+     * 非全量消息群导入引导：官方Bot群未开启「接收全部消息」时，
+     * 文件监听失效且文件无法携带@，引导改用直链/口令导入或开启全量
+     * @param {object} botState getGroupBotState 返回的群内Bot状态
+     */
+    async replyNonFullImportGuide(botState) {
+        const e = this.e;
+        const botName = getBotName(e);
+        const settingText = RECV_SETTING_TEXT[botState.recv_msg_setting] || botState.recv_msg_setting;
+        const msg = `⚠️ 检测到本群机器人的消息接收设置为「${settingText}」，未开启「接收全部消息」。\n` +
+            `此环境下QQ客户端无法在发送文件的同时@${botName}，Bot收不到课表文件，文件导入无法使用。可通过以下方式导入：\n` +
+            `① 直链导入：先将课表文件上传到 tmpfile.link 等工具获取公开直链（教程见下图），再发送\n#导入课表 <直链>\n` +
+            `② 口令导入：发送 #设置课表 <分享口令>（发送时记得@${botName}）\n` +
+            `③ 请群主在群设置中把机器人的消息接收设置改为「接收全部消息」后，重新发送 #导入课表`;
+        const replyMsg = [msg];
+        if (fs.existsSync(URL_GUIDE_IMAGE)) replyMsg.push(segment.image(URL_GUIDE_IMAGE));
+        replyMsg.push(...urlImportButtons(e));
+        await this.reply(replyMsg);
         return true;
     }
     async waitingForImportFile() {
@@ -560,7 +637,16 @@ export class ScheduleManage extends plugin {
         const botName = getBotName(e);
         const fileInfo = getFileInfo(e);
         if (!fileInfo) {
-            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件~`);
+            // 上下文直链导入：等到的不是文件而是直链文本
+            if (typeof e.msg === 'string') {
+                const urlMatch = e.msg.match(/https?:\/\/\S+/i);
+                if (urlMatch) {
+                    const result = await importScheduleFromUrl(e.user_id, urlMatch[0], e);
+                    await this.reply(result.message);
+                    return true;
+                }
+            }
+            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件，或发送文件直链~`);
             return false;
         }
         const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;

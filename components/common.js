@@ -418,6 +418,29 @@ export function isOfficialMsg(e) {
     return /^QQ-(group|private)$/.test(e?.platform || '')
 }
 /**
+ * 获取官方Bot在群内的状态（官方接口 GET /v2/groups/{group_openid}/bot_state，
+ * QQBot适配器封装为 pickGroup().getBotStatus()）。
+ * 返回字段：member_openid、joined_at、allow_proactive_msg（是否接受主动推送）、
+ * recv_msg_setting（群内接收消息设置：all=接收全部消息 / only_mention=仅@消息 /
+ * mention_and_context=@与上下文消息）、member_role。
+ * 该接口官方有白名单限制（非白名单报错11253），调用失败、非官方平台或适配器未提供时返回 null，
+ * 调用方必须把 null 当"状态未知"处理，不得据此阻断用户
+ * @param {object} e 事件对象（需群聊官方消息）
+ * @returns {Promise<object|null>}
+ */
+export async function getGroupBotState(e) {
+    try {
+        if (!e?.group_id || !isOfficialMsg(e)) return null
+        const group = Bot.pickGroup(e.group_id)
+        if (typeof group?.getBotStatus !== 'function') return null
+        const state = await group.getBotStatus()
+        return state && typeof state === 'object' ? state : null
+    } catch (err) {
+        debugLog('warn', `[schedule] 获取群内Bot状态失败（官方接口需白名单权限）: ${err?.message || err}`)
+        return null
+    }
+}
+/**
  * 截取适合展示的用户ID：官方Bot复合ID "botUin:OpenID" 仅保留 OpenID 部分
  * @param {string|number} id
  * @returns {string}

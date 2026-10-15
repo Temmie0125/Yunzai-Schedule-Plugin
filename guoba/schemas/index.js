@@ -181,6 +181,13 @@ export const schemas = [
         bottomHelpMessage: "开启后将监听所有聊天文件，并自动导入支持的课表格式"
     },
     {
+        field: "urlImportEnabled",
+        label: "URL直链导入",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "允许通过 #导入课表 <直链> 或上下文发送文件直链导入课表，适用于官方Bot未开启「接收全部消息」导致文件监听失效的群。插件内置防护：仅允许公网 http/https 直链（80/443端口），拒绝内网地址与重定向降级，限制2MB、20秒超时、最多3跳重定向"
+    },
+    {
         component: 'Divider',
         label: '自动任务设置'
     },
