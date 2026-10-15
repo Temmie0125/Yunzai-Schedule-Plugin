@@ -277,16 +277,22 @@
 
         .course-icon {
             font-size: 20px;
+            /* 图标是固定尺寸，不参与拉伸与收缩，避免被长文本挤压变形 */
+            flex: 0 0 auto;
         }
 
         .course-info {
             font-size: 24px;
             color: #2d3748;
             font-weight: 500;
-            word-break: break-word;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            /* 关键修复：flex-basis 归零并允许收缩，长课程名不再因 max-content 超宽
+               把图标挤到独立一行，而是与图标同行显示并在末尾省略号截断。
+               min-width: 0 覆盖 flex 项默认的 content-based 最小宽度 */
+            flex: 1 1 0%;
+            min-width: 0;
         }
 
         .course-detail {
@@ -301,6 +307,15 @@
 
         .location-icon {
             font-size: 20px;
+            /* 同课程图标：固定尺寸，不随长地点文本被压缩 */
+            flex: 0 0 auto;
+        }
+
+        .location-text {
+            /* 地点行同理：文本占满剩余宽度并在自身内部换行，图标始终留在首行 */
+            flex: 1 1 0%;
+            min-width: 0;
+            word-break: break-word;
         }
 
         .remaining-time {
