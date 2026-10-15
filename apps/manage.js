@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { getBotName, getFileInfo, getFileContent, getGroupBotState } from '../components/common.js'
+import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { urlImportButtons } from '../components/buttons.js'
 import {
@@ -568,13 +568,20 @@ export class ScheduleManage extends plugin {
             return await this.doImportFromUrl(arg.trim());
         }
         if (this.e.group_id) {
+            const isOfficial = isOfficialMsg(e);
             // 官方Bot群聊：未开启「接收全部消息」时文件导入闭环失效
             // （QQ客户端无法在发送文件的同时@机器人，Bot收不到文件），直接引导而非进入文件等待
-            const botState = await getGroupBotState(e);
+            const botState = isOfficial ? await getGroupBotState(e) : null;
             if (botState?.recv_msg_setting && botState.recv_msg_setting !== 'all') {
                 return await this.replyNonFullImportGuide(botState);
             }
-            // 群聊需要二次确认
+            if (isOfficial && !botState?.recv_msg_setting) {
+                // 官方Bot但群状态未知（bot_state接口需平台白名单，多数机器人调用失败）：
+                // 跳过二次确认直接进入文件等待，并在提示中前置说明非全量限制与替代途径——
+                // 避免"确认→发文件→Bot收不到"的死循环（确认换来的也是无法用文件）
+                return await this.promptOfficialImport();
+            }
+            // 已知全量（或非官方平台）群聊：保留二次确认
             return await this.waitForConfirm('导入', 'confirmImport');
         }
         this.setContext("waitingForImportFile");
@@ -591,6 +598,22 @@ export class ScheduleManage extends plugin {
         await this.reply(`${botName}正在从直链获取课表文件，请稍候~`);
         const result = await importScheduleFromUrl(this.e.user_id, rawUrl, this.e);
         await this.reply(result.message);
+        return true;
+    }
+    /**
+     * 官方群聊导入提示（群状态未知时）：合并隐私提醒与文件等待，跳过「确认」步骤。
+     * 官方Bot群大概率仅接收@消息（且QQ客户端@与文件不能同时发送），
+     * 逐条确认只会徒增@往返，因此在首次提示中前置说明限制与替代途径：
+     * 全量群用户直接发文件即可导入，非全量群用户当场就能看到直链/口令方案
+     */
+    async promptOfficialImport() {
+        this.setContext("waitingForImportFile");
+        const msg = `📥 请直接发送你要导入的课表文件（本插件原生/拾光JSON、ICS、WakeUp备份），或发送文件直链。\n` +
+            `⚠️ 群聊发送课表可能泄露隐私，建议私聊操作。\n` +
+            `⚠️ 若本群机器人未开启「接收全部消息」（仅@消息模式），Bot 将收不到你发送的文件——` +
+            `请改用 #导入课表 <直链> 或 #设置课表 <口令> 导入，或请群主在群设置中开启「接收全部消息」。\n` +
+            `发送 #导入课表直链教程 查看直链获取教程。输入"取消"取消操作。`;
+        await this.reply([msg, ...urlImportButtons(this.e)]);
         return true;
     }
     /**
@@ -646,7 +669,8 @@ export class ScheduleManage extends plugin {
                     return true;
                 }
             }
-            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件，或发送文件直链~`);
+            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件，或发送文件直链~` +
+                (isOfficialMsg(e) ? `\n💡 若本群机器人未开启「接收全部消息」，Bot 将收不到文件，可改用 #导入课表 <直链> 或 #设置课表 <口令> 导入` : ''));
             return false;
         }
         const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;
