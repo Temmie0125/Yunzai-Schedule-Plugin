@@ -263,15 +263,32 @@ export const schemas = [
     {
         field: "sortMode",
         label: "课表排序模式",
-        helpMessage: "默认按QQ号升序，可改为按上课状态排序",
+        helpMessage: "默认按QQ号升序，可改为按上课状态或按距上/下课时间排序",
         component: "RadioGroup",
         componentProps: {
             options: [
                 { label: "按QQ号(默认)", value: "userId" },
-                { label: "按上课状态", value: "courseStatus" }
+                { label: "按上课状态", value: "courseStatus" },
+                { label: "按距上/下课时间", value: "timeDistance" }
             ]
         },
-        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。"
+        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。按距上/下课时间：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距离下学期/上课的分钟数升序，越接近上下课越靠前；已结束者按刚下课的时间升序，其余按状态与QQ号。"
+    },
+    {
+        field: "scheduleColumns",
+        label: "群课表列数",
+        helpMessage: "群课表/所有人课表图片中每行展示的成员数，2~4 列",
+        component: "InputNumber",
+        required: true,
+        componentProps: {
+            min: 2,
+            max: 4,
+            step: 1,
+            placeholder: '请输入2-4之间的列数',
+            addonAfter: '列'
+        },
+        defaultValue: 2,
+        bottomHelpMessage: "群课表图片每行展示多少位成员。默认2列；选择3列/4列时，图片会按列数整体加宽（3列约1598px、4列约2116px），每张卡片的宽度、头像与字号保持与2列完全一致——只加宽画布，不压缩卡片内容。列数越多，图片越宽、行数越少；手机端会把整图缩放显示，若以手机查看为主建议用2~3列。"
     },
     {
         field: "hideEndedDays",

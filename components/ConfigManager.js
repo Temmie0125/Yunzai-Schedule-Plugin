@@ -5,6 +5,14 @@ import YAML from 'yaml'
 export const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/default_config');
 export const CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/config');
 export const CONFIG_FILE = 'schedule.yaml';
+// 群课表每行成员列数允许范围：至少 2 列，最多 4 列
+export const MIN_SCHEDULE_COLUMNS = 2;
+export const MAX_SCHEDULE_COLUMNS = 4;
+// 群课表布局常量：任意列数下都保持卡片宽度不变（= 2 列时的宽度），
+// 列数只影响画布宽度与每行人数，卡片内的字号/头像不随列数变化
+export const SCHEDULE_CARD_WIDTH = 502;   // 单张卡片目标宽度（2 列 / 1080 画布下的实际宽度）
+export const SCHEDULE_GRID_GAP = 16;      // 成员网格间距（与模板 .members-list 的 gap 一致）
+export const SCHEDULE_SIDE_PADDING = 60;  // 成员网格左右内边距合计（与模板 .members-list 的 padding 一致）
 export class ConfigManager {
     /**
      * 获取用户配置（若不存在则从默认配置复制）
@@ -61,10 +69,14 @@ export class ConfigManager {
             defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
             botName: "",    // bot自定义名称，默认取机器人昵称
             font: "像素",    // 字体风格，默认为像素字体
-            sortMode: "userId",    // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态
+            // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态；
+            // timeDistance：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序
+            sortMode: "userId",
+            scheduleColumns: 2,    // 群课表图片每行展示的成员列数（2~4，3/4 列自动紧凑化卡片）
             hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
+            urlImportEnabled: true,  // URL直链导入总开关
             birthdayCustomName: true  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称
         };
         // 合并默认值（确保所有字段都有值）
@@ -83,6 +95,10 @@ export class ConfigManager {
         if (config.debugMode === undefined) config.debugMode = defaultConfig.debugMode;
         // 渲染器模式兜底：仅允许 puppeteer / shotium / auto
         if (!['puppeteer', 'shotium', 'auto'].includes(config.renderer)) config.renderer = defaultConfig.renderer;
+        // 群课表排序模式兜底：仅允许 userId / courseStatus / timeDistance
+        if (!['userId', 'courseStatus', 'timeDistance'].includes(config.sortMode)) config.sortMode = defaultConfig.sortMode;
+        // 群课表列数兜底：非法值回落到默认，并夹在 2~4 之间（列数过大会让卡片拥挤到不可读）
+        config.scheduleColumns = ConfigManager.normalizeColumns(config.scheduleColumns);
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -94,6 +110,27 @@ export class ConfigManager {
         config.pushCron = `0 ${config.pushHour} * * *`;
         config.birthdayPushCron = `0 ${config.birthdayPushHour} * * *`;
         return config;
+    }
+    /**
+     * 标准化群课表列数：非法值回落默认 2 列，越界值夹到 [MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS]
+     * @param {*} value 配置中的列数（可能是字符串/小数/undefined）
+     * @returns {number} 可直接用于渲染的列数
+     */
+    static normalizeColumns(value) {
+        const n = Number.parseInt(value, 10);
+        if (!Number.isFinite(n)) return MIN_SCHEDULE_COLUMNS;
+        return Math.min(MAX_SCHEDULE_COLUMNS, Math.max(MIN_SCHEDULE_COLUMNS, n));
+    }
+    /**
+     * 按列数计算群课表画布宽度
+     * 画布随列数加宽而非压缩卡片：3 列约 1598px、4 列约 2116px，
+     * 每张卡片宽度始终等于 2 列时的 502px，避免多列状态下字号/间距被迫缩小
+     * @param {number|string} columns 列数（内部会先做标准化）
+     * @returns {number} 画布宽度（px）
+     */
+    static resolveScheduleCanvasWidth(columns) {
+        const cols = ConfigManager.normalizeColumns(columns);
+        return SCHEDULE_SIDE_PADDING + cols * SCHEDULE_CARD_WIDTH + (cols - 1) * SCHEDULE_GRID_GAP;
     }
     /**
      * 标准化cron表达式，适配node-schedule
@@ -136,8 +173,8 @@ export class ConfigManager {
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
-            sortMode, showQQ,
-            watchFiles, birthdayCustomName
+            sortMode, scheduleColumns, hideEndedDays, showQQ,
+            watchFiles, urlImportEnabled, birthdayCustomName
         } = data;
         const configToSave = {
             pushHour,
@@ -154,9 +191,13 @@ export class ConfigManager {
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
-            sortMode, showQQ,
-            watchFiles, birthdayCustomName
+            sortMode, scheduleColumns, hideEndedDays, showQQ,
+            watchFiles, urlImportEnabled, birthdayCustomName
         };
+        // 列数落库前同样标准化，避免绕过前端校验写入越界值
+        if (configToSave.scheduleColumns !== undefined) {
+            configToSave.scheduleColumns = ConfigManager.normalizeColumns(configToSave.scheduleColumns);
+        }
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {
             if (configToSave[key] === undefined) {

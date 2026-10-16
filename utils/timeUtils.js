@@ -192,6 +192,96 @@ export function compareByStartTime(a, b) {
     const mb = timeToMinutes(b.startTime)
     return (Number.isNaN(ma) ? 24 * 60 + 1 : ma) - (Number.isNaN(mb) ? 24 * 60 + 1 : mb)
 }
+
+// ===== 「按距上/下课时间」排序支持 =====
+/**
+ * 「按距上/下课时间」排序的状态分组：0=正在上课（含分身/翘课），1=未开始，2=其他（已结束/无课程/学期未开始/学期结束）
+ * 与「按上课状态」排序保持同一分组口径，区别只在组内排序依据
+ * @param {string} status 成员状态
+ * @returns {number} 分组序号（未知状态归入 2）
+ */
+export function timeDistanceGroup(status) {
+    if (status === '上课中' || status === '分身中' || status === '翘课中') return 0
+    if (status === '未开始') return 1
+    return 2
+}
+
+/**
+ * 计算成员距离下一次「上/下课」的分钟数（纯函数，供排序与单测使用）
+ * - 上课中 / 分身中 / 翘课中：距最早一门课下课（同一天内最接近的下课事件）
+ * - 未开始：距下一节课上课
+ * - 已结束：距今日最后一节课下课（刚下课的人数值最小）
+ * - 无课程 / 学期未开始 / 学期结束：无上/下课事件，返回 null
+ * @param {object} member 形如 { status, nowMinutes, ongoingCourses, nextCourse, currentCourse }
+ * @returns {number|null} 分钟数（非负）；无有效上/下课事件时返回 null
+ */
+export function computeBoundaryMinutes({ status, nowMinutes, ongoingCourses, nextCourse, currentCourse }) {
+    if (!Number.isFinite(nowMinutes)) return null
+    if (status === '上课中' || status === '分身中' || status === '翘课中') {
+        const courses = Array.isArray(ongoingCourses) && ongoingCourses.length > 0
+            ? ongoingCourses
+            : (currentCourse ? [currentCourse] : [])
+        let minEnd = null
+        for (const course of courses) {
+            const end = timeToMinutes(course?.endTime)
+            if (Number.isNaN(end)) continue
+            if (minEnd === null || end < minEnd) minEnd = end
+        }
+        return minEnd === null ? null : Math.max(0, minEnd - nowMinutes)
+    }
+    if (status === '未开始') {
+        const start = timeToMinutes(nextCourse?.startTime ?? currentCourse?.startTime)
+        return Number.isNaN(start) ? null : Math.max(0, start - nowMinutes)
+    }
+    if (status === '已结束') {
+        const end = timeToMinutes(currentCourse?.endTime)
+        return Number.isNaN(end) ? null : Math.max(0, nowMinutes - end)
+    }
+    return null
+}
+
+/**
+ * 「按距上/下课时间」排序比较器（纯函数，便于单测）
+ * 先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序（越接近上下课越靠前）：
+ * - 前两组：computeBoundaryMinutes 升序，距离相同再按状态序、最后按用户ID
+ * - 其他组：按状态优先级（已结束 → 无课程 → 学期未开始 → 学期结束），
+ *   同组内已结束者按刚下课时间升序（刚下课的排前面），其余按用户ID
+ * @param {object} a 成员数据（需含 status、boundaryMinutes、userId）
+ * @param {object} b
+ * @param {(a:*,b:*)=>number} compareIds 用户ID兜底比较器
+ * @returns {number}
+ */
+export function compareByTimeDistance(a, b, compareIds) {
+    const groupDiff = timeDistanceGroup(a.status) - timeDistanceGroup(b.status)
+    if (groupDiff !== 0) return groupDiff
+    const group = timeDistanceGroup(a.status)
+    // 组内兜底：同一状态内按用户ID
+    const byId = () => (typeof compareIds === 'function' ? compareIds(a.userId, b.userId) : 0)
+    if (group === 2) {
+        const statusOrder = ['已结束', '无课程', '学期未开始', '学期结束']
+        const idxA = statusOrder.indexOf(a.status)
+        const idxB = statusOrder.indexOf(b.status)
+        const priorityA = idxA === -1 ? 999 : idxA
+        const priorityB = idxB === -1 ? 999 : idxB
+        if (priorityA !== priorityB) return priorityA - priorityB
+        // 同为已结束：刚下课（距离更小）的排前面
+        if (a.status === '已结束' && b.status === '已结束') {
+            const da = Number.isFinite(a.boundaryMinutes) ? a.boundaryMinutes : Number.POSITIVE_INFINITY
+            const db = Number.isFinite(b.boundaryMinutes) ? b.boundaryMinutes : Number.POSITIVE_INFINITY
+            if (da !== db) return da - db
+        }
+        return byId()
+    }
+    const da = Number.isFinite(a.boundaryMinutes) ? a.boundaryMinutes : Number.POSITIVE_INFINITY
+    const db = Number.isFinite(b.boundaryMinutes) ? b.boundaryMinutes : Number.POSITIVE_INFINITY
+    if (da !== db) return da - db
+    // 距离相同：按状态序（上课中→分身中→翘课中→未开始）再按用户ID
+    const statusOrder = ['上课中', '分身中', '翘课中', '未开始']
+    const idxA = statusOrder.indexOf(a.status)
+    const idxB = statusOrder.indexOf(b.status)
+    if (idxA !== idxB) return idxA - idxB
+    return byId()
+}
 /**
  * 根据学期开始日期、周数和星期，计算出对应的具体日期
  * @param {string} semesterStart 学期开始日期 YYYY-MM-DD

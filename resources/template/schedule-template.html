@@ -26,7 +26,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            width: 1080px;
+            /* 画布宽度按列数动态加宽（Renderer 注入 canvasWidth），保证任意列数下卡片宽度一致 */
+            width: {{canvasWidth || 1080}}px;
         }
 
         .container {
@@ -103,11 +104,11 @@
             color: #495057;
         }
 
-        /* 成员列表 - 网格布局 */
+        /* 成员列表 - 网格布局（列数由配置注入 CSS 变量，默认2列） */
         .members-list {
             padding: 20px 30px;
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(var(--member-cols, 2), 1fr);
             gap: 16px;
         }
 
@@ -467,7 +468,7 @@
             }
         }
 
-        /* 适配小屏 */
+        /* 适配小屏（放在末尾，同权重下覆盖列数设置，窄屏强制单列） */
         @media (max-width: 700px) {
             .members-list {
                 grid-template-columns: 1fr;
@@ -523,7 +524,7 @@
             </div>
         </div>
 
-        <div class="members-list">
+        <div class="members-list" style="--member-cols: {{columns || 2}};">
             {{each members member}}
             <div class="member-card" style="--status-color: {{ 
                 member.status === '上课中' ? '#B13333' :
