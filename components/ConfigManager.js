@@ -5,9 +5,14 @@ import YAML from 'yaml'
 export const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/default_config');
 export const CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/config');
 export const CONFIG_FILE = 'schedule.yaml';
-// 群课表每行成员列数允许范围：至少 2 列，最多 4 列（4 列已是 1080px 画布下卡片可读的上限）
+// 群课表每行成员列数允许范围：至少 2 列，最多 4 列
 export const MIN_SCHEDULE_COLUMNS = 2;
 export const MAX_SCHEDULE_COLUMNS = 4;
+// 群课表布局常量：任意列数下都保持卡片宽度不变（= 2 列时的宽度），
+// 列数只影响画布宽度与每行人数，卡片内的字号/头像不随列数变化
+export const SCHEDULE_CARD_WIDTH = 502;   // 单张卡片目标宽度（2 列 / 1080 画布下的实际宽度）
+export const SCHEDULE_GRID_GAP = 16;      // 成员网格间距（与模板 .members-list 的 gap 一致）
+export const SCHEDULE_SIDE_PADDING = 60;  // 成员网格左右内边距合计（与模板 .members-list 的 padding 一致）
 export class ConfigManager {
     /**
      * 获取用户配置（若不存在则从默认配置复制）
@@ -115,6 +120,17 @@ export class ConfigManager {
         const n = Number.parseInt(value, 10);
         if (!Number.isFinite(n)) return MIN_SCHEDULE_COLUMNS;
         return Math.min(MAX_SCHEDULE_COLUMNS, Math.max(MIN_SCHEDULE_COLUMNS, n));
+    }
+    /**
+     * 按列数计算群课表画布宽度
+     * 画布随列数加宽而非压缩卡片：3 列约 1598px、4 列约 2116px，
+     * 每张卡片宽度始终等于 2 列时的 502px，避免多列状态下字号/间距被迫缩小
+     * @param {number|string} columns 列数（内部会先做标准化）
+     * @returns {number} 画布宽度（px）
+     */
+    static resolveScheduleCanvasWidth(columns) {
+        const cols = ConfigManager.normalizeColumns(columns);
+        return SCHEDULE_SIDE_PADDING + cols * SCHEDULE_CARD_WIDTH + (cols - 1) * SCHEDULE_GRID_GAP;
     }
     /**
      * 标准化cron表达式，适配node-schedule

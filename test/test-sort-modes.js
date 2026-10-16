@@ -1,9 +1,12 @@
 // 临时测试：群课表「按距上/下课时间」排序与多列配置
-// 覆盖 computeBoundaryMinutes / timeDistanceGroup / compareByTimeDistance / ConfigManager.normalizeColumns
+// 覆盖 computeBoundaryMinutes / timeDistanceGroup / compareByTimeDistance / 列数标准化与画布宽度推导
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-sort-modes.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替
 import { computeBoundaryMinutes, timeDistanceGroup, compareByTimeDistance } from '../utils/timeUtils.js';
-import { ConfigManager, MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS } from '../components/ConfigManager.js';
+import {
+    ConfigManager, MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS,
+    SCHEDULE_CARD_WIDTH, SCHEDULE_GRID_GAP, SCHEDULE_SIDE_PADDING
+} from '../components/ConfigManager.js';
 
 let fail = 0;
 function check(label, cond) {
@@ -129,6 +132,42 @@ for (const [input, expected] of columnCases) {
     const actual = ConfigManager.normalizeColumns(input);
     check(`列数标准化：${String(input)} → ${expected}`, actual === expected);
 }
+
+// ========== 5. 画布宽度：列数只加宽画布，卡片宽度保持不变 ==========
+const canvasCases = [[2, 1080], [3, 1598], [4, 2116]];
+for (const [input, expected] of canvasCases) {
+    const actual = ConfigManager.resolveScheduleCanvasWidth(input);
+    check(`画布宽度：${input} 列 → ${expected}px`, actual === expected);
+}
+// 任意列数下卡片都等于目标宽度（含非法值回落 2 列）
+for (const input of [2, 3, 4, 1, 9, undefined, 'abc']) {
+    const cols = ConfigManager.normalizeColumns(input);
+    const canvas = ConfigManager.resolveScheduleCanvasWidth(input);
+    const cardWidth = (canvas - SCHEDULE_SIDE_PADDING - (cols - 1) * SCHEDULE_GRID_GAP) / cols;
+    check(`卡片宽度恒定（输入 ${String(input)} → ${cols} 列）: ${cardWidth}px`,
+        Math.abs(cardWidth - SCHEDULE_CARD_WIDTH) < 0.01);
+}
+check('画布宽度随列数单调递增',
+    ConfigManager.resolveScheduleCanvasWidth(2) < ConfigManager.resolveScheduleCanvasWidth(3)
+    && ConfigManager.resolveScheduleCanvasWidth(3) < ConfigManager.resolveScheduleCanvasWidth(4));
+
+// 画布宽度公式依赖模板的网格间距与内边距，二者必须与模板 CSS 保持一致（否则卡片宽度会静默偏离）
+import fs from 'node:fs';
+import path from 'node:path';
+const tplPath = path.join(import.meta.dirname, '..', 'resources', 'template', 'schedule-template.html');
+const tpl = fs.readFileSync(tplPath, 'utf8');
+const membersListRule = tpl.match(/\.members-list\s*\{([^}]*)\}/)?.[1] || '';
+const paddingMatch = membersListRule.match(/padding:\s*(\d+)px\s+(\d+)px/);
+const gapMatch = membersListRule.match(/gap:\s*(\d+)px/);
+check('模板 .members-list 存在 padding/gap 声明', !!paddingMatch && !!gapMatch);
+check(`模板网格左右内边距合计与 SCHEDULE_SIDE_PADDING 一致（${SCHEDULE_SIDE_PADDING}）`,
+    !!paddingMatch && Number(paddingMatch[2]) * 2 === SCHEDULE_SIDE_PADDING);
+check(`模板网格 gap 与 SCHEDULE_GRID_GAP 一致（${SCHEDULE_GRID_GAP}）`,
+    !!gapMatch && Number(gapMatch[1]) === SCHEDULE_GRID_GAP);
+check('模板列数由 CSS 变量驱动（未硬编码 2 列）',
+    /grid-template-columns:\s*repeat\(var\(--member-cols/.test(membersListRule));
+check('模板已按列数注入画布宽度（{{canvasWidth}}）', /width:\s*\{\{canvasWidth/.test(tpl));
+check('模板不再包含多列紧凑化规则（3/4 列不压缩卡片）', !/\.members-list\.cols-/.test(tpl));
 
 console.log(fail === 0 ? '\n全部用例通过 ✅' : `\n${fail} 个用例失败 ❌`);
 process.exit(fail === 0 ? 0 : 1);

@@ -153,6 +153,8 @@ async function renderTemplate(templateName, data, options = {}) {
         ...data,
         _res_path: data._res_path || `./plugins/schedule/resources/`
     }
+    // 画布宽度可由渲染数据指定（群课表随列数加宽），否则回退到模板里解析出的固定宽度
+    const canvasWidth = Number(renderData.canvasWidth) > 0 ? Number(renderData.canvasWidth) : designWidth
     let html
     try {
         html = art(tplFile, renderData)
@@ -180,7 +182,7 @@ async function renderTemplate(templateName, data, options = {}) {
         const page = await browser.newPage()
         try {
             await page.setViewport({
-                width: designWidth,
+                width: canvasWidth,
                 height: 100,
                 deviceScaleFactor: scale
             })
@@ -217,13 +219,16 @@ async function renderTemplate(templateName, data, options = {}) {
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
     const now = new Date()
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
-    // 每行成员列数由配置决定，统一走 ConfigManager 标准化（2~4 列，非法值回落 2 列）
+    // 每行成员列数由配置决定，统一走 ConfigManager 标准化（2~4 列，非法值回落 2 列）；
+    // 画布宽度随列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
     const columns = ConfigManager.normalizeColumns(ConfigManager.getConfig().scheduleColumns)
+    const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)
     const templateData = {
         weekday: weekdayMap[currentDay],
         currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         updateTime: now.toLocaleString('zh-CN'),
         columns,
+        canvasWidth,
         totalMembers: members.length,
         studyingCount: members.filter(m => m.status === '上课中' || m.status === '分身中').length,
         skippingCount: members.filter(m => m.status === '翘课中').length,
