@@ -217,10 +217,13 @@ async function renderTemplate(templateName, data, options = {}) {
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
     const now = new Date()
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
+    // 每行成员列数由配置决定，统一走 ConfigManager 标准化（2~4 列，非法值回落 2 列）
+    const columns = ConfigManager.normalizeColumns(ConfigManager.getConfig().scheduleColumns)
     const templateData = {
         weekday: weekdayMap[currentDay],
         currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         updateTime: now.toLocaleString('zh-CN'),
+        columns,
         totalMembers: members.length,
         studyingCount: members.filter(m => m.status === '上课中' || m.status === '分身中').length,
         skippingCount: members.filter(m => m.status === '翘课中').length,

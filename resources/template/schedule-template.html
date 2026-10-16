@@ -103,11 +103,11 @@
             color: #495057;
         }
 
-        /* 成员列表 - 网格布局 */
+        /* 成员列表 - 网格布局（列数由配置注入 CSS 变量，默认2列） */
         .members-list {
             padding: 20px 30px;
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(var(--member-cols, 2), 1fr);
             gap: 16px;
         }
 
@@ -467,7 +467,157 @@
             }
         }
 
-        /* 适配小屏 */
+        /* ===== 多列紧凑化 =====
+           1080px 画布下卡片宽度随列数递减（2列约502px / 3列约330px / 4列约246px），
+           3列与4列时同步缩小头像、字号、间距与圆角，避免内容挤压错行。
+           类名 cols-N 由模板按配置列数输出，仅参与卡片内部紧凑化，不参与列数定义。 */
+        .members-list.cols-3,
+        .members-list.cols-4 {
+            gap: 14px;
+        }
+
+        .members-list.cols-3 .member-card,
+        .members-list.cols-4 .member-card {
+            padding: 16px 12px 16px 40px;
+            gap: 12px;
+            border-radius: 16px;
+        }
+
+        .members-list.cols-3 .member-card::before,
+        .members-list.cols-4 .member-card::before {
+            font-size: 34px;
+            top: 22px;
+        }
+
+        .members-list.cols-3 .member-card::after,
+        .members-list.cols-4 .member-card::after {
+            font-size: 40px;
+            top: 46px;
+        }
+
+        .members-list.cols-3 .member-avatar {
+            width: 72px;
+            height: 72px;
+        }
+
+        .members-list.cols-4 .member-avatar {
+            width: 60px;
+            height: 60px;
+        }
+
+        .members-list.cols-3 .skip-tag,
+        .members-list.cols-4 .skip-tag {
+            font-size: 13px;
+            padding: 3px 9px;
+        }
+
+        .members-list.cols-3 .member-name {
+            font-size: 22px;
+        }
+
+        .members-list.cols-4 .member-name {
+            font-size: 20px;
+        }
+
+        .members-list.cols-3 .member-name::before,
+        .members-list.cols-4 .member-name::before {
+            font-size: 26px;
+            margin-right: 4px;
+        }
+
+        .members-list.cols-3 .member-status-row,
+        .members-list.cols-4 .member-status-row {
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .members-list.cols-3 .member-status {
+            min-width: 56px;
+            font-size: 17px;
+            padding: 3px 10px;
+        }
+
+        .members-list.cols-4 .member-status {
+            min-width: 48px;
+            font-size: 15px;
+            padding: 2px 8px;
+        }
+
+        .members-list.cols-3 .course-time-inline {
+            font-size: 15px;
+            gap: 4px;
+        }
+
+        .members-list.cols-4 .course-time-inline {
+            font-size: 13px;
+            gap: 3px;
+        }
+
+        .members-list.cols-3 .member-week {
+            font-size: 15px;
+        }
+
+        .members-list.cols-4 .member-week {
+            font-size: 13px;
+        }
+
+        .members-list.cols-3 .course-info {
+            font-size: 20px;
+        }
+
+        .members-list.cols-4 .course-info {
+            font-size: 18px;
+        }
+
+        .members-list.cols-3 .course-icon,
+        .members-list.cols-4 .course-icon {
+            font-size: 17px;
+        }
+
+        .members-list.cols-3 .course-info-row {
+            gap: 6px 12px;
+        }
+
+        .members-list.cols-4 .course-info-row {
+            gap: 6px 10px;
+        }
+
+        .members-list.cols-3 .course-detail {
+            font-size: 17px;
+            gap: 8px 14px;
+        }
+
+        .members-list.cols-4 .course-detail {
+            font-size: 15px;
+            gap: 8px 12px;
+        }
+
+        .members-list.cols-3 .location-icon,
+        .members-list.cols-4 .location-icon {
+            font-size: 17px;
+        }
+
+        .members-list.cols-3 .remaining-time {
+            font-size: 16px;
+            padding: 2px 9px;
+        }
+
+        .members-list.cols-4 .remaining-time {
+            font-size: 15px;
+            padding: 2px 8px;
+        }
+
+        .members-list.cols-3 .member-signature {
+            font-size: 16px;
+            padding: 5px 10px;
+        }
+
+        .members-list.cols-4 .member-signature {
+            font-size: 15px;
+            padding: 4px 9px;
+        }
+
+        /* 适配小屏（放在末尾，同权重下覆盖上面的列数设置） */
         @media (max-width: 700px) {
             .members-list {
                 grid-template-columns: 1fr;
@@ -523,7 +673,7 @@
             </div>
         </div>
 
-        <div class="members-list">
+        <div class="members-list cols-{{columns || 2}}" style="--member-cols: {{columns || 2}};">
             {{each members member}}
             <div class="member-card" style="--status-color: {{ 
                 member.status === '上课中' ? '#B13333' :
