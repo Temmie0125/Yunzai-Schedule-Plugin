@@ -5,6 +5,9 @@ import YAML from 'yaml'
 export const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/default_config');
 export const CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/config');
 export const CONFIG_FILE = 'schedule.yaml';
+// 群课表每行成员列数允许范围：至少 2 列，最多 4 列（4 列已是 1080px 画布下卡片可读的上限）
+export const MIN_SCHEDULE_COLUMNS = 2;
+export const MAX_SCHEDULE_COLUMNS = 4;
 export class ConfigManager {
     /**
      * 获取用户配置（若不存在则从默认配置复制）
@@ -61,10 +64,14 @@ export class ConfigManager {
             defaultSemesterStart: "2026-03-02",   // 新增：默认学期开始日期
             botName: "",    // bot自定义名称，默认取机器人昵称
             font: "像素",    // 字体风格，默认为像素字体
-            sortMode: "userId",    // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态
+            // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态；
+            // timeDistance：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序
+            sortMode: "userId",
+            scheduleColumns: 2,    // 群课表图片每行展示的成员列数（2~4，3/4 列自动紧凑化卡片）
             hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
+            urlImportEnabled: true,  // URL直链导入总开关
             birthdayCustomName: true  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称
         };
         // 合并默认值（确保所有字段都有值）
@@ -83,6 +90,10 @@ export class ConfigManager {
         if (config.debugMode === undefined) config.debugMode = defaultConfig.debugMode;
         // 渲染器模式兜底：仅允许 puppeteer / shotium / auto
         if (!['puppeteer', 'shotium', 'auto'].includes(config.renderer)) config.renderer = defaultConfig.renderer;
+        // 群课表排序模式兜底：仅允许 userId / courseStatus / timeDistance
+        if (!['userId', 'courseStatus', 'timeDistance'].includes(config.sortMode)) config.sortMode = defaultConfig.sortMode;
+        // 群课表列数兜底：非法值回落到默认，并夹在 2~4 之间（列数过大会让卡片拥挤到不可读）
+        config.scheduleColumns = ConfigManager.normalizeColumns(config.scheduleColumns);
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -94,6 +105,16 @@ export class ConfigManager {
         config.pushCron = `0 ${config.pushHour} * * *`;
         config.birthdayPushCron = `0 ${config.birthdayPushHour} * * *`;
         return config;
+    }
+    /**
+     * 标准化群课表列数：非法值回落默认 2 列，越界值夹到 [MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS]
+     * @param {*} value 配置中的列数（可能是字符串/小数/undefined）
+     * @returns {number} 可直接用于渲染的列数
+     */
+    static normalizeColumns(value) {
+        const n = Number.parseInt(value, 10);
+        if (!Number.isFinite(n)) return MIN_SCHEDULE_COLUMNS;
+        return Math.min(MAX_SCHEDULE_COLUMNS, Math.max(MIN_SCHEDULE_COLUMNS, n));
     }
     /**
      * 标准化cron表达式，适配node-schedule
@@ -136,8 +157,8 @@ export class ConfigManager {
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
-            sortMode, showQQ,
-            watchFiles, birthdayCustomName
+            sortMode, scheduleColumns, hideEndedDays, showQQ,
+            watchFiles, urlImportEnabled, birthdayCustomName
         } = data;
         const configToSave = {
             pushHour,
@@ -154,9 +175,13 @@ export class ConfigManager {
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
-            sortMode, showQQ,
-            watchFiles, birthdayCustomName
+            sortMode, scheduleColumns, hideEndedDays, showQQ,
+            watchFiles, urlImportEnabled, birthdayCustomName
         };
+        // 列数落库前同样标准化，避免绕过前端校验写入越界值
+        if (configToSave.scheduleColumns !== undefined) {
+            configToSave.scheduleColumns = ConfigManager.normalizeColumns(configToSave.scheduleColumns);
+        }
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {
             if (configToSave[key] === undefined) {
