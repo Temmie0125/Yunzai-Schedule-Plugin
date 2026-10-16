@@ -247,7 +247,7 @@ export class DataManager {
     static async getCoursesForDate(userId, date) {
         const schedule = this.loadSchedule(userId);
         if (!schedule) {
-            return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
+            return { error: "你还没有设置课程表，请使用 #导入课表 命令导入课表" };
         }
         const hasValidStart = schedule.semesterStart && !isNaN(new Date(schedule.semesterStart));
         const week = hasValidStart ? calculateWeekFromDate(schedule.semesterStart, date) : null;
@@ -415,7 +415,7 @@ export class DataManager {
                 {
                     group: "基础功能",
                     list: [
-                        { icon: 1, title: "#设置课表", desc: "导入WakeUp/星链分享口令" },
+                        { icon: 1, title: "#导入课表", desc: "导入课表文件/直链/分享口令" },
                         { icon: 2, title: "#清除课表", desc: "清除自己的课程表" },
                         { icon: 3, title: "#课表设置昵称", desc: "修改显示昵称" },
                         { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" }
@@ -447,7 +447,8 @@ export class DataManager {
     static getDefaultHelpText() {
         return `课程表帮助
 ==========
-【#设置课表 WakeUp/星链分享口令】设置课程表
+【#导入课表 [文件/直链/口令]】导入课程表
+【#导入课表直链教程】查看直链导入教程
 【#清除课表】清除自己的课表
 【#课表设置昵称 昵称】修改昵称
 【#课表设置签名 签名】设置个性签名(最多30字)
@@ -856,7 +857,7 @@ export class DataManager {
      */
     static rescheduleCourses(userId, originalDate, newDate) {
         const schedule = this.loadSchedule(userId);
-        if (!schedule) return { success: false, error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
+        if (!schedule) return { success: false, error: "你还没有设置课程表，请使用 #导入课表 命令导入课表" };
 
         const origWeek = calculateWeekFromDate(schedule.semesterStart, originalDate);
         const origDay = originalDate.getDay() === 0 ? 7 : originalDate.getDay();

@@ -205,8 +205,9 @@ function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabe
 
 /**
 * 通用：处理自动撤回口令，并追加提醒内容
+* （导出以便旧命令迁移提示等非导入路径复用：口令消息即使未被导入也应被撤回）
 */
-async function handleAutoRecall(replyMsg, event, autoRecallCode, botName) {
+export async function handleAutoRecall(replyMsg, event, autoRecallCode, botName) {
   const inGroup = !!event.group;
   if (!inGroup || !autoRecallCode) return replyMsg;
 

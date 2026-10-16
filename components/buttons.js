@@ -51,7 +51,7 @@ export function scheduleButtons(e) {
         ],
         [
             { text: '我的课表', callback: '#我的课表' },
-            { text: '设置课表', input: '#设置课表 ' },
+            { text: '导入课表', input: '#导入课表 ' },
         ],
         [
             { text: '翘课', callback: '#翘课' },
@@ -71,7 +71,7 @@ export function urlImportButtons(e) {
     const rows = [
         [
             { text: '直链导入教程', callback: '#导入课表直链教程' },
-            { text: '口令导入', input: '#设置课表 ' },
+            { text: '导入课表', input: '#导入课表 ' },
         ],
     ]
     return [segment.button(...rows)]

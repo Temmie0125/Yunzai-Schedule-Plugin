@@ -93,7 +93,7 @@ export class ClassReminder extends plugin {
 
     const schedule = DataManager.loadSchedule(userId);
     if (!schedule || !schedule.courses || schedule.courses.length === 0) {
-      await e.reply(`❌ 你还没有设置课程表，请先使用 #设置课表 命令导入课表后再开启上课提醒~`);
+      await e.reply(`❌ 你还没有设置课程表，请先使用 #导入课表 命令导入课表后再开启上课提醒~`);
       return false;
     }
 
