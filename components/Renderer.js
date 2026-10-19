@@ -219,7 +219,7 @@ async function renderTemplate(templateName, data, options = {}) {
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
     const now = new Date()
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
-    // 列数由配置决定：支持 'auto'（按成员数自动加列，尽量不超过 6 行）与固定 2~4 列；
+    // 列数由配置决定：支持 'auto'（按整图宽高比 2:3 自动选列数）与固定 2~4 列；
     // 画布宽度随实际列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
     const columns = ConfigManager.resolveScheduleColumns(ConfigManager.getConfig().scheduleColumns, members.length)
     const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)

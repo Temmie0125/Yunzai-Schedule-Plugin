@@ -13,8 +13,12 @@ export const MAX_SCHEDULE_COLUMNS = 4;
 export const SCHEDULE_CARD_WIDTH = 502;   // 单张卡片目标宽度（2 列 / 1080 画布下的实际宽度）
 export const SCHEDULE_GRID_GAP = 16;      // 成员网格间距（与模板 .members-list 的 gap 一致）
 export const SCHEDULE_SIDE_PADDING = 60;  // 成员网格左右内边距合计（与模板 .members-list 的 padding 一致）
-// 「自动」列数的行数上限：成员排到超过该行数就增加一列（2 → 3 → 4），避免人多时图片过长
-export const SCHEDULE_AUTO_MAX_ROWS = 6;
+// 「自动」列数的判定依据：整图宽高比（宽:高）尽量接近 2:3。
+// 估算高度所需的两个常量来自真实出图实测（9 人样例：2 列 1080×1728、3 列 1598×1237、4 列 2116×1233）：
+//   单卡高度约 229px（列数不影响卡片尺寸）、页头+统计+页脚+成员区内边距合计约 516px
+export const SCHEDULE_TARGET_RATIO = 2 / 3;
+export const SCHEDULE_CARD_HEIGHT = 229;
+export const SCHEDULE_CHROME_HEIGHT = 516;
 export class ConfigManager {
     /**
      * 获取用户配置（若不存在则从默认配置复制）
@@ -135,10 +139,24 @@ export class ConfigManager {
         return String(ConfigManager.normalizeColumns(value));
     }
     /**
+     * 估算渲染后群课表图片的高度（用于「自动」列数的宽高比判定）
+     * 高度 = 页头/统计/页脚/内边距 + 行数 × 单卡高度 + 行间距；
+     * 列数不改变单卡尺寸（卡片宽度恒为 SCHEDULE_CARD_WIDTH），因此只有行数随列数变化
+     * @param {number|string} columns 列数
+     * @param {number} memberCount 成员数量
+     * @returns {number} 估算高度（px）
+     */
+    static estimateScheduleImageHeight(columns, memberCount) {
+        const cols = ConfigManager.normalizeColumns(columns);
+        const count = Number.isFinite(Number(memberCount)) ? Math.max(0, Math.floor(Number(memberCount))) : 0;
+        const rows = Math.max(1, Math.ceil(count / cols));
+        return SCHEDULE_CHROME_HEIGHT + rows * SCHEDULE_CARD_HEIGHT + (rows - 1) * SCHEDULE_GRID_GAP;
+    }
+    /**
      * 解析出最终用于渲染的列数
      * - 固定列数：直接使用该列数
-     * - 自动（'auto'）：在不使成员行数超过 SCHEDULE_AUTO_MAX_ROWS 的前提下取最少列数，
-     *   即 ≤12 人 2 列、13~18 人 3 列、19 人以上 4 列（超过 24 人时仍为 4 列）
+     * - 自动（'auto'）：在 2/3/4 列中选出「整图宽高比」最接近 SCHEDULE_TARGET_RATIO（2:3）的一档。
+     *   距离用对数衡量（比例对称：偏宽 1.5 倍与偏窄 1.5 倍等价），距离相同时取更少列（图片更窄）
      * @param {*} setting 配置中的 scheduleColumns（'auto' / 2 / 3 / 4）
      * @param {number} memberCount 需要排版的成员数量
      * @returns {number} 实际列数（2~4）
@@ -146,11 +164,20 @@ export class ConfigManager {
     static resolveScheduleColumns(setting, memberCount) {
         const normalized = ConfigManager.normalizeColumnsSetting(setting);
         if (normalized !== 'auto') return Number(normalized);
-        const count = Number.isFinite(Number(memberCount)) ? Math.max(0, Math.floor(Number(memberCount))) : 0;
-        for (let cols = MIN_SCHEDULE_COLUMNS; cols < MAX_SCHEDULE_COLUMNS; cols++) {
-            if (Math.ceil(count / cols) <= SCHEDULE_AUTO_MAX_ROWS) return cols;
+        const targetLog = Math.log(SCHEDULE_TARGET_RATIO);
+        let best = MIN_SCHEDULE_COLUMNS;
+        let bestDistance = Infinity;
+        for (let cols = MIN_SCHEDULE_COLUMNS; cols <= MAX_SCHEDULE_COLUMNS; cols++) {
+            const width = ConfigManager.resolveScheduleCanvasWidth(cols);
+            const height = ConfigManager.estimateScheduleImageHeight(cols, memberCount);
+            const distance = Math.abs(Math.log(width / height) - targetLog);
+            // 严格更近才替换：距离相同时保留更少的列数（图片更窄，手机端缩放更友好）
+            if (distance < bestDistance - 1e-9) {
+                bestDistance = distance;
+                best = cols;
+            }
         }
-        return MAX_SCHEDULE_COLUMNS;
+        return best;
     }
     /**
      * 按列数计算群课表画布宽度

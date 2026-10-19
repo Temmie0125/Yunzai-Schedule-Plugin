@@ -5,7 +5,8 @@ global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 
 import { computeBoundaryMinutes, timeDistanceGroup, compareByTimeDistance } from '../utils/timeUtils.js';
 import {
     ConfigManager, MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS,
-    SCHEDULE_CARD_WIDTH, SCHEDULE_GRID_GAP, SCHEDULE_SIDE_PADDING, SCHEDULE_AUTO_MAX_ROWS
+    SCHEDULE_CARD_WIDTH, SCHEDULE_GRID_GAP, SCHEDULE_SIDE_PADDING, SCHEDULE_TARGET_RATIO,
+    SCHEDULE_CARD_HEIGHT, SCHEDULE_CHROME_HEIGHT
 } from '../components/ConfigManager.js';
 
 let fail = 0;
@@ -169,7 +170,7 @@ check('模板列数由 CSS 变量驱动（未硬编码 2 列）',
 check('模板已按列数注入画布宽度（{{canvasWidth}}）', /width:\s*\{\{canvasWidth/.test(tpl));
 check('模板不再包含多列紧凑化规则（3/4 列不压缩卡片）', !/\.members-list\.cols-/.test(tpl));
 
-// ========== 6. 「自动」列数：超过目标行数后自动加列 ==========
+// ========== 6. 「自动」列数：按整图宽高比（2:3）选列数 ==========
 // 设置值标准化：'auto' 与固定列数统一成字符串，供 Guoba 单选组匹配
 const settingCases = [
     ['auto', 'auto'], ['AUTO', 'auto'], [' Auto ', 'auto'],
@@ -181,22 +182,59 @@ for (const [input, expected] of settingCases) {
     check(`列数设置标准化：${JSON.stringify(input)} → '${expected}'`, actual === expected);
 }
 
-// 自动模式的列数选择：≤12人 2列、13~18人 3列、19人以上 4列
+// 高度估算：与真实出图实测值比对（9 人样例实测 2 列 1728 / 3 列 1237 / 4 列 1233）
+const heightCases = [[2, 1728], [3, 1237], [4, 1233]];
+for (const [cols, measured] of heightCases) {
+    const est = ConfigManager.estimateScheduleImageHeight(cols, 9);
+    check(`高度估算接近实测（${cols} 列 / 9 人）: 估算 ${est} vs 实测 ${measured}`,
+        Math.abs(est - measured) <= 8);
+}
+check('高度估算随行数线性增长（同列数）',
+    ConfigManager.estimateScheduleImageHeight(2, 5) < ConfigManager.estimateScheduleImageHeight(2, 9)
+    && ConfigManager.estimateScheduleImageHeight(2, 9) < ConfigManager.estimateScheduleImageHeight(2, 13));
+check('0 人按 1 行估算，不出现负高度或无限大',
+    Number.isFinite(ConfigManager.estimateScheduleImageHeight(2, 0))
+    && ConfigManager.estimateScheduleImageHeight(2, 0) > 0);
+
+// 自动模式的列数选择：等价于「哪一档的宽高比最接近 2:3」，本布局下切换点为 15 人、31 人
 const autoCases = [
-    [0, 2], [1, 2], [2, 2], [11, 2], [12, 2],
-    [13, 3], [17, 3], [18, 3],
-    [19, 4], [24, 4], [25, 4], [100, 4],
+    [0, 2], [1, 2], [2, 2], [6, 2], [9, 2], [12, 2], [14, 2],
+    [15, 3], [18, 3], [24, 3], [30, 3],
+    [31, 4], [36, 4], [40, 4], [60, 4], [100, 4],
 ];
 for (const [count, expected] of autoCases) {
     const actual = ConfigManager.resolveScheduleColumns('auto', count);
     check(`自动列数：${count} 人 → ${expected} 列`, actual === expected);
 }
-// 自动模式下任何人数都不超过目标行数（24 人以内时）
-for (const count of [1, 7, 12, 13, 18, 19, 24]) {
-    const cols = ConfigManager.resolveScheduleColumns('auto', count);
-    const rows = Math.ceil(count / cols);
-    check(`自动列数 ${count} 人的行数 ${rows} ≤ ${SCHEDULE_AUTO_MAX_ROWS}`, rows <= SCHEDULE_AUTO_MAX_ROWS);
+// 核心不变式：自动选出的那一档，宽高比必须比其它任何档都更接近 2:3（对数距离）
+const ratioDistance = (cols, count) => {
+    const width = ConfigManager.resolveScheduleCanvasWidth(cols);
+    const height = ConfigManager.estimateScheduleImageHeight(cols, count);
+    return Math.abs(Math.log(width / height) - Math.log(SCHEDULE_TARGET_RATIO));
+};
+let invariantOk = true;
+let worst = '';
+for (let n = 1; n <= 120; n++) {
+    const chosen = ConfigManager.resolveScheduleColumns('auto', n);
+    const chosenDist = ratioDistance(chosen, n);
+    for (const cols of [2, 3, 4]) {
+        if (ratioDistance(cols, n) < chosenDist - 1e-9) {
+            invariantOk = false;
+            worst = `${n} 人选了 ${chosen} 列，但 ${cols} 列更接近 2:3`;
+        }
+    }
 }
+check(`自动列数在 1~120 人范围内始终选出最接近 2:3 的档${worst ? `（反例：${worst}）` : ''}`, invariantOk);
+// 距离相同时保留更少列（图片更窄）
+const tieCount = (() => {
+    for (let n = 1; n <= 500; n++) {
+        const d2 = ratioDistance(2, n), d3 = ratioDistance(3, n);
+        if (Math.abs(d2 - d3) < 1e-12) return n;
+    }
+    return null;
+})();
+check('宽高比距离完全相同时取更少列（无并列样本则跳过）',
+    tieCount === null || ConfigManager.resolveScheduleColumns('auto', tieCount) === 2);
 // 固定列数不受人数影响
 for (const fixed of ['2', '3', '4']) {
     check(`固定 ${fixed} 列不受人数影响`,
