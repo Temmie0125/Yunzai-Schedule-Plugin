@@ -134,6 +134,21 @@ check('圆点：省略的已上完用 ×N 表示', dotsCard.includes('×2'));
 check('圆点：省略的即将上用 +N 表示', dotsCard.includes('+1'));
 check('圆点：与剩余时长同一行（course-meta 内）', /class="course-meta"[\s\S]{0,400}remaining-time[\s\S]{0,400}course-dots/.test(dotsCard));
 check('圆点：圆点靠右（CSS margin-left: auto）', /\.course-dots\s*\{[^}]*margin-left:\s*auto/.test(tplSrc));
+// 配色与尺寸：四态高对比、正在上放大、已上完偏灰（不再用 opacity 淡化，避免小圆点糊在一起）
+const dotRule = (cls) => tplSrc.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`))?.[1] || '';
+check('圆点：已上完用偏灰配色（灰绿）', /#82A696/i.test(dotRule('dot-finished')));
+check('圆点：已上完不再使用 opacity 淡化', !/opacity/.test(dotRule('dot-finished')));
+check('圆点：即将上为饱和蓝（不再 opacity 淡化）',
+    /#3949AB/i.test(dotRule('dot-upcoming')) && !/opacity/.test(dotRule('dot-upcoming')));
+check('圆点：正在上放大（宽高大于基础 8px）', (() => {
+    const rule = dotRule('dot-ongoing');
+    const w = Number(rule.match(/width:\s*(\d+)px/)?.[1] || 0);
+    const h = Number(rule.match(/height:\s*(\d+)px/)?.[1] || 0);
+    const base = Number(dotRule('dot').match(/width:\s*(\d+)px/)?.[1] || 8);
+    return w > base && h > base;
+})());
+check('圆点：图例中「正在上」也更大',
+    /\.dots-legend \.dot-ongoing\s*\{[^}]*width:\s*13px/.test(tplSrc));
 
 const noDotsCard = renderOne(mk({ nickname: '无课', status: '无课程', avatarBorderMode: 'off' }));
 check('圆点：无课程时不渲染 course-meta', !noDotsCard.includes('class="course-meta"'));
