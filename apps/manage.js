@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+﻿import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg, checkPermission } from '../components/common.js'
@@ -271,7 +271,7 @@ export class ScheduleManage extends plugin {
     async setAvatarBorderMode() {
         const e = this.e;
         const current = ConfigManager.normalizeAvatarBorderMode(ConfigManager.getConfig().avatarBorderMode);
-        const labelOf = (mode) => ({ progress: '进度环（上课中显示距下课剩余，其他状态实色）', solid: '实色边框', off: '关闭（白色细边框）' })[mode] || mode;
+        const labelOf = (mode) => ({ progress: '进度环（上课中显示上课进度，空→满；其他状态淡色边框）', solid: '淡色实色边框', off: '关闭（白色细边框）' })[mode] || mode;
         if (!checkPermission(e)) {
             await this.reply("只有群管理员或主人可以修改该设置哦~");
             return true;

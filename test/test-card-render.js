@@ -1,10 +1,11 @@
-﻿// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
+// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
 // 覆盖：上课中/分身中/翘课中 → 「剩余」；未开始 → 「距离上课」；已结束/无课程 → 均不显示
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-card-render.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替
 import fs from 'node:fs';
 import path from 'node:path';
 import art from 'art-template';
+import { lightenHexColor, darkenHexColor, mixHexColor, normalizeHexColor } from '../utils/colorUtils.js';
 
 const pluginRoot = path.resolve(import.meta.dirname, '..');
 const tplFile = path.join(pluginRoot, 'resources', 'template', 'schedule-template.html');
@@ -85,23 +86,41 @@ check('高亮样式定义了淡黄荧光边框', /\.member-card\.is-self\s*\{[^}
 const tplSrc = fs.readFileSync(tplFile, 'utf8');
 const progressCard = renderOne(mk({
     nickname: '上课中', status: '上课中', remainingTime: '40分钟', currentCourse: course,
-    avatarBorderMode: 'progress', avatarProgress: 0.42
+    avatarBorderMode: 'progress', avatarProgress: 0.42,
+    statusColor: '#B13333', statusColorSoft: '#D48F8F', ringStrong: '#B13333', ringSoft: '#ECCCCC'
 }));
 check('进度环：输出 avatar-progress 类', progressCard.includes('member-avatar avatar-progress'));
-check('进度环：注入剩余比例 --remain', progressCard.includes('--remain: 0.42'));
+check('进度环：注入完成比例 --progress', progressCard.includes('--progress: 0.42'));
+check('进度环：注入同色系深浅双色', progressCard.includes('--ring-strong: #B13333') && progressCard.includes('--ring-soft: #ECCCCC'));
 check('进度环：样式用 conic-gradient 画环', /\.member-avatar\.avatar-progress\s*\{[^}]*conic-gradient/.test(tplSrc));
+check('进度环：填充/轨道分别使用 ring-strong 与 ring-soft', (() => {
+    const rule = tplSrc.match(/\.member-avatar\.avatar-progress\s*\{([^}]*)\}/)?.[1] || '';
+    return /conic-gradient/.test(rule) && /--ring-strong/.test(rule) && /--ring-soft/.test(rule);
+})());
 
 const solidCard = renderOne(mk({
     nickname: '未开始', status: '未开始', remainingTime: '5分钟', currentCourse: course,
-    avatarBorderMode: 'solid'
+    avatarBorderMode: 'solid', statusColor: '#3949AB', statusColorSoft: '#929BD1'
 }));
 check('实色：输出 avatar-solid 类', solidCard.includes('member-avatar avatar-solid'));
-check('实色：不注入 --remain 变量', !solidCard.includes('--remain:'));
-check('实色：边框用状态色变量', /\.member-avatar\.avatar-solid\s*\{[^}]*var\(--status-color/.test(tplSrc));
+check('实色：不注入 --progress 变量', !solidCard.includes('--progress:'));
+check('实色：边框用淡化的状态色变量（--status-color-soft）',
+    /\.member-avatar\.avatar-solid\s*\{[^}]*var\(--status-color-soft/.test(tplSrc));
+check('实色：卡片注入淡化后的状态色', solidCard.includes('--status-color-soft: #929BD1'));
 
 const offCard = renderOne(mk({ nickname: '关闭', status: '上课中', remainingTime: '40分钟', currentCourse: course, avatarBorderMode: 'off' }));
 check('关闭：输出 avatar-off 类', offCard.includes('member-avatar avatar-off'));
-check('关闭：不注入 --remain 变量', !offCard.includes('--remain:'));
+check('关闭：不注入 --progress 变量', !offCard.includes('--progress:'));
+
+// ========== 6.1 颜色工具：淡色 / 深色派生 ==========
+check('淡色派生：红 #B13333 → #D48F8F', lightenHexColor('#B13333', 0.45) === '#D48F8F');
+check('淡色派生：轨道 #B13333 → #ECCCCC', lightenHexColor('#B13333', 0.75) === '#ECCCCC');
+check('深色派生：向黑靠拢', darkenHexColor('#B13333', 1) === '#000000');
+check('混合比例 0 返回原色', mixHexColor('#3949AB', '#FFFFFF', 0) === '#3949AB');
+check('混合比例 1 返回目标色', mixHexColor('#3949AB', '#FFFFFF', 1) === '#FFFFFF');
+check('3 位色值可规范化', normalizeHexColor('#abc') === '#AABBCC');
+check('非法色值返回 null', normalizeHexColor('not-a-color') === null);
+check('非法输入不抛异常、原样返回', mixHexColor('not-a-color', '#FFFFFF', 0.5) === 'not-a-color');
 
 // ========== 7. 今日课程节数圆点 ==========
 const dotsCard = renderOne(mk({

@@ -1,4 +1,4 @@
-// components/ConfigManager.js 
+﻿// components/ConfigManager.js 
 import fs from 'node:fs'
 import path from 'node:path'
 import YAML from 'yaml'
@@ -20,8 +20,8 @@ export const SCHEDULE_TARGET_RATIO = 2 / 3;
 export const SCHEDULE_CARD_HEIGHT = 229;
 export const SCHEDULE_CHROME_HEIGHT = 516;
 // 头像边框展示方式（群课表）：
-//   progress 上课中用「剩余时长」进度环（满 → 空），其他状态用状态色实色边框
-//   solid    所有状态都用状态色实色边框
+//   progress 上课中用「上课进度」进度环（空 → 满，同色系深浅双色），其他状态用淡化的状态色边框
+//   solid    所有状态都用淡化的状态色边框
 //   off      恢复白色细边框（不展示状态色与进度）
 export const AVATAR_BORDER_MODES = ['progress', 'solid', 'off'];
 export const DEFAULT_AVATAR_BORDER_MODE = 'progress';
@@ -160,7 +160,7 @@ export class ConfigManager {
      * 解析单张卡片的头像边框展示方式
      * 全局关闭 → off；全局进度 + 该成员有进度（仅上课中）→ progress；其余 → solid（状态色实色）
      * @param {*} globalMode 配置中的 avatarBorderMode
-     * @param {number|null|undefined} avatarProgress 该成员的剩余比例（非上课中为 null）
+     * @param {number|null|undefined} avatarProgress 该成员的上课进度（0→1，非上课中为 null）
      * @returns {'progress'|'solid'|'off'}
      */
     static resolveAvatarBorderMode(globalMode, avatarProgress) {

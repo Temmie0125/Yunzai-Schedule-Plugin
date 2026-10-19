@@ -241,19 +241,19 @@ export function computeBoundaryMinutes({ status, nowMinutes, ongoingCourses, nex
 }
 
 /**
- * 计算「上课中」头像进度环的剩余比例（满 → 空）
- * 上课瞬间约等于 1（满环），越接近下课越接近 0（空环），直观展示「距离下课还有多久」
+ * 计算「上课中」头像进度环的完成比例（空 → 满）
+ * 上课瞬间为 0（空环），越接近下课越接近 1（满环），用于直观展示「这节课上到哪了」
  * @param {string} startTime 课程开始时间 HH:MM（兼容未补零）
  * @param {string} endTime 课程结束时间 HH:MM
  * @param {number} nowMinutes 当前时间（当日分钟数）
  * @returns {number|null} 0~1 的比例；时间无法解析或课程时长非正时返回 null
  */
-export function computeAvatarRemainRatio(startTime, endTime, nowMinutes) {
+export function computeAvatarProgress(startTime, endTime, nowMinutes) {
     const start = timeToMinutes(startTime)
     const end = timeToMinutes(endTime)
     if (Number.isNaN(start) || Number.isNaN(end) || !Number.isFinite(nowMinutes) || end <= start) return null
-    const remain = (end - nowMinutes) / (end - start)
-    return Math.min(1, Math.max(0, remain))
+    const elapsed = (nowMinutes - start) / (end - start)
+    return Math.min(1, Math.max(0, elapsed))
 }
 
 // ===== 今日课程节数圆点 =====

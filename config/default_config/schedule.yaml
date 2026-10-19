@@ -1,4 +1,4 @@
-pushHour: 20
+﻿pushHour: 20
 showTableName: true
 autoRecallCode: false
 renderScale: 1.0
@@ -47,8 +47,8 @@ sortMode: "userId"
 #              本布局下约 14 人以内 2 列、15~30 人 3 列、31 人以上 4 列
 scheduleColumns: 2
 # 群课表头像边框展示方式：
-#   progress  上课中用「距下课剩余时长」进度环（满 → 空），其他状态用状态色实色边框
-#   solid     所有状态都用状态色实色边框
+#   progress  上课中用「上课进度」进度环（空 → 满，同色系深浅双色），其他状态用淡化的状态色边框
+#   solid     所有状态都用淡化的状态色边框
 #   off       关闭（白色细边框）
 # 也可用管理员命令 #课表头像边框 进度|实色|关闭 切换（会写入本文件）
 avatarBorderMode: "progress"

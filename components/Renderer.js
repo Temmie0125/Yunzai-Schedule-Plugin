@@ -1,6 +1,7 @@
 // components/Renderer.js
 import { ConfigManager } from '../components/ConfigManager.js'
 import { getAvatarUrl } from './common.js'
+import { lightenHexColor } from '../utils/colorUtils.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import art from 'art-template'
@@ -214,6 +215,26 @@ async function renderTemplate(templateName, data, options = {}) {
     return null
 }
 /**
+ * 群课表各状态对应的状态色（与页脚图例保持一致）
+ * 状态色用于状态徽章/箭头装饰；头像边框会在此基础上取淡色与同色系深色
+ */
+export const STATUS_COLORS = {
+    '上课中': '#B13333',
+    '翘课中': '#DB6F2D',
+    '未开始': '#3949AB',
+    '已结束': '#379151',
+    '无课程': '#7F7F7F',
+    '分身中': '#D81B60',
+    '学期未开始': '#9575CD',
+    '学期结束': '#6c757d',
+};
+const DEFAULT_STATUS_COLOR = '#00897B';
+/** 实色边框的淡化比例（越大越淡）：0.45 让边框不再抢眼，同时保留状态色可辨识度 */
+export const AVATAR_BORDER_LIGHTEN = 0.45;
+/** 进度环轨道（未完成部分）的淡化比例：与填充色同色系但明显更浅 */
+export const AVATAR_RING_TRACK_LIGHTEN = 0.75;
+
+/**
  * 生成群课表图片
  */
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
@@ -223,7 +244,7 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
     // 画布宽度随实际列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
     const columns = ConfigManager.resolveScheduleColumns(ConfigManager.getConfig().scheduleColumns, members.length)
     const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)
-    // 头像边框展示方式：progress 时仅「上课中」用剩余进度环，其余回落实色边框
+    // 头像边框展示方式：progress 时仅「上课中」用进度环，其余回落实色边框
     const avatarBorderMode = ConfigManager.normalizeAvatarBorderMode(ConfigManager.getConfig().avatarBorderMode)
     // 触发者（发起本次查询的人）：其卡片做淡黄荧光高亮；官方Bot的 OpenID 场景需按字符串比较
     const selfUserId = options?.e?.user_id
@@ -239,12 +260,18 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
         skipModeCount: members.filter(m => m.skipStatus).length,
         members: members.map(m => {
             // 具体到每张卡片：关闭 → off；会上课的进度成员 → progress；其余 → solid
+            const statusColor = STATUS_COLORS[m.status] || DEFAULT_STATUS_COLOR
             return {
                 ...m,
                 avatar: m.avatar || getAvatarUrl(m.userId),
                 signature: m.signature || '',
                 isSelf: selfUserId != null && String(m.userId) === String(selfUserId),
-                avatarBorderMode: ConfigManager.resolveAvatarBorderMode(avatarBorderMode, m.avatarProgress)
+                avatarBorderMode: ConfigManager.resolveAvatarBorderMode(avatarBorderMode, m.avatarProgress),
+                // 状态色（徽章/箭头装饰）、淡色（实色边框）、进度环深浅双色（空→满）
+                statusColor,
+                statusColorSoft: lightenHexColor(statusColor, AVATAR_BORDER_LIGHTEN),
+                ringStrong: statusColor,
+                ringSoft: lightenHexColor(statusColor, AVATAR_RING_TRACK_LIGHTEN)
             }
         })
     }

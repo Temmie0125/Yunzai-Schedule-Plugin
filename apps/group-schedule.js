@@ -5,7 +5,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg, compareUserId } from '../components/common.js'
 import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarRemainRatio, buildCourseDots } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarProgress, buildCourseDots } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -167,9 +167,9 @@ export class GroupSchedulePlugin extends plugin {
         nextCourse,
         currentCourse
       });
-      // 头像进度环：仅「上课中」展示「距离下课」的剩余比例（满 → 空），其他状态用实色边框
+      // 头像进度环：仅「上课中」展示「这节课上到哪了」的完成比例（空 → 满），其他状态用实色边框
       if (status === '上课中' && currentCourse) {
-        avatarProgress = computeAvatarRemainRatio(currentCourse.startTime, currentCourse.endTime, nowMinutes);
+        avatarProgress = computeAvatarProgress(currentCourse.startTime, currentCourse.endTime, nowMinutes);
       }
     }
     return {
