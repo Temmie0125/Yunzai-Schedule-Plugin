@@ -131,8 +131,12 @@ export class GroupSchedulePlugin extends plugin {
           overlapCourses = ongoingCourses;
         }
         if (skipStatus.enabled) {
-          // 翘课优先：状态显示翘课中，overlapCourses 已带上，课程区仍按多课程样式渲染
+          // 翘课优先：状态显示翘课中，overlapCourses 已带上，课程区仍按多课程样式渲染。
+          // 翘课中同样展示剩余时间（距这门被翘的课下课，翘课状态也在这门课结束时自动取消）；
+          // 多门重叠时与「分身中」一致取最早结束的一门
           status = '翘课中';
+          const skipEnd = ongoingCourses.reduce((a, b) => timeToMinutes(a.endTime) <= timeToMinutes(b.endTime) ? a : b);
+          remainingTime = calculateRemainingTime(currentTime, skipEnd.endTime);
         } else if (isRealOverlap) {
           status = '分身中';
           // 剩余时间取最早结束的那门课

@@ -13,6 +13,8 @@ export const MAX_SCHEDULE_COLUMNS = 4;
 export const SCHEDULE_CARD_WIDTH = 502;   // 单张卡片目标宽度（2 列 / 1080 画布下的实际宽度）
 export const SCHEDULE_GRID_GAP = 16;      // 成员网格间距（与模板 .members-list 的 gap 一致）
 export const SCHEDULE_SIDE_PADDING = 60;  // 成员网格左右内边距合计（与模板 .members-list 的 padding 一致）
+// 「自动」列数的行数上限：成员排到超过该行数就增加一列（2 → 3 → 4），避免人多时图片过长
+export const SCHEDULE_AUTO_MAX_ROWS = 6;
 export class ConfigManager {
     /**
      * 获取用户配置（若不存在则从默认配置复制）
@@ -72,7 +74,7 @@ export class ConfigManager {
             // 群课表排序方式，userId：按QQ号；courseStatus：按上课状态；
             // timeDistance：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序
             sortMode: "userId",
-            scheduleColumns: 2,    // 群课表图片每行展示的成员列数（2~4，3/4 列自动紧凑化卡片）
+            scheduleColumns: 2,    // 群课表每行成员列数：'auto' 按人数自动加列，或固定 2/3/4
             hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
@@ -97,8 +99,9 @@ export class ConfigManager {
         if (!['puppeteer', 'shotium', 'auto'].includes(config.renderer)) config.renderer = defaultConfig.renderer;
         // 群课表排序模式兜底：仅允许 userId / courseStatus / timeDistance
         if (!['userId', 'courseStatus', 'timeDistance'].includes(config.sortMode)) config.sortMode = defaultConfig.sortMode;
-        // 群课表列数兜底：非法值回落到默认，并夹在 2~4 之间（列数过大会让卡片拥挤到不可读）
-        config.scheduleColumns = ConfigManager.normalizeColumns(config.scheduleColumns);
+        // 群课表列数兜底：支持 'auto'（按人数自动加列）与固定 2~4 列，非法值回落默认 2 列。
+        // 统一存成字符串，便于 Guoba 单选组精确匹配选项值
+        config.scheduleColumns = ConfigManager.normalizeColumnsSetting(config.scheduleColumns);
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -120,6 +123,34 @@ export class ConfigManager {
         const n = Number.parseInt(value, 10);
         if (!Number.isFinite(n)) return MIN_SCHEDULE_COLUMNS;
         return Math.min(MAX_SCHEDULE_COLUMNS, Math.max(MIN_SCHEDULE_COLUMNS, n));
+    }
+    /**
+     * 标准化「列数设置」：支持 'auto' 与固定 2/3/4 列
+     * 返回值统一为字符串，便于 Guoba 单选组（RadioGroup）精确匹配选项值
+     * @param {*} value 配置中的 scheduleColumns
+     * @returns {'auto'|'2'|'3'|'4'}
+     */
+    static normalizeColumnsSetting(value) {
+        if (typeof value === 'string' && value.trim().toLowerCase() === 'auto') return 'auto';
+        return String(ConfigManager.normalizeColumns(value));
+    }
+    /**
+     * 解析出最终用于渲染的列数
+     * - 固定列数：直接使用该列数
+     * - 自动（'auto'）：在不使成员行数超过 SCHEDULE_AUTO_MAX_ROWS 的前提下取最少列数，
+     *   即 ≤12 人 2 列、13~18 人 3 列、19 人以上 4 列（超过 24 人时仍为 4 列）
+     * @param {*} setting 配置中的 scheduleColumns（'auto' / 2 / 3 / 4）
+     * @param {number} memberCount 需要排版的成员数量
+     * @returns {number} 实际列数（2~4）
+     */
+    static resolveScheduleColumns(setting, memberCount) {
+        const normalized = ConfigManager.normalizeColumnsSetting(setting);
+        if (normalized !== 'auto') return Number(normalized);
+        const count = Number.isFinite(Number(memberCount)) ? Math.max(0, Math.floor(Number(memberCount))) : 0;
+        for (let cols = MIN_SCHEDULE_COLUMNS; cols < MAX_SCHEDULE_COLUMNS; cols++) {
+            if (Math.ceil(count / cols) <= SCHEDULE_AUTO_MAX_ROWS) return cols;
+        }
+        return MAX_SCHEDULE_COLUMNS;
     }
     /**
      * 按列数计算群课表画布宽度
@@ -194,9 +225,10 @@ export class ConfigManager {
             sortMode, scheduleColumns, hideEndedDays, showQQ,
             watchFiles, urlImportEnabled, birthdayCustomName
         };
-        // 列数落库前同样标准化，避免绕过前端校验写入越界值
+        // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {
-            configToSave.scheduleColumns = ConfigManager.normalizeColumns(configToSave.scheduleColumns);
+            const setting = ConfigManager.normalizeColumnsSetting(configToSave.scheduleColumns);
+            configToSave.scheduleColumns = setting === 'auto' ? 'auto' : Number(setting);
         }
         // 过滤掉 undefined 的字段，避免写入 yaml 时出现空值
         Object.keys(configToSave).forEach(key => {

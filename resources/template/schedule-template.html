@@ -638,7 +638,7 @@
                     {{if member.remainingTime}}
                     <div class="course-remaining">
                         <span class="remaining-time">
-                            {{if member.status === '上课中' || member.status === '分身中'}}⏳ 剩余: {{member.remainingTime}}
+                            {{if member.status === '上课中' || member.status === '分身中' || member.status === '翘课中'}}⏳ 剩余: {{member.remainingTime}}
                             {{else if member.status === '未开始'}}⏳ 距离上课: {{member.remainingTime}}
                             {{/if}}
                         </span>

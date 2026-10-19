@@ -219,9 +219,9 @@ async function renderTemplate(templateName, data, options = {}) {
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
     const now = new Date()
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
-    // 每行成员列数由配置决定，统一走 ConfigManager 标准化（2~4 列，非法值回落 2 列）；
-    // 画布宽度随列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
-    const columns = ConfigManager.normalizeColumns(ConfigManager.getConfig().scheduleColumns)
+    // 列数由配置决定：支持 'auto'（按成员数自动加列，尽量不超过 6 行）与固定 2~4 列；
+    // 画布宽度随实际列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
+    const columns = ConfigManager.resolveScheduleColumns(ConfigManager.getConfig().scheduleColumns, members.length)
     const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)
     const templateData = {
         weekday: weekdayMap[currentDay],
@@ -297,7 +297,7 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
                 }
             }
             if (member.remainingTime) {
-                if (member.status === '上课中' || member.status === '分身中') {
+                if (member.status === '上课中' || member.status === '分身中' || member.status === '翘课中') {
                     text += `   剩余: ${member.remainingTime}\n`;
                 } else if (member.status === '未开始') {
                     text += `   距离上课: ${member.remainingTime}\n`;

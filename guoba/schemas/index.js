@@ -277,18 +277,18 @@ export const schemas = [
     {
         field: "scheduleColumns",
         label: "群课表列数",
-        helpMessage: "群课表/所有人课表图片中每行展示的成员数，2~4 列",
-        component: "InputNumber",
-        required: true,
+        helpMessage: "群课表/所有人课表图片中每行展示的成员数，可选「自动」或固定 2/3/4 列",
+        component: "RadioGroup",
         componentProps: {
-            min: 2,
-            max: 4,
-            step: 1,
-            placeholder: '请输入2-4之间的列数',
-            addonAfter: '列'
+            options: [
+                { label: "自动（按人数）", value: "auto" },
+                { label: "固定2列", value: "2" },
+                { label: "固定3列", value: "3" },
+                { label: "固定4列", value: "4" }
+            ]
         },
-        defaultValue: 2,
-        bottomHelpMessage: "群课表图片每行展示多少位成员。默认2列；选择3列/4列时，图片会按列数整体加宽（3列约1598px、4列约2116px），每张卡片的宽度、头像与字号保持与2列完全一致——只加宽画布，不压缩卡片内容。列数越多，图片越宽、行数越少；手机端会把整图缩放显示，若以手机查看为主建议用2~3列。"
+        defaultValue: "2",
+        bottomHelpMessage: "自动：成员多时自动增加列数，尽量让图片不超过 6 行——不超过 12 人用 2 列、13~18 人用 3 列、19 人以上用 4 列。固定 2/3/4 列则始终按该列数排版。无论多少列，单张卡片的宽度、头像与字号都保持一致，列数只改变图片宽度与行数（3 列约 1598px、4 列约 2116px）；手机端会把整图缩放显示，以手机查看为主时建议用自动或固定 2 列。"
     },
     {
         field: "hideEndedDays",
