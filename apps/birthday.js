@@ -183,6 +183,12 @@ export class BirthdayReminder extends plugin {
     }
     /** 检查生日并发送祝福 */
     async checkBirthdays() {
+        // 定时任务的 job 绑定在「创建它的那个实例」上（cron 未变时不会重建），
+        // 而实例的 birthdayData 只是构造那一刻的快照；管理员的 #添加生日 / #移除生日 / #修改生日
+        // 走的是「每条消息新建实例」的另一份数据并写入磁盘。因此这里必须先从磁盘重载，
+        // 否则手动增删的生日在不重启进程的情况下永远不会被推送看到（定时任务读的是旧快照）。
+        this.birthdayData = DataManager.loadBirthdayData()
+        this._pendingPushes = DataManager.loadBirthdayPendingPushes()
         // 刷新过期的农历生日（年份变更后重新计算公历日期）
         if (refreshLunarBirthdays(this.birthdayData)) {
             DataManager.saveBirthdayData(this.birthdayData);
