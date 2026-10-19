@@ -183,15 +183,17 @@
         }
 
         /* ===== 头像边框：进度环 / 实色 / 关闭（avatarBorderMode 配置） =====
-           progress：用 conic-gradient 画「这节课上到哪了」，空 → 满（--progress 由数据注入）；
+           progress：用 conic-gradient 画「这节课上到哪了」，空 → 满且**逆时针**推进（--progress 由数据注入）；
                      填充色与轨道色为同色系深浅双色（--ring-strong / --ring-soft），比红白对比更协调
            solid   ：淡化的状态色边框（--status-color-soft），不再抢占视觉焦点
            off     ：沿用原来的白色细边框（.member-avatar 自身样式） */
         .member-avatar.avatar-progress {
             border: none;
             padding: 4px;
-            background: conic-gradient(var(--ring-strong, #B13333) calc(var(--progress, 0) * 360deg),
-                    var(--ring-soft, #ECCCCC) 0);
+            /* 逆时针推进：conic-gradient 本身只能顺时针扫角，因此把「未完成」的软色放在前段、
+               已完成部分放到末段（贴 360°），填充区便从 12 点方向起向左（逆时针）增长 */
+            background: conic-gradient(var(--ring-soft, #ECCCCC) calc((1 - var(--progress, 0)) * 360deg),
+                    var(--ring-strong, #B13333) 0);
         }
 
         .member-avatar.avatar-progress img {

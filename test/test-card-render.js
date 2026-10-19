@@ -97,6 +97,11 @@ check('进度环：填充/轨道分别使用 ring-strong 与 ring-soft', (() => 
     const rule = tplSrc.match(/\.member-avatar\.avatar-progress\s*\{([^}]*)\}/)?.[1] || '';
     return /conic-gradient/.test(rule) && /--ring-strong/.test(rule) && /--ring-soft/.test(rule);
 })());
+// 逆时针推进：软色在前段、深色贴 360°，填充区从 12 点起向左增长
+check('进度环：逆时针推进（软色在前 + 1-progress 作为分界）', (() => {
+    const rule = tplSrc.match(/\.member-avatar\.avatar-progress\s*\{([^}]*)\}/)?.[1] || '';
+    return /conic-gradient\(\s*var\(--ring-soft/.test(rule) && /1 - var\(--progress/.test(rule);
+})());
 
 const solidCard = renderOne(mk({
     nickname: '未开始', status: '未开始', remainingTime: '5分钟', currentCourse: course,
