@@ -223,6 +223,8 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
     // 画布宽度随实际列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
     const columns = ConfigManager.resolveScheduleColumns(ConfigManager.getConfig().scheduleColumns, members.length)
     const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)
+    // 触发者（发起本次查询的人）：其卡片做淡黄荧光高亮；官方Bot的 OpenID 场景需按字符串比较
+    const selfUserId = options?.e?.user_id
     const templateData = {
         weekday: weekdayMap[currentDay],
         currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
@@ -236,7 +238,8 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
         members: members.map(m => ({
             ...m,
             avatar: m.avatar || getAvatarUrl(m.userId),
-            signature: m.signature || ''
+            signature: m.signature || '',
+            isSelf: selfUserId != null && String(m.userId) === String(selfUserId)
         }))
     }
     return await renderTemplate('schedule-template', templateData, options)

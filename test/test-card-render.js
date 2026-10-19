@@ -22,12 +22,13 @@ const mk = (o) => ({
 });
 const course = { name: '高等数学', location: '107', startTime: '08:00', endTime: '09:35' };
 
-function renderOne(member) {
+function renderOne(member, extra = {}) {
     return art(tplFile, {
         weekday: '四', currentTime: '08:25', updateTime: '2026/10/15 08:25:53',
         columns: 2, canvasWidth: 1080, totalMembers: 1,
         studyingCount: 0, skippingCount: 0, skipModeCount: 0,
-        members: [member], _fontInlineUrl: 'data:font/otf;base64,', _fontFormat: 'opentype'
+        members: [member], _fontInlineUrl: 'data:font/otf;base64,', _fontFormat: 'opentype',
+        ...extra
     });
 }
 
@@ -69,6 +70,14 @@ check('翘课中无 remainingTime 时不渲染剩余徽章', !skippedNoTime.incl
 const rendererSrc = fs.readFileSync(path.join(pluginRoot, 'components', 'Renderer.js'), 'utf8');
 const textBranch = rendererSrc.match(/if \(member\.remainingTime\) \{[\s\S]{0,400}?\n            \}/)?.[0] || '';
 check('文本降级：剩余时间分支包含翘课中', /member\.status === '翘课中'/.test(textBranch));
+
+// ========== 5. 触发者卡片高亮 ==========
+const selfCard = renderOne(mk({ nickname: '触发者', status: '上课中', remainingTime: '45分钟', currentCourse: course, isSelf: true }));
+const otherCard = renderOne(mk({ nickname: '其他人', status: '上课中', remainingTime: '45分钟', currentCourse: course, isSelf: false }));
+check('isSelf=true 的卡片带 is-self 高亮类', selfCard.includes('member-card is-self'));
+// 注意：is-self 也出现在 <style> 的样式规则里，因此这里匹配具体的容器类名组合
+check('isSelf=false 的卡片不带高亮类', !otherCard.includes('member-card is-self'));
+check('高亮样式定义了淡黄荧光边框', /\.member-card\.is-self\s*\{[^}]*#f2d85c/.test(fs.readFileSync(tplFile, 'utf8')));
 
 console.log(fail === 0 ? '\n全部用例通过 ✅' : `\n${fail} 个用例失败 ❌`);
 process.exit(fail === 0 ? 0 : 1);

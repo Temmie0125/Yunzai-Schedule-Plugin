@@ -131,6 +131,12 @@
             box-sizing: border-box;
         }
 
+        /* 触发者卡片高亮：淡黄色荧光边框（不明显喧宾夺主，但能一眼找到自己） */
+        .member-card.is-self {
+            border-color: #f2d85c;
+            box-shadow: 0 0 0 2px rgba(242, 216, 92, 0.45), 0 6px 18px rgba(242, 216, 92, 0.35);
+        }
+
         /* 左侧双箭头装饰 */
         .member-card::before,
         .member-card::after {
@@ -526,7 +532,7 @@
 
         <div class="members-list" style="--member-cols: {{columns || 2}};">
             {{each members member}}
-            <div class="member-card" style="--status-color: {{ 
+            <div class="member-card{{if member.isSelf}} is-self{{/if}}" style="--status-color: {{ 
                 member.status === '上课中' ? '#B13333' :
                 member.status === '翘课中' ? '#DB6F2D' : 
                 member.status === '未开始' ? '#3949AB' : 
