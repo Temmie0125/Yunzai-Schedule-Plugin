@@ -223,6 +223,8 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
     // 画布宽度随实际列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
     const columns = ConfigManager.resolveScheduleColumns(ConfigManager.getConfig().scheduleColumns, members.length)
     const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)
+    // 头像边框展示方式：progress 时仅「上课中」用剩余进度环，其余回落实色边框
+    const avatarBorderMode = ConfigManager.normalizeAvatarBorderMode(ConfigManager.getConfig().avatarBorderMode)
     // 触发者（发起本次查询的人）：其卡片做淡黄荧光高亮；官方Bot的 OpenID 场景需按字符串比较
     const selfUserId = options?.e?.user_id
     const templateData = {
@@ -235,12 +237,16 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
         studyingCount: members.filter(m => m.status === '上课中' || m.status === '分身中').length,
         skippingCount: members.filter(m => m.status === '翘课中').length,
         skipModeCount: members.filter(m => m.skipStatus).length,
-        members: members.map(m => ({
-            ...m,
-            avatar: m.avatar || getAvatarUrl(m.userId),
-            signature: m.signature || '',
-            isSelf: selfUserId != null && String(m.userId) === String(selfUserId)
-        }))
+        members: members.map(m => {
+            // 具体到每张卡片：关闭 → off；会上课的进度成员 → progress；其余 → solid
+            return {
+                ...m,
+                avatar: m.avatar || getAvatarUrl(m.userId),
+                signature: m.signature || '',
+                isSelf: selfUserId != null && String(m.userId) === String(selfUserId),
+                avatarBorderMode: ConfigManager.resolveAvatarBorderMode(avatarBorderMode, m.avatarProgress)
+            }
+        })
     }
     return await renderTemplate('schedule-template', templateData, options)
 }

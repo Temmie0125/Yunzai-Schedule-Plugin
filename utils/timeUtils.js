@@ -241,6 +241,22 @@ export function computeBoundaryMinutes({ status, nowMinutes, ongoingCourses, nex
 }
 
 /**
+ * 计算「上课中」头像进度环的剩余比例（满 → 空）
+ * 上课瞬间约等于 1（满环），越接近下课越接近 0（空环），直观展示「距离下课还有多久」
+ * @param {string} startTime 课程开始时间 HH:MM（兼容未补零）
+ * @param {string} endTime 课程结束时间 HH:MM
+ * @param {number} nowMinutes 当前时间（当日分钟数）
+ * @returns {number|null} 0~1 的比例；时间无法解析或课程时长非正时返回 null
+ */
+export function computeAvatarRemainRatio(startTime, endTime, nowMinutes) {
+    const start = timeToMinutes(startTime)
+    const end = timeToMinutes(endTime)
+    if (Number.isNaN(start) || Number.isNaN(end) || !Number.isFinite(nowMinutes) || end <= start) return null
+    const remain = (end - nowMinutes) / (end - start)
+    return Math.min(1, Math.max(0, remain))
+}
+
+/**
  * 「按距上/下课时间」排序比较器（纯函数，便于单测）
  * 先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序（越接近上下课越靠前）：
  * - 前两组：computeBoundaryMinutes 升序，距离相同再按状态序、最后按用户ID

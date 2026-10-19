@@ -291,6 +291,21 @@ export const schemas = [
         bottomHelpMessage: "自动：按整图宽高比选列数，尽量让图片接近 2:3（宽:高）。这套布局下大约是——14 人以内 2 列、15~30 人 3 列、31 人以上 4 列，实际以哪一档的宽高比更接近 2:3 为准。固定 2/3/4 列则始终按该列数排版。无论多少列，单张卡片的宽度、头像与字号都保持一致，列数只改变图片宽度与行数（2 列 1080px、3 列 1598px、4 列 2116px）；手机端会缩放整图显示，若手机查看为主建议用固定 2 列。"
     },
     {
+        field: "avatarBorderMode",
+        label: "头像边框展示",
+        helpMessage: "群课表中头像边框的展示方式：进度环 / 实色边框 / 关闭",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "进度环（推荐）", value: "progress" },
+                { label: "实色边框", value: "solid" },
+                { label: "关闭", value: "off" }
+            ]
+        },
+        defaultValue: "progress",
+        bottomHelpMessage: "进度环：上课中的成员用头像边框显示「距离下课」的剩余比例（课后自动走完，满→空），其他状态用状态色实色边框。实色边框：所有状态都用状态色实色边框，不显示进度。关闭：保持原来的白色细边框。也可用管理员命令 #课表头像边框 进度|实色|关闭 随时切换（会写入配置文件）。"
+    },
+    {
         field: "hideEndedDays",
         label: "结束成员隐藏天数",
         helpMessage: "学期已结束超过该天数的成员不再显示在群课表图片中",

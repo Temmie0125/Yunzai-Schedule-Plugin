@@ -5,7 +5,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg, compareUserId } from '../components/common.js'
 import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarRemainRatio } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -113,6 +113,8 @@ export class GroupSchedulePlugin extends plugin {
     let overlapCourses = null;
     // 「按距上/下课时间」排序所需：距最近一次上/下课事件的分钟数（无上/下课事件时为 null）
     let boundaryMinutes = null;
+    // 头像进度环剩余比例（仅上课中，1=刚上课满环，0=即将下课空环）
+    let avatarProgress = null;
     // 当前正在上的课程 / 下一节课（供 boundaryMinutes 与状态判定复用）
     let ongoingCourses = null;
     let nextCourse = null;
@@ -165,6 +167,10 @@ export class GroupSchedulePlugin extends plugin {
         nextCourse,
         currentCourse
       });
+      // 头像进度环：仅「上课中」展示「距离下课」的剩余比例（满 → 空），其他状态用实色边框
+      if (status === '上课中' && currentCourse) {
+        avatarProgress = computeAvatarRemainRatio(currentCourse.startTime, currentCourse.endTime, nowMinutes);
+      }
     }
     return {
       userId,
@@ -174,6 +180,7 @@ export class GroupSchedulePlugin extends plugin {
       status,
       remainingTime,
       boundaryMinutes,
+      avatarProgress,
       skipStatus: skipStatus.enabled,
       signature,
       currentWeek: userCurrentWeek,

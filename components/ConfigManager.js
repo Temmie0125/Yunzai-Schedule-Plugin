@@ -19,6 +19,12 @@ export const SCHEDULE_SIDE_PADDING = 60;  // 成员网格左右内边距合计�
 export const SCHEDULE_TARGET_RATIO = 2 / 3;
 export const SCHEDULE_CARD_HEIGHT = 229;
 export const SCHEDULE_CHROME_HEIGHT = 516;
+// 头像边框展示方式（群课表）：
+//   progress 上课中用「剩余时长」进度环（满 → 空），其他状态用状态色实色边框
+//   solid    所有状态都用状态色实色边框
+//   off      恢复白色细边框（不展示状态色与进度）
+export const AVATAR_BORDER_MODES = ['progress', 'solid', 'off'];
+export const DEFAULT_AVATAR_BORDER_MODE = 'progress';
 export class ConfigManager {
     /**
      * 获取用户配置（若不存在则从默认配置复制）
@@ -79,6 +85,7 @@ export class ConfigManager {
             // timeDistance：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序
             sortMode: "userId",
             scheduleColumns: 2,    // 群课表每行成员列数：'auto' 按人数自动加列，或固定 2/3/4
+            avatarBorderMode: "progress",  // 群课表头像边框：progress 进度环 / solid 实色 / off 关闭
             hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
@@ -106,6 +113,8 @@ export class ConfigManager {
         // 群课表列数兜底：支持 'auto'（按人数自动加列）与固定 2~4 列，非法值回落默认 2 列。
         // 统一存成字符串，便于 Guoba 单选组精确匹配选项值
         config.scheduleColumns = ConfigManager.normalizeColumnsSetting(config.scheduleColumns);
+        // 头像边框展示方式兜底：仅允许 progress / solid / off
+        config.avatarBorderMode = ConfigManager.normalizeAvatarBorderMode(config.avatarBorderMode);
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -137,6 +146,28 @@ export class ConfigManager {
     static normalizeColumnsSetting(value) {
         if (typeof value === 'string' && value.trim().toLowerCase() === 'auto') return 'auto';
         return String(ConfigManager.normalizeColumns(value));
+    }
+    /**
+     * 标准化头像边框展示方式，非法值回落默认
+     * @param {*} value 配置中的 avatarBorderMode
+     * @returns {'progress'|'solid'|'off'}
+     */
+    static normalizeAvatarBorderMode(value) {
+        const mode = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        return AVATAR_BORDER_MODES.includes(mode) ? mode : DEFAULT_AVATAR_BORDER_MODE;
+    }
+    /**
+     * 解析单张卡片的头像边框展示方式
+     * 全局关闭 → off；全局进度 + 该成员有进度（仅上课中）→ progress；其余 → solid（状态色实色）
+     * @param {*} globalMode 配置中的 avatarBorderMode
+     * @param {number|null|undefined} avatarProgress 该成员的剩余比例（非上课中为 null）
+     * @returns {'progress'|'solid'|'off'}
+     */
+    static resolveAvatarBorderMode(globalMode, avatarProgress) {
+        const mode = ConfigManager.normalizeAvatarBorderMode(globalMode);
+        if (mode === 'off') return 'off';
+        if (mode === 'progress' && Number.isFinite(avatarProgress)) return 'progress';
+        return 'solid';
     }
     /**
      * 估算渲染后群课表图片的高度（用于「自动」列数的宽高比判定）
@@ -231,7 +262,7 @@ export class ConfigManager {
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
-            sortMode, scheduleColumns, hideEndedDays, showQQ,
+            sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             watchFiles, urlImportEnabled, birthdayCustomName
         } = data;
         const configToSave = {
@@ -249,7 +280,7 @@ export class ConfigManager {
             wakeupServiceUrl, wakeupApiEndpoint, wakeupAuthType, wakeupAuthToken,
             defaultSemesterStart,
             botName, font,
-            sortMode, scheduleColumns, hideEndedDays, showQQ,
+            sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             watchFiles, urlImportEnabled, birthdayCustomName
         };
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
@@ -265,5 +296,15 @@ export class ConfigManager {
         });
         fs.writeFileSync(userFile, YAML.stringify(configToSave), 'utf8')
         logger.info('[配置管理] 配置已保存')
+    }
+    /**
+     * 局部更新配置并持久化（供管理员命令等运行时修改使用）
+     * 读取当前配置 → 合并补丁 → 走 setConfig 的白名单与标准化后写回 yaml
+     * @param {Object} patch 需要修改的字段，如 { avatarBorderMode: 'solid' }
+     * @returns {Object} 更新后的完整配置（getConfig 结果）
+     */
+    static updateConfig(patch = {}) {
+        ConfigManager.setConfig({ ...ConfigManager.getConfig(), ...patch })
+        return ConfigManager.getConfig()
     }
 }

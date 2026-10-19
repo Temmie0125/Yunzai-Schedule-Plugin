@@ -182,6 +182,30 @@
             border-radius: 25%;
         }
 
+        /* ===== 头像边框：进度环 / 实色 / 关闭（avatarBorderMode 配置） =====
+           progress：用 conic-gradient 画「距离下课的剩余比例」，从满到空（--remain 由数据注入）
+           solid   ：状态色实色边框
+           off     ：沿用原来的白色细边框（.member-avatar 自身样式） */
+        .member-avatar.avatar-progress {
+            border: none;
+            padding: 4px;
+            background: conic-gradient(var(--status-color, #00897B) calc(var(--remain, 1) * 360deg),
+                    rgba(0, 0, 0, 0.09) 0);
+        }
+
+        .member-avatar.avatar-progress img {
+            border-radius: 20%;
+            background: #fff;
+        }
+
+        .member-avatar.avatar-solid {
+            border: 4px solid var(--status-color, #00897B);
+        }
+
+        .member-avatar.avatar-solid img {
+            border-radius: 20%;
+        }
+
         /* 翘课标签 - 绝对定位在头像下方 */
         .skip-tag {
             position: absolute;
@@ -543,7 +567,7 @@
                 member.status === '学期结束' ? '#6c757d' : '#00897B' 
             }};">
                 <!-- 头像区域 -->
-                <div class="member-avatar">
+                <div class="member-avatar avatar-{{member.avatarBorderMode}}"{{if member.avatarBorderMode === 'progress'}} style="--remain: {{member.avatarProgress}};"{{/if}}>
                     <img src="{{member.avatar}}" alt="{{member.nickname}}">
                     {{if member.skipStatus && member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <span class="skip-tag">翘课模式</span>

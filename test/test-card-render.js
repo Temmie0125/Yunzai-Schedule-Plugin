@@ -1,4 +1,4 @@
-// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
+﻿// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
 // 覆盖：上课中/分身中/翘课中 → 「剩余」；未开始 → 「距离上课」；已结束/无课程 → 均不显示
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-card-render.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替
@@ -78,6 +78,28 @@ check('isSelf=true 的卡片带 is-self 高亮类', selfCard.includes('member-ca
 // 注意：is-self 也出现在 <style> 的样式规则里，因此这里匹配具体的容器类名组合
 check('isSelf=false 的卡片不带高亮类', !otherCard.includes('member-card is-self'));
 check('高亮样式定义了淡黄荧光边框', /\.member-card\.is-self\s*\{[^}]*#f2d85c/.test(fs.readFileSync(tplFile, 'utf8')));
+
+// ========== 6. 头像边框三档：进度环 / 实色 / 关闭 ==========
+const tplSrc = fs.readFileSync(tplFile, 'utf8');
+const progressCard = renderOne(mk({
+    nickname: '上课中', status: '上课中', remainingTime: '40分钟', currentCourse: course,
+    avatarBorderMode: 'progress', avatarProgress: 0.42
+}));
+check('进度环：输出 avatar-progress 类', progressCard.includes('member-avatar avatar-progress'));
+check('进度环：注入剩余比例 --remain', progressCard.includes('--remain: 0.42'));
+check('进度环：样式用 conic-gradient 画环', /\.member-avatar\.avatar-progress\s*\{[^}]*conic-gradient/.test(tplSrc));
+
+const solidCard = renderOne(mk({
+    nickname: '未开始', status: '未开始', remainingTime: '5分钟', currentCourse: course,
+    avatarBorderMode: 'solid'
+}));
+check('实色：输出 avatar-solid 类', solidCard.includes('member-avatar avatar-solid'));
+check('实色：不注入 --remain 变量', !solidCard.includes('--remain:'));
+check('实色：边框用状态色变量', /\.member-avatar\.avatar-solid\s*\{[^}]*var\(--status-color/.test(tplSrc));
+
+const offCard = renderOne(mk({ nickname: '关闭', status: '上课中', remainingTime: '40分钟', currentCourse: course, avatarBorderMode: 'off' }));
+check('关闭：输出 avatar-off 类', offCard.includes('member-avatar avatar-off'));
+check('关闭：不注入 --remain 变量', !offCard.includes('--remain:'));
 
 console.log(fail === 0 ? '\n全部用例通过 ✅' : `\n${fail} 个用例失败 ❌`);
 process.exit(fail === 0 ? 0 : 1);

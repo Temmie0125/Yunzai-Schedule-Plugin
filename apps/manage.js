@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg } from '../components/common.js'
+import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg, checkPermission } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { urlImportButtons } from '../components/buttons.js'
 import {
@@ -78,6 +78,11 @@ export class ScheduleManage extends plugin {
                 {
                     reg: "^#(设置|上传|导入|更新)时间表$",
                     fnc: "updateTimeTable"
+                },
+                {
+                    // 群课表头像边框展示方式（管理员/主人）：进度 | 实色 | 关闭
+                    reg: "^#课表头像边框(?:\\s+(.+))?$",
+                    fnc: "setAvatarBorderMode"
                 },
                 {
                     // 旧命令迁移提示：旧入口已删除，但静默无响应会让老用户以为 Bot 坏了。
@@ -256,6 +261,49 @@ export class ScheduleManage extends plugin {
         }
         const result = await importScheduleFromStarlinkCode(userId, code, this.e);
         await this.reply(result.message);
+        return true;
+    }
+    /**
+     * 设置群课表头像边框展示方式（管理员/主人）
+     * 用法：#课表头像边框 进度|实色|关闭（开=进度，关=关闭），不带参数则回报当前设置
+     * 修改会写入配置文件，重启后仍生效
+     */
+    async setAvatarBorderMode() {
+        const e = this.e;
+        const current = ConfigManager.normalizeAvatarBorderMode(ConfigManager.getConfig().avatarBorderMode);
+        const labelOf = (mode) => ({ progress: '进度环（上课中显示距下课剩余，其他状态实色）', solid: '实色边框', off: '关闭（白色细边框）' })[mode] || mode;
+        if (!checkPermission(e)) {
+            await this.reply("只有群管理员或主人可以修改该设置哦~");
+            return true;
+        }
+        const arg = e.msg.match(/^#课表头像边框(?:\s+(.+))?$/)?.[1]?.trim();
+        if (!arg) {
+            await this.reply(`当前群课表头像边框：${labelOf(current)}\n可发送 #课表头像边框 进度|实色|关闭 修改（开/关 亦可）`);
+            return true;
+        }
+        const alias = {
+            '进度': 'progress', '进度环': 'progress', 'progress': 'progress', '开': 'progress', '开启': 'progress', 'auto': 'progress',
+            '实色': 'solid', '实心': 'solid', 'solid': 'solid',
+            '关闭': 'off', '关': 'off', 'off': 'off', '无': 'off', 'none': 'off'
+        };
+        const mode = alias[arg.toLowerCase()];
+        if (!mode) {
+            await this.reply(`没看懂「${arg}」哦，可选：进度 / 实色 / 关闭（开/关 亦可）`);
+            return true;
+        }
+        if (mode === current) {
+            await this.reply(`群课表头像边框已经是「${labelOf(mode)}」了~`);
+            return true;
+        }
+        try {
+            ConfigManager.updateConfig({ avatarBorderMode: mode });
+        } catch (err) {
+            logger.error('[课表头像边框] 写入配置失败', err);
+            await this.reply('❌ 保存失败，请稍后重试（可检查 config/config/schedule.yaml 权限）');
+            return true;
+        }
+        logger.mark(`[课表头像边框] 由 ${e.user_id} 设置为 ${mode}`);
+        await this.reply(`✅ 群课表头像边框已设为「${labelOf(mode)}」，已写入配置，重启后仍生效`);
         return true;
     }
     /**

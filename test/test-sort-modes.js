@@ -2,7 +2,7 @@
 // 覆盖 computeBoundaryMinutes / timeDistanceGroup / compareByTimeDistance / 列数标准化与画布宽度推导
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-sort-modes.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替
-import { computeBoundaryMinutes, timeDistanceGroup, compareByTimeDistance } from '../utils/timeUtils.js';
+import { computeBoundaryMinutes, timeDistanceGroup, compareByTimeDistance, computeAvatarRemainRatio } from '../utils/timeUtils.js';
 import {
     ConfigManager, MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS,
     SCHEDULE_CARD_WIDTH, SCHEDULE_GRID_GAP, SCHEDULE_SIDE_PADDING, SCHEDULE_TARGET_RATIO,
@@ -151,6 +151,45 @@ for (const input of [2, 3, 4, 1, 9, undefined, 'abc']) {
 check('画布宽度随列数单调递增',
     ConfigManager.resolveScheduleCanvasWidth(2) < ConfigManager.resolveScheduleCanvasWidth(3)
     && ConfigManager.resolveScheduleCanvasWidth(3) < ConfigManager.resolveScheduleCanvasWidth(4));
+
+// ========== 4.5 头像进度环：剩余比例（满 → 空）与边框模式 ==========
+// computeAvatarRemainRatio：上课瞬间≈1，越接近下课越小，下课后为 0
+check('进度环：刚上课为满环', computeAvatarRemainRatio('08:00', '09:40', hhmm(8, 0)) === 1);
+check('进度环：过半剩一半', computeAvatarRemainRatio('08:00', '09:40', hhmm(8, 50)) === 0.5);
+check('进度环：下课后为空环', computeAvatarRemainRatio('08:00', '09:40', hhmm(9, 40)) === 0);
+check('进度环：课后也不为负', computeAvatarRemainRatio('08:00', '09:40', hhmm(10, 30)) === 0);
+check('进度环：开课前按满环封顶', computeAvatarRemainRatio('08:00', '09:40', hhmm(7, 30)) === 1);
+check('进度环：兼容未补零时间 9:00', computeAvatarRemainRatio('9:00', '9:40', hhmm(9, 20)) === 0.5);
+check('进度环：时长非正返回 null', computeAvatarRemainRatio('09:00', '09:00', hhmm(9, 0)) === null);
+check('进度环：时间无法解析返回 null', computeAvatarRemainRatio('bad', '09:00', hhmm(9, 0)) === null);
+
+// normalizeAvatarBorderMode：仅允许 progress / solid / off，非法值回落默认 progress
+const borderModeCases = [
+    ['progress', 'progress'], ['PROGRESS', 'progress'], [' Progress ', 'progress'],
+    ['solid', 'solid'], ['off', 'off'], ['OFF', 'off'],
+    ['', 'progress'], ['abc', 'progress'], [undefined, 'progress'], [null, 'progress'], [123, 'progress'],
+];
+for (const [input, expected] of borderModeCases) {
+    const actual = ConfigManager.normalizeAvatarBorderMode(input);
+    check(`头像边框模式标准化：${JSON.stringify(input)} → ${expected}`, actual === expected);
+}
+
+// resolveAvatarBorderMode：全局模式 + 该成员是否有进度 → 单卡展示方式
+const perCardCases = [
+    ['progress', 0.42, 'progress'], ['progress', 1, 'progress'], ['progress', 0, 'progress'],
+    // progress 模式下没有进度的成员（非上课中）回落实色边框
+    ['progress', null, 'solid'], ['progress', undefined, 'solid'], ['progress', NaN, 'solid'],
+    // solid 模式一律实色，忽略进度
+    ['solid', 0.42, 'solid'], ['solid', null, 'solid'],
+    // off 模式一律关闭
+    ['off', 0.42, 'off'], ['off', null, 'off'],
+    // 非法全局值按默认 progress 处理
+    ['abc', 0.42, 'progress'], [undefined, null, 'solid'],
+];
+for (const [mode, progress, expected] of perCardCases) {
+    const actual = ConfigManager.resolveAvatarBorderMode(mode, progress);
+    check(`单卡头像边框：全局 ${String(mode)} + 进度 ${String(progress)} → ${expected}`, actual === expected);
+}
 
 // 画布宽度公式依赖模板的网格间距与内边距，二者必须与模板 CSS 保持一致（否则卡片宽度会静默偏离）
 import fs from 'node:fs';
