@@ -15,6 +15,8 @@ function check(label, cond) {
     console.log(`[${cond ? 'PASS' : 'FAIL'}] ${label}`);
 }
 
+// 断言渲染结果时应只看 <body>，避免样式表里的注释文本误伤（如注释里出现「距离上课」）
+const bodyOf = (html) => html.split('<body>')[1] || html;
 const avatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=';
 const mk = (o) => ({
     userId: 10001, avatar, skipStatus: false, signature: '',
@@ -39,7 +41,7 @@ const skipped = renderOne(mk({
 }));
 check('翘课中显示「剩余」剩余时间', skipped.includes('⏳ 剩余: 1小时20分钟'));
 check('翘课中同时保留「翘课模式」角标', skipped.includes('翘课模式'));
-check('翘课中不误显示「距离上课」', !skipped.includes('距离上课'));
+check('翘课中不误显示「距离上课」', !bodyOf(skipped).includes('距离上课'));
 
 // ========== 2. 其他状态的显示分支不受影响 ==========
 const studying = renderOne(mk({ nickname: '上课中的人', status: '上课中', remainingTime: '45分钟', currentCourse: course }));
@@ -56,15 +58,15 @@ const notStarted = renderOne(mk({ nickname: '没上课的人', status: '未开�
 check('未开始显示「距离上课」', notStarted.includes('⏳ 距离上课: 5分钟'));
 
 const ended = renderOne(mk({ nickname: '下课的人', status: '已结束', currentCourse: course }));
-check('已结束不显示剩余/距离上课', !ended.includes('剩余:') && !ended.includes('距离上课'));
+check('已结束不显示剩余/距离上课', !bodyOf(ended).includes('剩余:') && !bodyOf(ended).includes('距离上课'));
 
 const noCourse = renderOne(mk({ nickname: '无课的人', status: '无课程' }));
-check('无课程不显示剩余/距离上课', !noCourse.includes('剩余:') && !noCourse.includes('距离上课'));
+check('无课程不显示剩余/距离上课', !bodyOf(noCourse).includes('剩余:') && !bodyOf(noCourse).includes('距离上课'));
 
 // ========== 3. 课后自动失效场景：翘课中但无剩余时间时不应渲染空徽章 ==========
 const skippedNoTime = renderOne(mk({ nickname: '翘课无时间', status: '翘课中', skipStatus: true, currentCourse: course }));
 // 注意：remaining-time 是样式类名，始终存在于 <style> 中，需检查只在有值时渲染的容器元素
-check('翘课中无 remainingTime 时不渲染剩余徽章', !skippedNoTime.includes('class="course-remaining"'));
+check('翘课中无 remainingTime 时不渲染剩余徽章', !bodyOf(skippedNoTime).includes('class="course-meta"'));
 
 // ========== 4. 文本降级同样包含翘课中的剩余时间 ==========
 const rendererSrc = fs.readFileSync(path.join(pluginRoot, 'components', 'Renderer.js'), 'utf8');
@@ -100,6 +102,29 @@ check('实色：边框用状态色变量', /\.member-avatar\.avatar-solid\s*\{[^
 const offCard = renderOne(mk({ nickname: '关闭', status: '上课中', remainingTime: '40分钟', currentCourse: course, avatarBorderMode: 'off' }));
 check('关闭：输出 avatar-off 类', offCard.includes('member-avatar avatar-off'));
 check('关闭：不注入 --remain 变量', !offCard.includes('--remain:'));
+
+// ========== 7. 今日课程节数圆点 ==========
+const dotsCard = renderOne(mk({
+    nickname: '有课的人', status: '上课中', remainingTime: '40分钟', currentCourse: course,
+    avatarBorderMode: 'solid',
+    courseDots: { visible: ['finished', 'ongoing', 'upcoming'], hiddenPast: 2, hiddenFuture: 1, total: 6 }
+}));
+check('圆点：输出 dot 元素（分色类名）',
+    ['dot-finished', 'dot-ongoing', 'dot-upcoming'].every(c => dotsCard.includes(`dot ${c}`)));
+check('圆点：省略的已上完用 ×N 表示', dotsCard.includes('×2'));
+check('圆点：省略的即将上用 +N 表示', dotsCard.includes('+1'));
+check('圆点：与剩余时长同一行（course-meta 内）', /class="course-meta"[\s\S]{0,400}remaining-time[\s\S]{0,400}course-dots/.test(dotsCard));
+check('圆点：圆点靠右（CSS margin-left: auto）', /\.course-dots\s*\{[^}]*margin-left:\s*auto/.test(tplSrc));
+
+const noDotsCard = renderOne(mk({ nickname: '无课', status: '无课程', avatarBorderMode: 'off' }));
+check('圆点：无课程时不渲染 course-meta', !noDotsCard.includes('class="course-meta"'));
+
+const endedDots = renderOne(mk({
+    nickname: '已结束', status: '已结束', currentCourse: course, avatarBorderMode: 'off',
+    courseDots: { visible: ['finished', 'finished'], hiddenPast: 0, hiddenFuture: 0, total: 2 }
+}));
+check('圆点：已结束也展示（无剩余时长时单独成行）',
+    endedDots.includes('class="course-meta"') && endedDots.includes('dot dot-finished') && !endedDots.includes('⏳'));
 
 console.log(fail === 0 ? '\n全部用例通过 ✅' : `\n${fail} 个用例失败 ❌`);
 process.exit(fail === 0 ? 0 : 1);

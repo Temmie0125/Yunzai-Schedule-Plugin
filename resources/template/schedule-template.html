@@ -357,15 +357,53 @@
             border-radius: 30px;
         }
 
-        .course-remaining {
+        /* 底部信息行：剩余/距离上课 + 今日课程节数圆点（圆点靠右） */
+        .course-meta {
             margin-top: 6px;
-            /* 与时间地点行的间距 */
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
-        .course-remaining .remaining-time {
+        .course-dots {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* 今日课程节数圆点（卡片与页脚图例共用同一套配色） */
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
             display: inline-block;
-            /* 确保作为块级元素占据整行（但内联块不会换行，实际会换行因为容器是块级） */
-            /* 原有 .remaining-time 样式保持不变 */
+        }
+
+        /* 已上完 / 即将上 用半透明淡化，正在上 / 已翘课 保持饱和，突出「当前」 */
+        .dot-finished {
+            background: #379151;
+            opacity: 0.5;
+        }
+
+        .dot-ongoing {
+            background: #B13333;
+        }
+
+        .dot-upcoming {
+            background: #3949AB;
+            opacity: 0.5;
+        }
+
+        .dot-skipped {
+            background: #DB6F2D;
+        }
+
+        .dot-more {
+            font-size: 12px;
+            line-height: 1;
+            color: #718096;
         }
 
         /* 个性签名 */
@@ -418,6 +456,34 @@
             width: 24px;
             height: 24px;
             border-radius: 6px;
+        }
+
+        /* 今日课程节数圆点图例 */
+        .dots-legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 8px 18px;
+            margin-top: 14px;
+            font-size: 16px;
+            color: #718096;
+        }
+
+        .dots-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dots-legend .dot {
+            width: 10px;
+            height: 10px;
+        }
+
+        .dots-legend-note {
+            color: #a0aec0;
+            font-size: 14px;
         }
 
         .update-time {
@@ -665,22 +731,32 @@
                     {{/if}}
                     {{/if}}
 
-                    {{if member.remainingTime}}
-                    <div class="course-remaining">
-                        <span class="remaining-time">
-                            {{if member.status === '上课中' || member.status === '分身中' || member.status === '翘课中'}}⏳ 剩余: {{member.remainingTime}}
-                            {{else if member.status === '未开始'}}⏳ 距离上课: {{member.remainingTime}}
-                            {{/if}}
-                        </span>
-                    </div>
-                    {{/if}}
-
                     <!-- 无课程时显示签名（已结束场景已在上方单独处理，此处不再包含） -->
                     {{if member.status === '无课程'}}
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
                     {{/if}}
+                    {{/if}}
+
+                    <!-- 今日课程节数圆点：紧跟剩余时长/签名行右侧；课程多时两端以数字省略 -->
+                    {{if member.remainingTime || (member.courseDots && member.courseDots.total)}}
+                    <div class="course-meta">
+                        {{if member.remainingTime}}
+                        <span class="remaining-time">
+                            {{if member.status === '上课中' || member.status === '分身中' || member.status === '翘课中'}}⏳ 剩余: {{member.remainingTime}}
+                            {{else if member.status === '未开始'}}⏳ 距离上课: {{member.remainingTime}}
+                            {{/if}}
+                        </span>
+                        {{/if}}
+                        {{if member.courseDots && member.courseDots.total}}
+                        <span class="course-dots" title="今日共 {{member.courseDots.total}} 节">
+                            {{if member.courseDots.hiddenPast}}<span class="dot-more">×{{member.courseDots.hiddenPast}}</span>{{/if}}
+                            {{each member.courseDots.visible dot}}<span class="dot dot-{{dot}}"></span>{{/each}}
+                            {{if member.courseDots.hiddenFuture}}<span class="dot-more">+{{member.courseDots.hiddenFuture}}</span>{{/if}}
+                        </span>
+                        {{/if}}
+                    </div>
                     {{/if}}
                 </div>
             </div>
@@ -697,6 +773,14 @@
                 <div class="legend-item"><span class="legend-color" style="background:#9575CD;"></span> 学期未开始</div>
                 <div class="legend-item"><span class="legend-color" style="background:#7F7F7F;"></span> 无课程</div>
                 <div class="legend-item"><span class="legend-color" style="background:#D81B60;"></span> 分身中</div>
+            </div>
+            <!-- 今日课程节数圆点图例 -->
+            <div class="dots-legend">
+                <span class="dots-legend-item"><span class="dot dot-finished"></span>已上完</span>
+                <span class="dots-legend-item"><span class="dot dot-ongoing"></span>正在上</span>
+                <span class="dots-legend-item"><span class="dot dot-upcoming"></span>即将上</span>
+                <span class="dots-legend-item"><span class="dot dot-skipped"></span>已翘课</span>
+                <span class="dots-legend-note">（圆点=今天共几节课，×N / +N 为省略数量）</span>
             </div>
             <div class="update-time">Generated By @Temmie Schedule-Plugin · 更新时间: {{updateTime}}</div>
         </div>

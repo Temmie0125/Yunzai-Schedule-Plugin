@@ -5,7 +5,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg, compareUserId } from '../components/common.js'
 import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarRemainRatio } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarRemainRatio, buildCourseDots } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -181,6 +181,10 @@ export class GroupSchedulePlugin extends plugin {
       remainingTime,
       boundaryMinutes,
       avatarProgress,
+      // 今日课程圆点：分色展示已上完/正在上/即将上/已翘课，课程多时两端以数字省略
+      courseDots: buildCourseDots(todayCourses, nowMinutes, {
+        skippedCourses: status === '翘课中' && ongoingCourses ? ongoingCourses : []
+      }),
       skipStatus: skipStatus.enabled,
       signature,
       currentWeek: userCurrentWeek,

@@ -2,7 +2,7 @@
 // 覆盖 computeBoundaryMinutes / timeDistanceGroup / compareByTimeDistance / 列数标准化与画布宽度推导
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-sort-modes.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替
-import { computeBoundaryMinutes, timeDistanceGroup, compareByTimeDistance, computeAvatarRemainRatio } from '../utils/timeUtils.js';
+import { computeBoundaryMinutes, timeDistanceGroup, compareByTimeDistance, computeAvatarRemainRatio, buildCourseDots, MAX_COURSE_DOTS } from '../utils/timeUtils.js';
 import {
     ConfigManager, MIN_SCHEDULE_COLUMNS, MAX_SCHEDULE_COLUMNS,
     SCHEDULE_CARD_WIDTH, SCHEDULE_GRID_GAP, SCHEDULE_SIDE_PADDING, SCHEDULE_TARGET_RATIO,
@@ -190,6 +190,47 @@ for (const [mode, progress, expected] of perCardCases) {
     const actual = ConfigManager.resolveAvatarBorderMode(mode, progress);
     check(`单卡头像边框：全局 ${String(mode)} + 进度 ${String(progress)} → ${expected}`, actual === expected);
 }
+
+// ========== 4.6 今日课程圆点：分色判定与超量省略 ==========
+const mkCourse = (name, start, end) => ({ name, startTime: start, endTime: end, location: '107' });
+const dayCourses = [
+    mkCourse('第1节', '08:00', '09:40'),
+    mkCourse('第2节', '10:00', '11:40'),
+    mkCourse('第3节', '14:00', '15:40'),
+    mkCourse('第4节', '16:00', '17:40'),
+];
+// 10:30 时：第1节已上完、第2节正在上、第3/4节即将上
+const dots1 = buildCourseDots(dayCourses, hhmm(10, 30));
+check('圆点：状态按时间判定（已完成/进行中/未开始）', dots1.visible.join(',') === 'finished,ongoing,upcoming,upcoming');
+check('圆点：未超量时不省略', dots1.hiddenPast === 0 && dots1.hiddenFuture === 0 && dots1.total === 4);
+
+// 正在上的课被标记为已翘课
+const dots2 = buildCourseDots(dayCourses, hhmm(10, 30), { skippedCourses: [dayCourses[1]] });
+check('圆点：翘课中的课程显示为已翘课', dots2.visible.join(',') === 'finished,skipped,upcoming,upcoming');
+// 非当前课程不会被误标
+const dots3 = buildCourseDots(dayCourses, hhmm(15, 0), { skippedCourses: [dayCourses[1]] });
+check('圆点：非当前课程不误标为翘课', dots3.visible.join(',') === 'finished,finished,ongoing,upcoming');
+
+// 空列表 / 全天已结束
+check('圆点：无课程返回空', buildCourseDots([], hhmm(10, 0)).total === 0);
+const dotsEnded = buildCourseDots(dayCourses, hhmm(23, 0));
+check('圆点：全部上完时都是 finished', dotsEnded.visible.every(s => s === 'finished') && dotsEnded.total === 4);
+// 时间无法解析的课程按「即将上」处理
+check('圆点：时间异常按即将上处理',
+    buildCourseDots([{ name: 'x', startTime: 'bad', endTime: 'bad' }], hhmm(10, 0)).visible[0] === 'upcoming');
+
+// 超量省略：12 节课、上限 6，当前时刻在第 7 节 → 窗口居中，两端以数字省略
+const manyCourses = Array.from({ length: 12 }, (_, i) => mkCourse(`第${i + 1}节`,
+    `${String(8 + i).padStart(2, '0')}:00`, `${String(8 + i).padStart(2, '0')}:45`));
+const dotsMany = buildCourseDots(manyCourses, hhmm(14, 10), { maxDots: 6 });
+check('圆点：超量时 visible 数量等于上限', dotsMany.visible.length === 6 && dotsMany.total === 12);
+check('圆点：省略数量守恒（visible + hiddenPast + hiddenFuture = total）',
+    dotsMany.visible.length + dotsMany.hiddenPast + dotsMany.hiddenFuture === 12);
+check('圆点：当前课程一定在可见窗口内', dotsMany.visible.includes('ongoing'));
+check('圆点：窗口两侧分别是已上完与即将上',
+    dotsMany.hiddenPast > 0 && dotsMany.hiddenFuture > 0
+    && dotsMany.visible[0] === 'finished' && dotsMany.visible[dotsMany.visible.length - 1] === 'upcoming');
+check('圆点：默认上限为 6', buildCourseDots(manyCourses, hhmm(14, 10)).visible.length === MAX_COURSE_DOTS);
 
 // 画布宽度公式依赖模板的网格间距与内边距，二者必须与模板 CSS 保持一致（否则卡片宽度会静默偏离）
 import fs from 'node:fs';

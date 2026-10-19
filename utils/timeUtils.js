@@ -256,9 +256,54 @@ export function computeAvatarRemainRatio(startTime, endTime, nowMinutes) {
     return Math.min(1, Math.max(0, remain))
 }
 
+// ===== 今日课程节数圆点 =====
+/** 圆点最多展示数量（超出时把两端的「已上完 / 即将上」合并成数字） */
+export const MAX_COURSE_DOTS = 6;
+
 /**
- * 「按距上/下课时间」排序比较器（纯函数，便于单测）
- * 先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序（越接近上下课越靠前）：
+ * 生成「今天上课节数」的分色圆点数据（纯函数，便于单测）
+ * 每门课按当前时刻判定为：finished 已上完 / ongoing 正在上 / upcoming 即将上 / skipped 已翘课
+ * 课程数超过上限时，以「当前时刻」为中心取窗口，保证正在上/已翘课的圆点始终可见，
+ * 两端被省略的部分分别以 hiddenPast（已上完）、hiddenFuture（即将上）的数字表示
+ * @param {Array} courses 当日课程（按开始时间升序），每项含 startTime/endTime
+ * @param {number} nowMinutes 当前时间（当日分钟数）
+ * @param {{skippedCourses?: Array, maxDots?: number}} [options]
+ *   skippedCourses：被标记为「已翘课」的课程对象（引用相等）
+ * @returns {{visible: string[], hiddenPast: number, hiddenFuture: number, total: number}}
+ */
+export function buildCourseDots(courses, nowMinutes, { skippedCourses = [], maxDots = MAX_COURSE_DOTS } = {}) {
+    const list = Array.isArray(courses) ? courses : [];
+    const now = Number.isFinite(nowMinutes) ? nowMinutes : null;
+    const states = list.map(course => {
+        const start = timeToMinutes(course?.startTime);
+        const end = timeToMinutes(course?.endTime);
+        // 时间无法解析时按「即将上」处理，避免误显示为正在上
+        if (now === null || Number.isNaN(start) || Number.isNaN(end)) return 'upcoming';
+        if (end <= now) return 'finished';
+        if (start > now) return 'upcoming';
+        return skippedCourses.includes(course) ? 'skipped' : 'ongoing';
+    });
+    const total = states.length;
+    if (total === 0) return { visible: [], hiddenPast: 0, hiddenFuture: 0, total: 0 };
+
+    const limit = Math.max(1, Math.min(MAX_COURSE_DOTS * 2, Math.floor(Number(maxDots) || MAX_COURSE_DOTS)));
+    if (total <= limit) return { visible: states, hiddenPast: 0, hiddenFuture: 0, total };
+
+    // 以「正在上/已翘课」为锚点居中取窗口；当天已全部结束时贴住末尾
+    const focusIndex = states.findIndex(s => s === 'ongoing' || s === 'skipped');
+    const upcomingIndex = states.findIndex(s => s === 'upcoming');
+    const center = focusIndex !== -1 ? focusIndex : (upcomingIndex !== -1 ? upcomingIndex : total - 1);
+    const start = Math.max(0, Math.min(center - Math.floor((limit - 1) / 2), total - limit));
+    return {
+        visible: states.slice(start, start + limit),
+        hiddenPast: start,
+        hiddenFuture: total - (start + limit),
+        total
+    };
+}
+
+/**
+ * 「按距上/下课时间」排序比较器（纯函数，便于单测） * 先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序（越接近上下课越靠前）：
  * - 前两组：computeBoundaryMinutes 升序，距离相同再按状态序、最后按用户ID
  * - 其他组：按状态优先级（已结束 → 无课程 → 学期未开始 → 学期结束），
  *   同组内已结束者按刚下课时间升序（刚下课的排前面），其余按用户ID
