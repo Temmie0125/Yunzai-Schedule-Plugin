@@ -257,7 +257,6 @@ export async function generateScheduleImage(members, currentWeek, currentDay, op
         totalMembers: members.length,
         studyingCount: members.filter(m => m.status === '上课中' || m.status === '分身中').length,
         skippingCount: members.filter(m => m.status === '翘课中').length,
-        skipModeCount: members.filter(m => m.skipStatus).length,
         members: members.map(m => {
             // 具体到每张卡片：关闭 → off；会上课的进度成员 → progress；其余 → solid
             const statusColor = STATUS_COLORS[m.status] || DEFAULT_STATUS_COLOR
@@ -304,7 +303,7 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
     replymsg.push(
         `第${currentWeek}周 星期${weekday} | 当前时间: ${now}\n`,
         `有课表成员: ${members.length}人 | 上课中: ${members.filter(m => m.status === '上课中' || m.status === '分身中').length}人\n`,
-        `翘课中: ${members.filter(m => m.status === '翘课中').length}人 | 开启翘课: ${members.filter(m => m.skipStatus).length}人\n`
+        `翘课中: ${members.filter(m => m.status === '翘课中').length}人\n`
     );
     members.forEach((member, index) => {
         let text = ``
