@@ -1,4 +1,4 @@
-pushHour: 20
+﻿pushHour: 20
 showTableName: true
 autoRecallCode: false
 renderScale: 1.0
@@ -38,8 +38,20 @@ defaultSemesterStart: "2026-08-31"
 botName: ""
 # 字体风格
 font: "像素"
-# 群课表排序方式 userId：按QQ号；courseStatus：按上课状态
+# 群课表排序方式 userId：按QQ号；courseStatus：按上课状态；
+# timeDistance：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距上/下课时间升序
 sortMode: "userId"
+# 群课表图片每行展示的成员列数：
+#   2 / 3 / 4  固定列数（列数只改变图片宽度与行数，单卡宽度与字号保持不变）
+#   "auto"     按整图宽高比自动选列数，尽量接近 2:3（宽:高）；
+#              本布局下约 14 人以内 2 列、15~30 人 3 列、31 人以上 4 列
+scheduleColumns: 2
+# 群课表头像边框展示方式：
+#   progress  上课中用「上课进度」进度环（空 → 满，同色系深浅双色），其他状态用淡化的状态色边框
+#   solid     所有状态都用淡化的状态色边框
+#   off       关闭（白色细边框）
+# 也可用管理员命令 #课表头像边框 进度|实色|关闭 切换（会写入本文件）
+avatarBorderMode: "progress"
 # 群课表图片中隐藏学期已结束超过该天数的成员，设置为 0 表示不过滤
 hideEndedDays: 30
 # 生日列表是否展示QQ号

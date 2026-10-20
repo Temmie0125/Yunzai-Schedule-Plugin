@@ -26,7 +26,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            width: 1080px;
+            /* 画布宽度按列数动态加宽（Renderer 注入 canvasWidth），保证任意列数下卡片宽度一致 */
+            width: {{canvasWidth || 1080}}px;
         }
 
         .container {
@@ -103,11 +104,11 @@
             color: #495057;
         }
 
-        /* 成员列表 - 网格布局 */
+        /* 成员列表 - 网格布局（列数由配置注入 CSS 变量，默认2列） */
         .members-list {
             padding: 20px 30px;
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(var(--member-cols, 2), 1fr);
             gap: 16px;
         }
 
@@ -128,6 +129,12 @@
             min-width: 0;
             /* 允许内容溢出时收缩，防止撑开父容器 */
             box-sizing: border-box;
+        }
+
+        /* 触发者卡片高亮：淡黄色荧光边框（不明显喧宾夺主，但能一眼找到自己） */
+        .member-card.is-self {
+            border-color: #f2d85c;
+            box-shadow: 0 0 0 2px rgba(242, 216, 92, 0.45), 0 6px 18px rgba(242, 216, 92, 0.35);
         }
 
         /* 左侧双箭头装饰 */
@@ -173,6 +180,33 @@
             height: 100%;
             object-fit: cover;
             border-radius: 25%;
+        }
+
+        /* ===== 头像边框：进度环 / 实色 / 关闭（avatarBorderMode 配置） =====
+           progress：用 conic-gradient 画「这节课上到哪了」，空 → 满且**逆时针**推进（--progress 由数据注入）；
+                     填充色与轨道色为同色系深浅双色（--ring-strong / --ring-soft），比红白对比更协调
+           solid   ：淡化的状态色边框（--status-color-soft），不再抢占视觉焦点
+           off     ：沿用原来的白色细边框（.member-avatar 自身样式） */
+        .member-avatar.avatar-progress {
+            border: none;
+            padding: 4px;
+            /* 逆时针推进：conic-gradient 本身只能顺时针扫角，因此把「未完成」的软色放在前段、
+               已完成部分放到末段（贴 360°），填充区便从 12 点方向起向左（逆时针）增长 */
+            background: conic-gradient(var(--ring-soft, #ECCCCC) calc((1 - var(--progress, 0)) * 360deg),
+                    var(--ring-strong, #B13333) 0);
+        }
+
+        .member-avatar.avatar-progress img {
+            border-radius: 20%;
+            background: #fff;
+        }
+
+        .member-avatar.avatar-solid {
+            border: 4px solid var(--status-color-soft, #D48F8F);
+        }
+
+        .member-avatar.avatar-solid img {
+            border-radius: 20%;
         }
 
         /* 翘课标签 - 绝对定位在头像下方 */
@@ -326,15 +360,57 @@
             border-radius: 30px;
         }
 
-        .course-remaining {
+        /* 底部信息行：剩余/距离上课 + 今日课程节数圆点（圆点靠右） */
+        .course-meta {
             margin-top: 6px;
-            /* 与时间地点行的间距 */
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
-        .course-remaining .remaining-time {
+        .course-dots {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* 今日课程节数圆点（卡片与页脚图例共用同一套配色）
+           配色目标：四态一眼可分 —— 已上完偏灰（状态绿向中性灰混合，弱化但保留色相）、
+           正在上为饱和红且尺寸更大、即将上为饱和蓝、已翘课为饱和橙。
+           不再用 opacity 淡化，避免小尺寸下细节糊在一起、对比度不足。 */
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
             display: inline-block;
-            /* 确保作为块级元素占据整行（但内联块不会换行，实际会换行因为容器是块级） */
-            /* 原有 .remaining-time 样式保持不变 */
+        }
+
+        /* 已上完：以状态绿 #379151 为底向中性灰 #AAB2BB 混合 65%，得到偏灰的灰绿 */
+        .dot-finished {
+            background: #82A696;
+        }
+
+        /* 正在上：放大到 11px 并保持饱和红，作为「当前时刻」的视觉焦点 */
+        .dot-ongoing {
+            background: #B13333;
+            width: 11px;
+            height: 11px;
+        }
+
+        .dot-upcoming {
+            background: #3949AB;
+        }
+
+        .dot-skipped {
+            background: #DB6F2D;
+        }
+
+        .dot-more {
+            font-size: 12px;
+            line-height: 1;
+            color: #718096;
         }
 
         /* 个性签名 */
@@ -387,6 +463,40 @@
             width: 24px;
             height: 24px;
             border-radius: 6px;
+        }
+
+        /* 今日课程节数圆点图例 */
+        .dots-legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 8px 18px;
+            margin-top: 14px;
+            font-size: 16px;
+            color: #718096;
+        }
+
+        .dots-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dots-legend .dot {
+            width: 10px;
+            height: 10px;
+        }
+
+        /* 图例里同步体现「正在上更大」的区别 */
+        .dots-legend .dot-ongoing {
+            width: 13px;
+            height: 13px;
+        }
+
+        .dots-legend-note {
+            color: #a0aec0;
+            font-size: 14px;
         }
 
         .update-time {
@@ -467,7 +577,7 @@
             }
         }
 
-        /* 适配小屏 */
+        /* 适配小屏（放在末尾，同权重下覆盖列数设置，窄屏强制单列） */
         @media (max-width: 700px) {
             .members-list {
                 grid-template-columns: 1fr;
@@ -517,26 +627,13 @@
                 <span class="stat-value">{{skippingCount}}</span>
                 <span class="stat-label">翘课中</span>
             </div>
-            <div class="stat-item">
-                <span class="stat-value">{{skipModeCount}}</span>
-                <span class="stat-label">开启翘课</span>
-            </div>
         </div>
 
-        <div class="members-list">
+        <div class="members-list" style="--member-cols: {{columns || 2}};">
             {{each members member}}
-            <div class="member-card" style="--status-color: {{ 
-                member.status === '上课中' ? '#B13333' :
-                member.status === '翘课中' ? '#DB6F2D' : 
-                member.status === '未开始' ? '#3949AB' : 
-                member.status === '已结束' ? '#379151' : 
-                member.status === '无课程' ? '#7F7F7F' : 
-                member.status === '分身中' ? '#D81B60' : 
-                member.status === '学期未开始' ? '#9575CD' :
-                member.status === '学期结束' ? '#6c757d' : '#00897B' 
-            }};">
+            <div class="member-card{{if member.isSelf}} is-self{{/if}}" style="--status-color: {{member.statusColor || '#00897B'}}; --status-color-soft: {{member.statusColorSoft || '#73BEB6'}};">
                 <!-- 头像区域 -->
-                <div class="member-avatar">
+                <div class="member-avatar avatar-{{member.avatarBorderMode}}"{{if member.avatarBorderMode === 'progress'}} style="--progress: {{member.avatarProgress}}; --ring-strong: {{member.ringStrong}}; --ring-soft: {{member.ringSoft}};"{{/if}}>
                     <img src="{{member.avatar}}" alt="{{member.nickname}}">
                     {{if member.skipStatus && member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <span class="skip-tag">翘课模式</span>
@@ -634,22 +731,32 @@
                     {{/if}}
                     {{/if}}
 
-                    {{if member.remainingTime}}
-                    <div class="course-remaining">
-                        <span class="remaining-time">
-                            {{if member.status === '上课中' || member.status === '分身中'}}⏳ 剩余: {{member.remainingTime}}
-                            {{else if member.status === '未开始'}}⏳ 距离上课: {{member.remainingTime}}
-                            {{/if}}
-                        </span>
-                    </div>
-                    {{/if}}
-
                     <!-- 无课程时显示签名（已结束场景已在上方单独处理，此处不再包含） -->
                     {{if member.status === '无课程'}}
                     {{if member.signature}}
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
                     {{/if}}
+                    {{/if}}
+
+                    <!-- 今日课程节数圆点：紧跟剩余时长/签名行右侧；课程多时两端以数字省略 -->
+                    {{if member.remainingTime || (member.courseDots && member.courseDots.total)}}
+                    <div class="course-meta">
+                        {{if member.remainingTime}}
+                        <span class="remaining-time">
+                            {{if member.status === '上课中' || member.status === '分身中' || member.status === '翘课中'}}⏳ 剩余: {{member.remainingTime}}
+                            {{else if member.status === '未开始'}}⏳ 距离上课: {{member.remainingTime}}
+                            {{/if}}
+                        </span>
+                        {{/if}}
+                        {{if member.courseDots && member.courseDots.total}}
+                        <span class="course-dots" title="今日共 {{member.courseDots.total}} 节">
+                            {{if member.courseDots.hiddenPast}}<span class="dot-more">×{{member.courseDots.hiddenPast}}</span>{{/if}}
+                            {{each member.courseDots.visible dot}}<span class="dot dot-{{dot}}"></span>{{/each}}
+                            {{if member.courseDots.hiddenFuture}}<span class="dot-more">+{{member.courseDots.hiddenFuture}}</span>{{/if}}
+                        </span>
+                        {{/if}}
+                    </div>
                     {{/if}}
                 </div>
             </div>
@@ -666,6 +773,10 @@
                 <div class="legend-item"><span class="legend-color" style="background:#9575CD;"></span> 学期未开始</div>
                 <div class="legend-item"><span class="legend-color" style="background:#7F7F7F;"></span> 无课程</div>
                 <div class="legend-item"><span class="legend-color" style="background:#D81B60;"></span> 分身中</div>
+            </div>
+            <!-- 今日课程节数圆点图例 -->
+            <div class="dots-legend">
+                <span class="dots-legend-note">（圆点=今日课程；×N / +N 为省略数量）</span>
             </div>
             <div class="update-time">Generated By @Temmie Schedule-Plugin · 更新时间: {{updateTime}}</div>
         </div>

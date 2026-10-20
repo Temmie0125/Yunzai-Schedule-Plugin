@@ -1,7 +1,7 @@
-import fs from 'node:fs'
+﻿import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg } from '../components/common.js'
+import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg, checkPermission } from '../components/common.js'
 import { DataManager } from '../components/DataManager.js'
 import { urlImportButtons } from '../components/buttons.js'
 import {
@@ -9,9 +9,11 @@ import {
     importScheduleFromStarlinkCode,
     importScheduleFromJsonData,
     importScheduleFromIcsData,
-    importScheduleFromWakeupData
+    importScheduleFromWakeupData,
+    handleAutoRecall
 } from '../services/scheduleImporter.js'
 import { importScheduleFromUrl } from '../services/urlImporter.js'
+import { classifyImportInput, WAKEUP_CODE_MIN_LENGTH } from '../services/importInputRouter.js'
 import { parseTimeTableJson } from '../services/timeTableParser.js'
 import {
     parseChineseDateToMD,
@@ -37,19 +39,15 @@ export class ScheduleManage extends plugin {
             rule: [
                 // ===== 基础命令区 =====
                 {
-                    reg: "^#(设置课表|schedule set|设置星链课表|星链设置课表)(?:\\s+(.+))?$",
-                    fnc: "setSchedule"
-                },
-                {
-                    reg: "^#(星链设置|设置星链)课表(?:\\s+(.+))?$",
-                    fnc: "setStarlinkSchedule"
-                },
-                {
-                    reg: "^#导入课表(?:\\s+(.+))?$",
-                    fnc: "importFromFile"
+                    // 统一导入入口：文件 / 文件直链 / 分享口令(码) / JSON 文本 均由本命令自动识别
+                    // （原 #设置课表、#设置星链课表 等口令入口已合并至本命令）
+                    // 参数用 [\s\S]+ 而非 .+ ：粘贴的课表 JSON 通常是多行文本，需允许跨行匹配
+                    reg: "^#导入课表(?:\\s+([\\s\\S]+))?$",
+                    fnc: "importSchedule"
                 },
                 {
                     // 直链导入教程：#导入课表(直链|链接)?教程 / #(导入)?(直链|链接)(导入)?教程 等
+                    // 注意：无空格的 #导入课表直链教程 不会命中上面的通用规则（其参数要求前导空白）
                     reg: "^#导入课表(直链|链接)?(教程|指南|说明)$|^#(导入)?(直链|链接)(?:导入)?(教程|指南|说明)$",
                     fnc: "showUrlImportGuide"
                 },
@@ -81,7 +79,19 @@ export class ScheduleManage extends plugin {
                     reg: "^#(设置|上传|导入|更新)时间表$",
                     fnc: "updateTimeTable"
                 },
-                // ===== 新增规则：直接识别包含「口令」的消息 =====
+                {
+                    // 群课表头像边框展示方式（管理员/主人）：进度 | 实色 | 关闭
+                    reg: "^#课表头像边框(?:\\s+(.+))?$",
+                    fnc: "setAvatarBorderMode"
+                },
+                {
+                    // 旧命令迁移提示：旧入口已删除，但静默无响应会让老用户以为 Bot 坏了。
+                    // 本规则只提示、不导入，且必须排在下面的口令/文件被动监听之前——
+                    // 宿主按规则顺序取首个返回非 false 的规则，避免旧命令消息被被动监听直接导入
+                    reg: "^#(?:设置课表|设置星链课表|星链设置课表|schedule\\s+set)(?:\\s+[\\s\\S]+)?$",
+                    fnc: "replyImportCommandMoved"
+                },
+                // ===== 被动识别规则（直接识别包含「口令」/「星链课表」的消息与文件） =====
                 {
                     reg: ".*「[0-9a-zA-Z\\-_]+」.*",
                     fnc: "handleDirectCode"
@@ -100,72 +110,116 @@ export class ScheduleManage extends plugin {
         })
     }
     /**
-     * 处理 #设置课表 命令
+     * 统一导入入口（原 #设置课表 / #导入课表 已合并到本命令）
+     * 带参数时按内容自动识别：文件直链 / 分享口令(码) / JSON 文本，识别失败给出用法提示；
+     * 不带参数时：私聊直接进入统一等待上下文，群聊先做一次隐私确认（官方Bot群按接收设置走特例分支）。
      */
-    async setSchedule() {
-        const userId = this.e.user_id;
-        const message = this.e.msg;
-        // 检查消息中是否包含“星链”，若包含则转向星链导入流程
-        if (message.includes('星链')) {
-            // 复用星链设置逻辑
-            return this.setStarlinkSchedule();
+    async importSchedule() {
+        const e = this.e;
+        // 与规则正则保持一致：允许参数跨行（多行 JSON 文本直接粘贴导入）
+        const arg = e.msg.match(/^#导入课表(?:\s+([\s\S]+))?$/)?.[1];
+        if (arg && arg.trim()) {
+            const input = classifyImportInput(arg);
+            switch (input.type) {
+                case 'url':
+                    // 直链本身已公开于群聊，不做二次确认，直接导入
+                    return await this.doImportFromUrl(input.value);
+                case 'code':
+                    return await this.doImportFromCode(input.value, input.variant);
+                case 'json':
+                    return await this.doImportFromJsonText(input.value);
+                default:
+                    return await this.replyImportUsage();
+            }
         }
-        let code = message.match(/^#(?:设置课表|schedule set)\s+(.+)$/)?.[1];
-        if (!code) {
-            this.setContext(`waitingForCode`);
-            await this.reply(`请发送你的 WakeUp 或「星链课表」分享口令。\n发送"取消"以取消操作。`, false, { at: true });
-            return true;
+        if (e.group_id) {
+            const isOfficial = isOfficialMsg(e);
+            // 官方Bot群聊：未开启「接收全部消息」时文件导入闭环失效
+            // （QQ客户端无法在发送文件的同时@机器人，Bot收不到文件），直接引导而非进入等待
+            const botState = isOfficial ? await getGroupBotState(e) : null;
+            if (botState?.recv_msg_setting && botState.recv_msg_setting !== 'all') {
+                return await this.replyNonFullImportGuide(botState);
+            }
+            if (isOfficial && !botState?.recv_msg_setting) {
+                // 官方Bot但群状态未知（bot_state接口需平台白名单，多数机器人调用失败）：
+                // 跳过二次确认直接进入等待，并在提示中前置说明非全量限制与替代途径——
+                // 避免"确认→发文件→Bot收不到"的死循环（确认换来的也是无法用文件）
+                return await this.promptOfficialImport();
+            }
+            // 已知全量（或非官方平台）群聊：保留二次确认（导入内容可能包含个人课表，先提醒隐私）
+            return await this.waitForConfirm('导入', 'confirmImport');
         }
-        code = code.trim();
-        const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
-        if (match) {
-            code = match[1];
-        }
-        // 调用服务
-        const result = await importScheduleFromCode(userId, code, this.e);
+        return await this.promptImportInput();
+    }
+    /**
+     * 统一的导入等待提示（私聊 / 已知全量群聊）
+     */
+    async promptImportInput() {
+        this.setContext("waitingForScheduleImport");
+        await this.reply(
+            `📥 请发送你的课表，以下方式任选其一：\n` +
+            `① 课表文件：本插件原生JSON / 拾光课程表JSON / ICS / WakeUp备份(.wakeup_schedule)\n` +
+            `② 文件直链：直接发送公网直链，或 #导入课表 <直链>（发送 #导入课表直链教程 查看教程）\n` +
+            `③ 分享口令：直接发送 WakeUp 口令或星链课表分享码\n` +
+            `输入“取消”以取消操作。`, false, { at: true });
+        return true;
+    }
+    /**
+     * 分享口令/分享码导入
+     * @param {string} code 口令或分享码
+     * @param {'wakeup'|'starlink'} variant 口令类型（由 importInputRouter 按长度判定）
+     */
+    async doImportFromCode(code, variant = 'wakeup') {
+        const result = variant === 'starlink'
+            ? await importScheduleFromStarlinkCode(this.e.user_id, code, this.e)
+            : await importScheduleFromCode(this.e.user_id, code, this.e);
         await this.reply(result.message);
         return true;
     }
     /**
-     * 上下文等待口令
+     * JSON 文本导入（用户直接把课表 JSON 粘进聊天）
+     * @param {string} jsonText
      */
-    async waitingForCode() {
-        const userId = this.e.user_id;
-        this.finish("waitingForCode");
-        const msg = this.e.msg;
-        // 对于非文本消息直接返回
-        if (typeof msg !== 'string') {
-            logger.warn("[设置课表] 非文本消息")
-            return this.reply("请发送分享口令而不是其他内容哦~")
+    async doImportFromJsonText(jsonText) {
+        let jsonData;
+        try {
+            jsonData = JSON.parse(jsonText);
+        } catch (err) {
+            await this.reply('这段内容看起来是 JSON，但格式不合法，请检查后重试~');
+            return false;
         }
-        let code = this.e.msg.trim();
-        if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消操作")
-        // ----- 尝试匹配星链课表分享格式 -----
-        // 格式：输入：XXXXX （中文冒号或英文冒号）
-        let starlinkCode = null;
-        const inputMatch = code.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/);
-        if (inputMatch) {
-            starlinkCode = inputMatch[1];
-        }
-        if (starlinkCode) {
-            // 调用星链导入
-            const result = await importScheduleFromStarlinkCode(userId, starlinkCode, this.e);
-            await this.reply(result.message);
-            return true;
-        }
-        // ----- 尝试匹配 WakeUp / 通用口令格式 -----
-        const match = code.match(/「([0-9a-zA-Z\-_]+?)」/u);
-        if (match) {
-            code = match[1];
-        }
-        // 判断口令类型：长口令（>=20位）走WakeUp导入，短口令走星链导入
-        if (code.length >= 20) {
-            const result = await importScheduleFromCode(userId, code, this.e);
-            await this.reply(result.message);
-        } else {
-            const result = await importScheduleFromStarlinkCode(userId, code, this.e);
-            await this.reply(result.message);
-        }
+        const result = await importScheduleFromJsonData(this.e.user_id, jsonData, this.e);
+        await this.reply(result.message);
+        return true;
+    }
+    /**
+     * 无法识别的导入输入：给出统一用法提示
+     */
+    async replyImportUsage() {
+        const botName = getBotName(this.e);
+        await this.reply(
+            `${botName}没能识别这条内容哦(｡•﹃•｡)\n` +
+            `#导入课表 支持：课表文件 / 文件直链 / 分享口令(码) / JSON 文本\n` +
+            `也可以只发送 #导入课表 后再发送文件、直链或口令。\n` +
+            `直链获取方式见 #导入课表直链教程。`, false, { at: true });
+        return true;
+    }
+    /**
+     * 旧导入命令（#设置课表 等）迁移提示
+     * 只提示不导入：旧入口已合并到 #导入课表，但仍需给出可照抄的新用法；
+     * 若消息里带了口令且开启了自动撤回，则一并撤回该口令消息（否则口令会残留在群里）
+     */
+    async replyImportCommandMoved() {
+        const e = this.e;
+        const botName = getBotName(e);
+        const config = ConfigManager.getConfig();
+        let msg = `⚠️「#设置课表」已合并到「#导入课表」，用法如下：\n` +
+            `① 分享口令/分享码：#导入课表 <口令>\n` +
+            `② 课表文件直链：#导入课表 <直链>（教程：#导入课表直链教程）\n` +
+            `③ 课表文件：只发送 #导入课表，随后发送文件即可\n` +
+            `（文件、直链、口令、JSON 文本现在都由 #导入课表 自动识别）`;
+        msg = await handleAutoRecall(msg, e, config.autoRecallCode ?? false, botName);
+        await this.reply(msg, false, { at: true });
         return true;
     }
     /**
@@ -178,7 +232,7 @@ export class ScheduleManage extends plugin {
         if (!match) return false;  // 没有口令，不处理
         const code = match[1];
         // 一般分享口令为32位，为避免误触发，小于20位的不处理（可能是星链口令，由其他规则处理）
-        if (code.length < 20) {
+        if (code.length < WAKEUP_CODE_MIN_LENGTH) {
             return false;
         }
         const result = await importScheduleFromCode(userId, code, this.e);
@@ -209,45 +263,47 @@ export class ScheduleManage extends plugin {
         await this.reply(result.message);
         return true;
     }
-    // ========== 新增：星链专用设置方法 ==========
-    async setStarlinkSchedule() {
-        const userId = this.e.user_id;
-        const message = this.e.msg;
-        let code = message.match(/^#(星链设置课表|设置星链课表)\s+(.+)$/)?.[1];
-        if (!code) {
-            this.setContext("waitingForStarlinkCode");
-            await this.reply("请发送你的星链课程表分享码（或包含分享码的文案）。\n输入“取消”以取消操作。", false, { at: true });
+    /**
+     * 设置群课表头像边框展示方式（管理员/主人）
+     * 用法：#课表头像边框 进度|实色|关闭（开=进度，关=关闭），不带参数则回报当前设置
+     * 修改会写入配置文件，重启后仍生效
+     */
+    async setAvatarBorderMode() {
+        const e = this.e;
+        const current = ConfigManager.normalizeAvatarBorderMode(ConfigManager.getConfig().avatarBorderMode);
+        const labelOf = (mode) => ({ progress: '进度环（上课中显示上课进度，空→满；其他状态淡色边框）', solid: '淡色实色边框', off: '关闭（白色细边框）' })[mode] || mode;
+        if (!checkPermission(e)) {
+            await this.reply("只有群管理员或主人可以修改该设置哦~");
             return true;
         }
-        code = code.trim();
-        // 尝试从文案中提取分享码（格式如：输入：XXXXX 或直接分享码）
-        const match = code.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/) || code.match(/([0-9a-zA-Z\-_]{5,20})/);
-        if (match) code = match[1];
-        const result = await importScheduleFromStarlinkCode(userId, code, this.e);
-        await this.reply(result.message);
-        return true;
-    }
-
-    async waitingForStarlinkCode() {
-        const userId = this.e.user_id;
-        this.finish("waitingForStarlinkCode");
-        const msg = this.e.msg;
-        // 对于非文本消息直接返回
-        if (typeof msg !== 'string') {
-            logger.warn("[设置课表] 非文本消息")
-            return this.reply("请发送分享口令而不是其他内容哦~")
+        const arg = e.msg.match(/^#课表头像边框(?:\s+(.+))?$/)?.[1]?.trim();
+        if (!arg) {
+            await this.reply(`当前群课表头像边框：${labelOf(current)}\n可发送 #课表头像边框 进度|实色|关闭 修改（开/关 亦可）`);
+            return true;
         }
-        let raw = this.e.msg.trim();
-        if (raw === "取消" || raw.toLowerCase() === "cancel") return this.reply("已取消操作")
-        // 提取分享码
-        let code = raw.match(/输入[：:]\s*([0-9a-zA-Z\-_]+)/)?.[1];
-        if (!code) {
-            const fallback = raw.match(/([0-9a-zA-Z\-_]{5,20})/);
-            if (fallback) code = fallback[1];
-            else code = raw;
+        const alias = {
+            '进度': 'progress', '进度环': 'progress', 'progress': 'progress', '开': 'progress', '开启': 'progress', 'auto': 'progress',
+            '实色': 'solid', '实心': 'solid', 'solid': 'solid',
+            '关闭': 'off', '关': 'off', 'off': 'off', '无': 'off', 'none': 'off'
+        };
+        const mode = alias[arg.toLowerCase()];
+        if (!mode) {
+            await this.reply(`没看懂「${arg}」哦，可选：进度 / 实色 / 关闭（开/关 亦可）`);
+            return true;
         }
-        const result = await importScheduleFromStarlinkCode(userId, code, this.e);
-        await this.reply(result.message);
+        if (mode === current) {
+            await this.reply(`群课表头像边框已经是「${labelOf(mode)}」了~`);
+            return true;
+        }
+        try {
+            ConfigManager.updateConfig({ avatarBorderMode: mode });
+        } catch (err) {
+            logger.error('[课表头像边框] 写入配置失败', err);
+            await this.reply('❌ 保存失败，请稍后重试（可检查 config/config/schedule.yaml 权限）');
+            return true;
+        }
+        logger.mark(`[课表头像边框] 由 ${e.user_id} 设置为 ${mode}`);
+        await this.reply(`✅ 群课表头像边框已设为「${labelOf(mode)}」，已写入配置，重启后仍生效`);
         return true;
     }
     /**
@@ -525,11 +581,8 @@ export class ScheduleManage extends plugin {
             await this.reply("❌ 已取消导入操作。");
             return true;
         }
-        // 确认后进入文件等待
-        this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。星链用户请优先使用分享口令哦~\n" +
-            "也支持直接发送文件直链。发送 #导入课表直链教程 查看教程。\n输入“取消”以取消操作。", false, { at: true });
-        return true;
+        // 确认后进入统一导入等待（支持文件 / 直链 / 口令 / JSON 文本）
+        return await this.promptImportInput();
     }
     /**
  * 确认导出回调
@@ -556,40 +609,6 @@ export class ScheduleManage extends plugin {
         return await this.doExport(true);
     }
     /**
-     * 导入课表文件（命令入口）
-     * 支持 #导入课表（进入文件等待）与 #导入课表 <URL直链>（立即尝试直链导入）
-     */
-    async importFromFile() {
-        const e = this.e;
-        const arg = e.msg.match(/^#导入课表(?:\s+(.+))?$/)?.[1];
-        if (arg) {
-            // 带直链参数：立即导入。群聊不做二次确认——直链本身已公开于群聊，
-            // 且减少官方非全量消息群下逐条@的往返成本
-            return await this.doImportFromUrl(arg.trim());
-        }
-        if (this.e.group_id) {
-            const isOfficial = isOfficialMsg(e);
-            // 官方Bot群聊：未开启「接收全部消息」时文件导入闭环失效
-            // （QQ客户端无法在发送文件的同时@机器人，Bot收不到文件），直接引导而非进入文件等待
-            const botState = isOfficial ? await getGroupBotState(e) : null;
-            if (botState?.recv_msg_setting && botState.recv_msg_setting !== 'all') {
-                return await this.replyNonFullImportGuide(botState);
-            }
-            if (isOfficial && !botState?.recv_msg_setting) {
-                // 官方Bot但群状态未知（bot_state接口需平台白名单，多数机器人调用失败）：
-                // 跳过二次确认直接进入文件等待，并在提示中前置说明非全量限制与替代途径——
-                // 避免"确认→发文件→Bot收不到"的死循环（确认换来的也是无法用文件）
-                return await this.promptOfficialImport();
-            }
-            // 已知全量（或非官方平台）群聊：保留二次确认
-            return await this.waitForConfirm('导入', 'confirmImport');
-        }
-        this.setContext("waitingForImportFile");
-        await this.reply("请发送你要导入的课表文件, 支持本插件原生课表JSON、拾光课程表导出JSON、ICS文件、WakeUp备份文件(.wakeup_schedule)。\n" +
-            "也支持发送文件直链：#导入课表 <直链>，发送 #导入课表直链教程 查看教程。\n输入“取消”以取消操作。", false, { at: true });
-        return true;
-    }
-    /**
      * 执行直链导入并回复结果
      * @param {string} rawUrl 用户提供的文件直链
      */
@@ -607,11 +626,11 @@ export class ScheduleManage extends plugin {
      * 全量群用户直接发文件即可导入，非全量群用户当场就能看到直链/口令方案
      */
     async promptOfficialImport() {
-        this.setContext("waitingForImportFile");
-        const msg = `📥 请直接发送你要导入的课表文件（本插件原生/拾光JSON、ICS、WakeUp备份），或发送文件直链。\n` +
+        this.setContext("waitingForScheduleImport");
+        const msg = `📥 请直接发送你要导入的课表：课表文件（本插件原生/拾光JSON、ICS、WakeUp备份）、文件直链，或分享口令(码)。\n` +
             `⚠️ 群聊发送课表可能泄露隐私，建议私聊操作。\n` +
             `⚠️ 若本群机器人未开启「接收全部消息」（仅@消息模式），Bot 将收不到你发送的文件——` +
-            `请改用 #导入课表 <直链> 或 #设置课表 <口令> 导入，或请群主在群设置中开启「接收全部消息」。\n` +
+            `请改用 #导入课表 <直链> 或 #导入课表 <分享口令> 导入，或请群主在群设置中开启「接收全部消息」。\n` +
             `发送 #导入课表直链教程 查看直链获取教程。输入"取消"取消操作。`;
         await this.reply([msg, ...urlImportButtons(this.e)]);
         return true;
@@ -642,7 +661,7 @@ export class ScheduleManage extends plugin {
         const msg = `⚠️ 检测到本群机器人的消息接收设置为「${settingText}」，未开启「接收全部消息」。\n` +
             `此环境下QQ客户端无法在发送文件的同时@${botName}，Bot收不到课表文件，文件导入无法使用。可通过以下方式导入：\n` +
             `① 直链导入：先将课表文件上传到 tmpfile.link 等工具获取公开直链（教程见下图），再发送\n#导入课表 <直链>\n` +
-            `② 口令导入：发送 #设置课表 <分享口令>（发送时记得@${botName}）\n` +
+            `② 口令导入：发送 #导入课表 <分享口令>（发送时记得@${botName}）\n` +
             `③ 请群主在群设置中把机器人的消息接收设置改为「接收全部消息」后，重新发送 #导入课表`;
         const replyMsg = [msg];
         if (fs.existsSync(URL_GUIDE_IMAGE)) replyMsg.push(segment.image(URL_GUIDE_IMAGE));
@@ -650,53 +669,78 @@ export class ScheduleManage extends plugin {
         await this.reply(replyMsg);
         return true;
     }
-    async waitingForImportFile() {
-        this.finish("waitingForImportFile");
+    /**
+     * 统一导入等待上下文：文件 / 文件直链 / 分享口令(码) / JSON 文本 都能接
+     * （原 waitingForCode、waitingForStarlinkCode、waitingForImportFile 三个上下文已合并至此）
+     */
+    async waitingForScheduleImport() {
+        this.finish("waitingForScheduleImport");
         const e = this.e;
         if (typeof e.msg === 'string') {
-            const code = e.msg.trim();
-            if (code === "取消" || code.toLowerCase() === "cancel") return this.reply("已取消导入操作。");
+            const text = e.msg.trim();
+            if (text === "取消" || text.toLowerCase() === "cancel") return this.reply("已取消导入操作。");
         }
         const botName = getBotName(e);
+        // 1. 文件消息：按扩展名分发
         const fileInfo = getFileInfo(e);
-        if (!fileInfo) {
-            // 上下文直链导入：等到的不是文件而是直链文本
-            if (typeof e.msg === 'string') {
-                const urlMatch = e.msg.match(/https?:\/\/\S+/i);
-                if (urlMatch) {
-                    const result = await importScheduleFromUrl(e.user_id, urlMatch[0], e);
-                    await this.reply(result.message);
-                    return true;
-                }
-            }
-            await this.reply(`${botName}未检测到有效的文件信息哦，请直接发送 JSON 或者 ICS 文件，或发送文件直链~` +
-                (isOfficialMsg(e) ? `\n💡 若本群机器人未开启「接收全部消息」，Bot 将收不到文件，可改用 #导入课表 <直链> 或 #设置课表 <口令> 导入` : ''));
-            return false;
+        if (fileInfo) {
+            return await this.handleScheduleFileImport(fileInfo);
         }
+        // 2. 文本消息：直链 / 分享口令 / JSON 文本
+        if (typeof e.msg === 'string') {
+            const input = classifyImportInput(e.msg);
+            switch (input.type) {
+                case 'url':
+                    return await this.doImportFromUrl(input.value);
+                case 'code':
+                    return await this.doImportFromCode(input.value, input.variant);
+                case 'json':
+                    return await this.doImportFromJsonText(input.value);
+                default:
+                    break;
+            }
+        }
+        // 3. 无法识别：给出可接受的输入形式
+        await this.reply(`${botName}没检测到可导入的内容哦，请发送课表文件（JSON/ICS/WakeUp备份）、文件直链、分享口令，或直接粘贴 JSON 文本~` +
+            (isOfficialMsg(e) ? `\n💡 若本群机器人未开启「接收全部消息」，Bot 将收不到文件，可改用 #导入课表 <直链> 或 #导入课表 <口令> 导入` : ''));
+        return false;
+    }
+    /**
+     * 按扩展名导入课表文件（统一导入上下文与文件监听共用）
+     * @param {{fileName:string,fileSize:number,fileId:string,busid:*,fileHash:string,fileUrl:string}} fileInfo
+     * @param {{silent?:boolean}} [options] silent=true 时失败只记日志不回复（供 watchFiles 文件监听复用，
+     *   避免群里的其他 JSON 文件触发报错刷屏），成功仍会回复一次结果
+     * @returns {Promise<boolean>} 是否处理成功
+     */
+    async handleScheduleFileImport(fileInfo, { silent = false } = {}) {
+        const e = this.e;
+        const botName = getBotName(e);
         const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;
         const MAX_SIZE = 2 * 1024 * 1024;
         // 获取文件扩展名
         const ext = path.extname(fileName).toLowerCase();
-        if (ext !== '.json' && ext !== '.ics' && ext !== '.wakeup_schedule') {
-            await this.reply(`${botName}暂时只认识 JSON、ICS 和 WakeUp备份文件(.wakeup_schedule)格式哦喵>_<`);
+        // 失败提示统一走这里：静默模式下只记录日志
+        const fail = async (msg, logMsg = msg) => {
+            if (silent) logger.warn(`[课表自动导入] ${logMsg} (${fileName})`);
+            else await this.reply(msg);
             return false;
+        };
+        if (ext !== '.json' && ext !== '.ics' && ext !== '.wakeup_schedule') {
+            return await fail(`${botName}暂时只认识 JSON、ICS 和 WakeUp备份文件(.wakeup_schedule)格式哦喵>_<`, '不支持的格式，跳过处理');
         }
         if (fileSize > MAX_SIZE) {
             const sizeKB = (fileSize / 1024).toFixed(2);
-            await this.reply(`文件太大了(${sizeKB}KB)，${botName}吃不下惹QAQ，请确保发送的文件小于 2MB~`);
-            return false;
+            return await fail(`文件太大了(${sizeKB}KB)，${botName}吃不下惹QAQ，请确保发送的文件小于 2MB~`, `文件过大 (${sizeKB}KB)，跳过处理`);
         }
         let fileContent;
         try {
             fileContent = await getFileContent(e, fileId, busid, fileHash, fileUrl);
         } catch (err) {
-            logger.error(`[课表管理] 获取文件内容异常: ${err}`);
-            await this.reply(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`);
-            return false;
+            logger.error(`[课表管理] 获取文件内容异常: ${fileName}`, err);
+            return await fail(`${botName}读取文件失败惹(｡•﹃•｡)，稍后再试试吧~`, '读取文件失败');
         }
         if (!fileContent) {
-            await this.reply(`${botName}无法读取文件内容(｡•﹃•｡)，请确保文件有效`);
-            return false;
+            return await fail(`${botName}无法读取文件内容(｡•﹃•｡)，请确保文件有效`, '文件内容为空');
         }
         let result;
         if (ext === '.json') {
@@ -704,13 +748,12 @@ export class ScheduleManage extends plugin {
             try {
                 jsonData = JSON.parse(fileContent);
             } catch (err) {
-                await this.reply('文件内容不是合法的 JSON 格式，请检查后重试~');
-                return false;
+                return await fail('文件内容不是合法的 JSON 格式，请检查后重试~', 'JSON 解析失败');
             }
             result = await importScheduleFromJsonData(e.user_id, jsonData, e);
         } else if (ext === '.ics') { // .ics
             result = await importScheduleFromIcsData(e.user_id, fileContent, e);
-        } else if (ext === '.wakeup_schedule') { // .wakeup_schedule
+        } else { // .wakeup_schedule
             result = await importScheduleFromWakeupData(e.user_id, fileContent, e);
         }
         await this.reply(result.message);
@@ -885,7 +928,7 @@ export class ScheduleManage extends plugin {
         // 非文件消息不处理
         const fileInfo = getFileInfo(e);
         if (!fileInfo) return false;
-        const { fileName, fileSize, fileId, busid, fileHash, fileUrl } = fileInfo;
+        const { fileName, fileSize } = fileInfo;
         const ext = path.extname(fileName).toLowerCase();
         const SUPPORTED_EXTS = ['.json', '.ics', '.wakeup_schedule'];
         if (!SUPPORTED_EXTS.includes(ext)) return false;  // 不支持的格式，静默放行
@@ -894,39 +937,13 @@ export class ScheduleManage extends plugin {
             logger.warn(`[课表自动导入] 文件过大 (${(fileSize / 1024).toFixed(2)}KB)，跳过处理: ${fileName}`);
             return false; // 静默失败，避免刷屏
         }
-        let fileContent;
+        // 复用统一上下文同一套导入实现，避免两处解析逻辑漂移；失败时静默放行不刷屏
         try {
-            fileContent = await getFileContent(e, fileId, busid, fileHash, fileUrl);
-        } catch (err) {
-            logger.error(`[课表自动导入] 读取文件失败: ${fileName}`, err);
-            return false;
-        }
-        if (!fileContent) return false;
-        let result;
-        try {
-            if (ext === '.json') {
-                let jsonData;
-                try {
-                    jsonData = JSON.parse(fileContent);
-                } catch (parseErr) {
-                    logger.warn(`[课表自动导入] JSON 解析失败: ${fileName}`, parseErr);
-                    return false;
-                }
-                result = await importScheduleFromJsonData(e.user_id, jsonData, e);
-            } else if (ext === '.ics') {
-                result = await importScheduleFromIcsData(e.user_id, fileContent, e);
-            } else if (ext === '.wakeup_schedule') {
-                result = await importScheduleFromWakeupData(e.user_id, fileContent, e);
-            } else {
-                return false;
-            }
+            return await this.handleScheduleFileImport(fileInfo, { silent: true });
         } catch (err) {
             logger.error(`[课表自动导入] 导入过程异常: ${fileName}`, err);
             return false;
         }
-        // 导入完成后发送一次结果通知
-        await this.reply(result.message);
-        return true;
     }
 }
 export default ScheduleManage

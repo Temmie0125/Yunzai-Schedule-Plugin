@@ -74,7 +74,7 @@ export class ScheduleReschedule extends plugin {
         const userId = this.e.user_id;
         const schedule = DataManager.loadSchedule(userId);
         if (!schedule) {
-            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            await this.reply("你还没有设置课程表，请使用 #导入课表 命令导入课表");
             return true;
         }
 
@@ -194,7 +194,7 @@ export class ScheduleReschedule extends plugin {
         const userId = this.e.user_id;
         const schedule = DataManager.loadSchedule(userId);
         if (!schedule) {
-            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            await this.reply("你还没有设置课程表，请使用 #导入课表 命令导入课表");
             return true;
         }
 

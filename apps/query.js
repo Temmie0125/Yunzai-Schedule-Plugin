@@ -56,7 +56,7 @@ export class ScheduleQuery extends plugin {
         const userId = this.e.user_id;
         const scheduleData = DataManager.loadSchedule(userId);
         if (!scheduleData) {
-            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            await this.reply("你还没有设置课程表，请使用 #导入课表 命令导入课表");
             return false;
         }
         // 未开学时（日期早于个人学期开始日期）提示等待，避免显示错误的"第1周"
@@ -70,7 +70,7 @@ export class ScheduleQuery extends plugin {
         }
         const maxWeek = Math.max(...scheduleData.courses.flatMap(c => c.weeks), 0);
         if (maxWeek > 0 && currentWeek > maxWeek) {
-            await this.reply("📅 本学期课程已全部结束，请使用 #设置课表 导入新学期课程。");
+            await this.reply("📅 本学期课程已全部结束，请使用 #导入课表 导入新学期课程。");
             return true;
         }
         // 课程门数按课程名去重统计：单双周拆分、中途换地点等同一门课只计 1 门（仅统计口径，存储格式不变）
@@ -191,7 +191,7 @@ export class ScheduleQuery extends plugin {
         const userId = this.e.user_id;
         const schedule = DataManager.loadSchedule(userId);
         if (!schedule) {
-            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            await this.reply("你还没有设置课程表，请使用 #导入课表 命令导入课表");
             return false;
         }
         // 获取命令后的参数部分（已去除命令前缀）
@@ -358,7 +358,7 @@ export class ScheduleQuery extends plugin {
         const userId = this.e.user_id;
         const schedule = DataManager.loadSchedule(userId);
         if (!schedule) {
-            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            await this.reply("你还没有设置课程表，请使用 #导入课表 命令导入课表");
             return true;
         }
         const msg = this.e.msg;
@@ -380,7 +380,7 @@ export class ScheduleQuery extends plugin {
         const userId = this.e.user_id;
         const schedule = DataManager.loadSchedule(userId);
         if (!schedule) {
-            await this.reply("你还没有设置课程表，请使用 #设置课表 命令导入课表");
+            await this.reply("你还没有设置课程表，请使用 #导入课表 命令导入课表");
             return true;
         }
         const match = this.e.msg.match(/^#第(\d+)周课表$/);

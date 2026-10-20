@@ -1,6 +1,7 @@
 // components/Renderer.js
 import { ConfigManager } from '../components/ConfigManager.js'
 import { getAvatarUrl } from './common.js'
+import { lightenHexColor } from '../utils/colorUtils.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import art from 'art-template'
@@ -153,6 +154,8 @@ async function renderTemplate(templateName, data, options = {}) {
         ...data,
         _res_path: data._res_path || `./plugins/schedule/resources/`
     }
+    // 画布宽度可由渲染数据指定（群课表随列数加宽），否则回退到模板里解析出的固定宽度
+    const canvasWidth = Number(renderData.canvasWidth) > 0 ? Number(renderData.canvasWidth) : designWidth
     let html
     try {
         html = art(tplFile, renderData)
@@ -180,7 +183,7 @@ async function renderTemplate(templateName, data, options = {}) {
         const page = await browser.newPage()
         try {
             await page.setViewport({
-                width: designWidth,
+                width: canvasWidth,
                 height: 100,
                 deviceScaleFactor: scale
             })
@@ -212,24 +215,64 @@ async function renderTemplate(templateName, data, options = {}) {
     return null
 }
 /**
+ * 群课表各状态对应的状态色（与页脚图例保持一致）
+ * 状态色用于状态徽章/箭头装饰；头像边框会在此基础上取淡色与同色系深色
+ */
+export const STATUS_COLORS = {
+    '上课中': '#B13333',
+    '翘课中': '#DB6F2D',
+    '未开始': '#3949AB',
+    '已结束': '#379151',
+    '无课程': '#7F7F7F',
+    '分身中': '#D81B60',
+    '学期未开始': '#9575CD',
+    '学期结束': '#6c757d',
+};
+const DEFAULT_STATUS_COLOR = '#00897B';
+/** 实色边框的淡化比例（越大越淡）：0.45 让边框不再抢眼，同时保留状态色可辨识度 */
+export const AVATAR_BORDER_LIGHTEN = 0.45;
+/** 进度环轨道（未完成部分）的淡化比例：与填充色同色系但明显更浅 */
+export const AVATAR_RING_TRACK_LIGHTEN = 0.75;
+
+/**
  * 生成群课表图片
  */
 export async function generateScheduleImage(members, currentWeek, currentDay, options = {}) {
     const now = new Date()
     const weekdayMap = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
+    // 列数由配置决定：支持 'auto'（按整图宽高比 2:3 自动选列数）与固定 2~4 列；
+    // 画布宽度随实际列数增加，保证任意列数下卡片宽度与字号都与 2 列时一致（只加宽、不压缩）
+    const columns = ConfigManager.resolveScheduleColumns(ConfigManager.getConfig().scheduleColumns, members.length)
+    const canvasWidth = ConfigManager.resolveScheduleCanvasWidth(columns)
+    // 头像边框展示方式：progress 时仅「上课中」用进度环，其余回落实色边框
+    const avatarBorderMode = ConfigManager.normalizeAvatarBorderMode(ConfigManager.getConfig().avatarBorderMode)
+    // 触发者（发起本次查询的人）：其卡片做淡黄荧光高亮；官方Bot的 OpenID 场景需按字符串比较
+    const selfUserId = options?.e?.user_id
     const templateData = {
         weekday: weekdayMap[currentDay],
         currentTime: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         updateTime: now.toLocaleString('zh-CN'),
+        columns,
+        canvasWidth,
         totalMembers: members.length,
         studyingCount: members.filter(m => m.status === '上课中' || m.status === '分身中').length,
         skippingCount: members.filter(m => m.status === '翘课中').length,
-        skipModeCount: members.filter(m => m.skipStatus).length,
-        members: members.map(m => ({
-            ...m,
-            avatar: m.avatar || getAvatarUrl(m.userId),
-            signature: m.signature || ''
-        }))
+        members: members.map(m => {
+            // 具体到每张卡片：关闭 → off；会上课的进度成员 → progress；其余 → solid
+            const statusColor = STATUS_COLORS[m.status] || DEFAULT_STATUS_COLOR
+            return {
+                ...m,
+                avatar: m.avatar || getAvatarUrl(m.userId),
+                signature: m.signature || '',
+                isSelf: selfUserId != null && String(m.userId) === String(selfUserId),
+                avatarBorderMode: ConfigManager.resolveAvatarBorderMode(avatarBorderMode, m.avatarProgress),
+                // 状态色（徽章/箭头装饰）、淡色（实色边框）、进度环深浅双色（空→满）
+                statusColor,
+                statusColorSoft: lightenHexColor(statusColor, AVATAR_BORDER_LIGHTEN),
+                ringStrong: statusColor,
+                ringSoft: lightenHexColor(statusColor, AVATAR_RING_TRACK_LIGHTEN)
+            }
+        })
     }
     return await renderTemplate('schedule-template', templateData, options)
 }
@@ -260,7 +303,7 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
     replymsg.push(
         `第${currentWeek}周 星期${weekday} | 当前时间: ${now}\n`,
         `有课表成员: ${members.length}人 | 上课中: ${members.filter(m => m.status === '上课中' || m.status === '分身中').length}人\n`,
-        `翘课中: ${members.filter(m => m.status === '翘课中').length}人 | 开启翘课: ${members.filter(m => m.skipStatus).length}人\n`
+        `翘课中: ${members.filter(m => m.status === '翘课中').length}人\n`
     );
     members.forEach((member, index) => {
         let text = ``
@@ -289,7 +332,7 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
                 }
             }
             if (member.remainingTime) {
-                if (member.status === '上课中' || member.status === '分身中') {
+                if (member.status === '上课中' || member.status === '分身中' || member.status === '翘课中') {
                     text += `   剩余: ${member.remainingTime}\n`;
                 } else if (member.status === '未开始') {
                     text += `   距离上课: ${member.remainingTime}\n`;

@@ -5,7 +5,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg, compareUserId } from '../components/common.js'
 import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
-import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime } from '../utils/timeUtils.js'
+import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarProgress, buildCourseDots } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
     super({
@@ -111,9 +111,16 @@ export class GroupSchedulePlugin extends plugin {
     const nowMinutes = timeToMinutes(currentTime);
     // 真实时间交叠的多门课程（仅真实重叠时非 null，按 startTime 升序）
     let overlapCourses = null;
+    // 「按距上/下课时间」排序所需：距最近一次上/下课事件的分钟数（无上/下课事件时为 null）
+    let boundaryMinutes = null;
+    // 头像进度环剩余比例（仅上课中，1=刚上课满环，0=即将下课空环）
+    let avatarProgress = null;
+    // 当前正在上的课程 / 下一节课（供 boundaryMinutes 与状态判定复用）
+    let ongoingCourses = null;
+    let nextCourse = null;
     if (todayCourses.length > 0) {
       // 查询时刻满足 start <= t <= end 的全部课程（相邻课程交界分钟会同时命中，靠下方严格交叠排除）
-      const ongoingCourses = todayCourses.filter(course =>
+      ongoingCourses = todayCourses.filter(course =>
         nowMinutes >= timeToMinutes(course.startTime) && nowMinutes <= timeToMinutes(course.endTime)
       );
       if (ongoingCourses.length > 0) {
@@ -126,8 +133,12 @@ export class GroupSchedulePlugin extends plugin {
           overlapCourses = ongoingCourses;
         }
         if (skipStatus.enabled) {
-          // 翘课优先：状态显示翘课中，overlapCourses 已带上，课程区仍按多课程样式渲染
+          // 翘课优先：状态显示翘课中，overlapCourses 已带上，课程区仍按多课程样式渲染。
+          // 翘课中同样展示剩余时间（距这门被翘的课下课，翘课状态也在这门课结束时自动取消）；
+          // 多门重叠时与「分身中」一致取最早结束的一门
           status = '翘课中';
+          const skipEnd = ongoingCourses.reduce((a, b) => timeToMinutes(a.endTime) <= timeToMinutes(b.endTime) ? a : b);
+          remainingTime = calculateRemainingTime(currentTime, skipEnd.endTime);
         } else if (isRealOverlap) {
           status = '分身中';
           // 剩余时间取最早结束的那门课
@@ -138,7 +149,7 @@ export class GroupSchedulePlugin extends plugin {
           remainingTime = calculateRemainingTime(currentTime, currentCourse.endTime);
         }
       } else {
-        const nextCourse = todayCourses.find(course => nowMinutes < timeToMinutes(course.startTime));
+        nextCourse = todayCourses.find(course => nowMinutes < timeToMinutes(course.startTime));
         if (nextCourse) {
           currentCourse = nextCourse;
           status = '未开始';
@@ -148,6 +159,18 @@ export class GroupSchedulePlugin extends plugin {
           status = '已结束';
         }
       }
+      // 距最近一次上/下课的时间（上课中/分身中/翘课中→距下课；未开始→距上课；已结束→距刚下课）
+      boundaryMinutes = computeBoundaryMinutes({
+        status,
+        nowMinutes,
+        ongoingCourses,
+        nextCourse,
+        currentCourse
+      });
+      // 头像进度环：仅「上课中」展示「这节课上到哪了」的完成比例（空 → 满），其他状态用实色边框
+      if (status === '上课中' && currentCourse) {
+        avatarProgress = computeAvatarProgress(currentCourse.startTime, currentCourse.endTime, nowMinutes);
+      }
     }
     return {
       userId,
@@ -156,6 +179,12 @@ export class GroupSchedulePlugin extends plugin {
       currentCourse,
       status,
       remainingTime,
+      boundaryMinutes,
+      avatarProgress,
+      // 今日课程圆点：分色展示已上完/正在上/即将上/已翘课，课程多时两端以数字省略
+      courseDots: buildCourseDots(todayCourses, nowMinutes, {
+        skippedCourses: status === '翘课中' && ongoingCourses ? ongoingCourses : []
+      }),
       skipStatus: skipStatus.enabled,
       signature,
       currentWeek: userCurrentWeek,
@@ -455,7 +484,7 @@ export class GroupSchedulePlugin extends plugin {
     // 检查是否有课程表
     const scheduleData = DataManager.loadSchedule(userId)
     if (!scheduleData) {
-      await this.reply("你还没有设置课表哦，请先使用 #设置课表 或者 #导入课表 命令导入课程表~")
+      await this.reply("你还没有设置课表哦，请先使用 #导入课表 命令导入课程表~")
       return true
     }
     // 先检查当前翘课状态是否过期 
@@ -554,12 +583,18 @@ export class GroupSchedulePlugin extends plugin {
   /**
  * 根据配置对成员列表排序
  * @param {Array} members - 成员数据数组
- * @param {string} sortMode - 排序模式："userId" 或 "courseStatus"
+ * @param {string} sortMode - 排序模式："userId"（QQ号）/ "courseStatus"（上课状态）/ "timeDistance"（距上/下课时间）
  * @returns {Array} 排序后的新数组
  */
   _sortMembers(members, sortMode) {
     // 防御性拷贝，避免修改原数组
     const list = [...members];
+    if (sortMode === 'timeDistance') {
+      // 按距上/下课时间：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），
+      // 组内按距最近一次上/下课的时间升序（越接近上下课越靠前），
+      // 其他组内已结束者按刚下课时间升序，其余按状态序与 QQ 号
+      return list.sort((a, b) => compareByTimeDistance(a, b, compareUserId));
+    }
     if (sortMode === 'courseStatus') {
       // 分为两组：有剩余课程（上课中/分身中/未开始/翘课中） 和 其他
       const hasClass = [];

@@ -1,4 +1,4 @@
-// guoba/schemas/index.js
+﻿// guoba/schemas/index.js
 export const schemas = [
     // 分组
     {
@@ -263,15 +263,47 @@ export const schemas = [
     {
         field: "sortMode",
         label: "课表排序模式",
-        helpMessage: "默认按QQ号升序，可改为按上课状态排序",
+        helpMessage: "默认按QQ号升序，可改为按上课状态或按距上/下课时间排序",
         component: "RadioGroup",
         componentProps: {
             options: [
                 { label: "按QQ号(默认)", value: "userId" },
-                { label: "按上课状态", value: "courseStatus" }
+                { label: "按上课状态", value: "courseStatus" },
+                { label: "按距上/下课时间", value: "timeDistance" }
             ]
         },
-        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。"
+        bottomHelpMessage: "使用#clstb命令时对成员的排序方法。按距上/下课时间：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距离下学期/上课的分钟数升序，越接近上下课越靠前；已结束者按刚下课的时间升序，其余按状态与QQ号。"
+    },
+    {
+        field: "scheduleColumns",
+        label: "群课表列数",
+        helpMessage: "群课表/所有人课表图片中每行展示的成员数，可选「自动」或固定 2/3/4 列",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "自动（按人数）", value: "auto" },
+                { label: "固定2列", value: "2" },
+                { label: "固定3列", value: "3" },
+                { label: "固定4列", value: "4" }
+            ]
+        },
+        defaultValue: "2",
+        bottomHelpMessage: "自动：按整图宽高比选列数，尽量让图片接近 2:3（宽:高）。这套布局下大约是——14 人以内 2 列、15~30 人 3 列、31 人以上 4 列，实际以哪一档的宽高比更接近 2:3 为准。固定 2/3/4 列则始终按该列数排版。无论多少列，单张卡片的宽度、头像与字号都保持一致，列数只改变图片宽度与行数（2 列 1080px、3 列 1598px、4 列 2116px）；手机端会缩放整图显示，若手机查看为主建议用固定 2 列。"
+    },
+    {
+        field: "avatarBorderMode",
+        label: "头像边框展示",
+        helpMessage: "群课表中头像边框的展示方式：进度环 / 实色边框 / 关闭",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "进度环（推荐）", value: "progress" },
+                { label: "实色边框", value: "solid" },
+                { label: "关闭", value: "off" }
+            ]
+        },
+        defaultValue: "progress",
+        bottomHelpMessage: "进度环：上课中的成员用头像边框显示这节课的完成进度（空→满，填充色与轨道色为同色系深浅双色），其他状态用淡化的状态色边框。实色边框：所有状态都用淡化的状态色边框，不显示进度。关闭：保持原来的白色细边框。也可用管理员命令 #课表头像边框 进度|实色|关闭 随时切换（会写入配置文件）。"
     },
     {
         field: "hideEndedDays",

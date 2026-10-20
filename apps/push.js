@@ -114,7 +114,7 @@ export class SchedulePush extends plugin {
     }
     const schedule = DataManager.loadSchedule(userId);
     if (!schedule) {
-      return { error: "你还没有设置课程表，请使用 #设置课表 命令导入课表" };
+      return { error: "你还没有设置课程表，请使用 #导入课表 命令导入课表" };
     }
     await DataManager.setReminderStatus(userId, true);
     const parts = pushCron.split(' ');
