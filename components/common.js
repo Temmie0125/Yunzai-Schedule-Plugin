@@ -353,11 +353,10 @@ export async function getFileContent(e, fileId, busid = null, fileHash = null, d
  */
 export async function getGroupMembers(groupId) {
     try {
-        const group = await Bot.pickGroup(groupId)
-        const memberList = await group.getMemberMap()
-        // 官方Bot适配器的 getMemberMap 返回事件缓存 gml，尚无成员触发过事件时为 undefined
+        const memberList = await getGroupMemberMap(groupId)
+        // 官方Bot适配器的 getMemberMap 返回事件缓存 gml，尚无成员触发过事件时为 null/空
         if (!memberList) {
-            debugLog('warn', `[schedule] 群 ${groupId} 成员缓存为空（官方Bot依赖消息事件积累，重启后需有成员发言）`)
+            debugLog('warn', `[schedule] 群 ${groupId} 成员缓存为空或该群不支持成员查询（官方Bot依赖消息事件积累，沙盒等虚拟适配器无此接口）`)
             return []
         }
         return Array.from(memberList.values())

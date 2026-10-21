@@ -217,47 +217,56 @@ export class BirthdayReminder extends plugin {
         const blacklist = config.birthdayBlacklistGroups || [];
         let groupIds = Bot.getGroupList()
         // 根据黑白名单过滤群
+        // 必须按字符串比较：官方Bot的群ID是 "botUin:OpenID" 复合ID，Number() 会得到 NaN，
+        // 而 NaN !== NaN，导致复合ID的名单项永远匹配不上（沙盒/官机群的排除配置失效）
         groupIds = groupIds.filter(gid => {
-            const gidNum = Number(gid);
+            const gidStr = String(gid);
             // 白名单优先：如果白名单非空，只保留在白名单内的群
             if (whitelist.length > 0) {
-                return whitelist.some(w => Number(w) === gidNum);
+                return whitelist.some(w => String(w) === gidStr);
             }
             // 白名单为空时，排除黑名单内的群
-            return !blacklist.some(b => Number(b) === gidNum);
+            return !blacklist.some(b => String(b) === gidStr);
         });
         if (groupIds && groupIds.length) {
             for (const groupId of groupIds) {
                 if (String(groupId) === 'stdin') continue
-                const group = Bot.pickGroup(groupId)
-                if (!group) continue
-                const memberMap = await group.getMemberMap()
-                if (!memberMap) continue
-                // 统一按字符串比较：OneBot 成员键为数值QQ号，官方Bot为 "botUin:OpenID" 复合ID
-                const memberQQs = [...memberMap.keys()].map(String)
-                const birthdaysInGroup = todayBirthdayUsers.filter(user =>
-                    memberQQs.includes(String(user.userId))
-                )
-                if (birthdaysInGroup.length) {
-                    let message = []
-                    // 官方Bot无法@全体成员（SDK 会转成 <@everyone>，非群管理员的Bot会被官方API拒绝导致整条发送失败），
-                    // 复合ID群（官方Bot）跳过 at-all；OneBot 行为不变
-                    if ((group.is_admin || group.is_owner) && !String(groupId).includes(':')) {
-                        message.push(segment.at('all'), '  ')
+                // 单个群/适配器异常不能中断整批推送（例如虚拟适配器缺少接口、发送时抛错）
+                try {
+                    const group = Bot.pickGroup(groupId)
+                    if (!group) continue
+                    // 统一走 getGroupMemberMap：官方Bot沙盒等虚拟适配器的 group 对象没有
+                    // getMemberMap，直接调用会让整个定时任务中断（成员Map由消息事件缓存，可能为空）
+                    const memberMap = await getGroupMemberMap(groupId)
+                    if (!memberMap) continue
+                    // 统一按字符串比较：OneBot 成员键为数值QQ号，官方Bot为 "botUin:OpenID" 复合ID
+                    const memberQQs = [...memberMap.keys()].map(String)
+                    const birthdaysInGroup = todayBirthdayUsers.filter(user =>
+                        memberQQs.includes(String(user.userId))
+                    )
+                    if (birthdaysInGroup.length) {
+                        let message = []
+                        // 官方Bot无法@全体成员（SDK 会转成 <@everyone>，非群管理员的Bot会被官方API拒绝导致整条发送失败），
+                        // 复合ID群（官方Bot）跳过 at-all；OneBot 行为不变
+                        if ((group.is_admin || group.is_owner) && !String(groupId).includes(':')) {
+                            message.push(segment.at('all'), '  ')
+                        }
+                        message.push('今天是')
+                        birthdaysInGroup.forEach(b => message.push(segment.at(b.userId), ' '))
+                        message.push(`的生日，${getRandomBirthdayMessage()}`)
+                        // sendMsg 不抛出异常，失败静默收集在 rets.error（官方Bot未开通主动消息/无被动锚点时失败）
+                        const rets = await group.sendMsg(message)
+                        if (rets?.error?.length) {
+                            // 入队等待该群下一条消息时借被动回复送达
+                            this._queuePendingPush(`group:${groupId}`, message, today)
+                            logger.warn(`[Schedule生日提醒] 群 ${groupId} 主动推送生日祝福失败（可能未开通主动消息权限且群内暂无可借用的消息），已入队待成员发言后被动送达`)
+                        } else {
+                            logger.mark(`[Schedule生日提醒] 已在群 ${groupId} 发送生日祝福`)
+                        }
+                        await this.sleep(2000)
                     }
-                    message.push('今天是')
-                    birthdaysInGroup.forEach(b => message.push(segment.at(b.userId), ' '))
-                    message.push(`的生日，${getRandomBirthdayMessage()}`)
-                    // sendMsg 不抛出异常，失败静默收集在 rets.error（官方Bot未开通主动消息/无被动锚点时失败）
-                    const rets = await group.sendMsg(message)
-                    if (rets?.error?.length) {
-                        // 入队等待该群下一条消息时借被动回复送达
-                        this._queuePendingPush(`group:${groupId}`, message, today)
-                        logger.warn(`[Schedule生日提醒] 群 ${groupId} 主动推送生日祝福失败（可能未开通主动消息权限且群内暂无可借用的消息），已入队待成员发言后被动送达`)
-                    } else {
-                        logger.mark(`[Schedule生日提醒] 已在群 ${groupId} 发送生日祝福`)
-                    }
-                    await this.sleep(2000)
+                } catch (err) {
+                    logger.error(`[Schedule生日提醒] 群 ${groupId} 推送异常: ${err}`)
                 }
             }
         }
@@ -978,10 +987,8 @@ export class BirthdayReminder extends plugin {
         if (!group) return { exists: false, nickname: '', errorMsg: '无法获取群信息' };
         // 官方Bot场景目标用户为 "botUin:OpenID" 复合ID，成员缓存键即该复合ID
         const isOfficialUser = String(userId).includes(':');
-        let memberMap = null;
-        try {
-            memberMap = await group.getMemberMap();
-        } catch { }
+        // 与定时推送一致：兼容没有 getMemberMap 的虚拟适配器（如 QQBot 沙盒）
+        const memberMap = await getGroupMemberMap(groupId);
         if (memberMap) {
             const info = memberMap.get(isOfficialUser ? String(userId) : Number(userId));
             if (info) {
