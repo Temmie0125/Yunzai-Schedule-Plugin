@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs'
+import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from '../components/ConfigManager.js'
 import { getBotName, getFileInfo, getFileContent, getGroupBotState, isOfficialMsg, checkPermission } from '../components/common.js'

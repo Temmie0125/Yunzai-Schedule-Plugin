@@ -307,7 +307,8 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
     );
     members.forEach((member, index) => {
         let text = ``
-        text += `${index + 1}. ${member.nickname}`;
+        // 隐私脱敏（仅「所有人课表」会带上这些标记）：文本无法做高斯模糊，非本群群友昵称以 *** 代替
+        text += `${index + 1}. ${member.blurNickname ? '***' : member.nickname}`;
         if (member.skipStatus) text += ' [翘课模式]';
         text += `\n   状态: ${member.status}\n`;
         // 新增：显示签名（当状态为"无课程"或"已结束"时）
@@ -320,14 +321,15 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
                 member.overlapCourses.forEach((course, index) => {
                     text += `   课程${index + 1}: ${course.name}\n`;
                     text += `   时间: ${course.startTime}-${course.endTime}\n`;
-                    if (course.location) {
+                    // 隐藏教室时不输出地点行
+                    if (course.location && !member.hideLocation) {
                         text += `   地点: ${course.location}\n`;
                     }
                 });
             } else {
                 text += `   课程: ${member.currentCourse.name}\n`;
                 text += `   时间: ${member.currentCourse.startTime}-${member.currentCourse.endTime}\n`;
-                if (member.currentCourse.location) {
+                if (member.currentCourse.location && !member.hideLocation) {
                     text += `   地点: ${member.currentCourse.location}\n`;
                 }
             }

@@ -82,6 +82,23 @@ export async function makeForwardMsg(e, msg = [], dec = '') {
     return forwardMsg
 }
 /**
+ * 判断当前用户是否为群主/群管理员（不判断 Bot 主人）
+ * 兼容 OneBot（e.member.role）与官方Bot（pickMember 返回的 is_admin/is_owner）
+ * @param {*} e 事件对象
+ * @returns {boolean}
+ */
+export function isGroupManager(e) {
+    if (!e?.isGroup) return false
+    try {
+        if (e.member?.role && ['owner', 'admin'].includes(e.member.role)) return true
+        const member = e.group?.pickMember?.(e.user_id)
+        if (member && (member.is_admin || member.is_owner)) return true
+    } catch {
+        // 部分适配器 pickMember 可能抛错，按非管理员处理
+    }
+    return false
+}
+/**
  * 权限检查（群管理员或主人）
  * @param {*} e 
  * @returns Boolean
@@ -89,10 +106,7 @@ export async function makeForwardMsg(e, msg = [], dec = '') {
 export function checkPermission(e) {
     if (e.isMaster) return true
     if (!e.isGroup) return false  // 非群聊只允许主人使用
-    const member = e.group.pickMember(e.user_id)
-    if (e.isGroup && e.member?.role && ['owner', 'admin'].includes(e.member.role)) return true
-    if (e.isGroup && (member.is_admin || member.is_owner)) return true
-    return false
+    return isGroupManager(e)
 }
 /**
  * 检查是否是好友

@@ -2,9 +2,10 @@
 //import path from 'node:path'
 import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { checkPermission, getGroupMembers, getAvatarUrl, getBotName, makeForwardMsg, compareUserId } from '../components/common.js'
+import { getGroupMembers, getGroupMemberMap, getAvatarUrl, getBotName, makeForwardMsg, compareUserId, isGroupManager } from '../components/common.js'
 import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
+import { canUseAllSchedule, shouldHideAllScheduleInfo, applyAllSchedulePrivacy } from '../utils/privacyUtils.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarProgress, buildCourseDots } from '../utils/timeUtils.js'
 export class GroupSchedulePlugin extends plugin {
   constructor() {
@@ -310,8 +311,18 @@ export class GroupSchedulePlugin extends plugin {
     return true;
   }
   async showAllUsersSchedule() {
-    if (!checkPermission(this.e)) {
-      await this.reply("只有群管理员或主人可以使用此命令");
+    // 权限由配置决定：owner 仅Bot主人 / ownerAdmin Bot主人+群管理（默认）/ everyone 所有人
+    const config = ConfigManager.getConfig();
+    const permissionMode = config.allSchedulePermission;
+    if (!canUseAllSchedule(permissionMode, {
+      isMaster: this.e.isMaster,
+      isGroupManager: isGroupManager(this.e)
+    })) {
+      const deniedText = {
+        owner: "此命令仅限 Bot 主人使用~",
+        ownerAdmin: "只有群管理员或 Bot 主人可以使用此命令"
+      }[permissionMode] || "你没有权限使用此命令";
+      await this.reply(deniedText);
       return true;
     }
     const now = new Date();
@@ -365,7 +376,6 @@ export class GroupSchedulePlugin extends plugin {
       allUsersData.length = MAX_DISPLAY;
     }
     */
-    const config = ConfigManager.getConfig();
     // 学期已结束超过配置天数的用户不再展示（hideEndedDays=0 表示不过滤）
     const { displayMembers } = this._filterEndedMembers(allUsersData, Number(config.hideEndedDays));
     if (displayMembers.length === 0) {
@@ -373,8 +383,18 @@ export class GroupSchedulePlugin extends plugin {
       return true;
     }
     const sortedMembers = this._sortMembers(displayMembers, config.sortMode);
+    // 隐私脱敏：按「隐藏策略」与查看者身份决定是否脱敏；
+    // 需要脱敏时取当前群成员列表用于区分「本群成员 / 非本群群友」，拿不到则全部按非本群处理
+    const hide = shouldHideAllScheduleInfo(config.allSchedulePrivacy, { isMaster: this.e.isMaster });
+    let memberIds = null;
+    if (hide) {
+      const groupId = this.e.group_id;
+      const memberMap = groupId ? await getGroupMemberMap(groupId) : null;
+      memberIds = memberMap ? new Set([...memberMap.keys()].map(String)) : null;
+    }
+    const preparedMembers = applyAllSchedulePrivacy(sortedMembers, { hide, memberIds });
     this.reply("正在渲染图片，请稍等一下哦~>_<~", false, { recallMsg: 5 });
-    await this.sendScheduleMessage(sortedMembers, currentWeek, currentDay, globalNotice);
+    await this.sendScheduleMessage(preparedMembers, currentWeek, currentDay, globalNotice);
   }
   /**
  * 发送课表消息

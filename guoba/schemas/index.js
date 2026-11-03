@@ -1,4 +1,4 @@
-﻿// guoba/schemas/index.js
+// guoba/schemas/index.js
 export const schemas = [
     // 分组
     {
@@ -304,6 +304,36 @@ export const schemas = [
         },
         defaultValue: "progress",
         bottomHelpMessage: "进度环：上课中的成员用头像边框显示这节课的完成进度，其他状态用淡化的状态色边框。实色边框：所有状态都用淡化的状态色边框，不显示进度。关闭：白色细边框。也可用管理员命令 #课表头像边框 进度|实色|关闭 随时切换。"
+    },
+    {
+        field: "allSchedulePermission",
+        label: "所有人课表权限",
+        helpMessage: "谁可以使用「所有人在上什么课」（跨群聚合课表）",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "仅Bot主人", value: "owner" },
+                { label: "Bot主人+群管理（默认）", value: "ownerAdmin" },
+                { label: "所有人", value: "everyone" }
+            ]
+        },
+        defaultValue: "ownerAdmin",
+        bottomHelpMessage: "控制 #所有人在上什么课 / #全局课表 的使用权限。仅Bot主人：只有主人可用；Bot主人+群管理：群主/群管理员与主人可用（默认，与旧版行为一致）；所有人：任何群成员（含私聊）都可使用。"
+    },
+    {
+        field: "allSchedulePrivacy",
+        label: "所有人课表隐藏策略",
+        helpMessage: "对「所有人课表」中的头像、教室、非本群群友昵称做脱敏",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "所有人看到脱敏版", value: "everyone" },
+                { label: "非Bot主人脱敏（默认）", value: "nonMaster" },
+                { label: "都不隐藏", value: "off" }
+            ]
+        },
+        defaultValue: "nonMaster",
+        bottomHelpMessage: "需要脱敏时：头像高斯模糊、教室整行不显示（保留占位、卡片高度不变）、非本群群友的昵称高斯模糊（本群成员昵称照常显示）。拿不到本群成员列表时（私聊触发、或官方Bot群成员缓存为空）按非本群处理。该策略只作用于「所有人课表」，#clstb 群课表不受影响。"
     },
     {
         field: "hideEndedDays",

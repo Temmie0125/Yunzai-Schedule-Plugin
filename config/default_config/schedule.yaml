@@ -1,4 +1,4 @@
-﻿pushHour: 20
+pushHour: 20
 showTableName: true
 autoRecallCode: false
 renderScale: 1.0
@@ -52,6 +52,18 @@ scheduleColumns: 2
 #   off       关闭（白色细边框）
 # 也可用管理员命令 #课表头像边框 进度|实色|关闭 切换（会写入本文件）
 avatarBorderMode: "progress"
+# 「所有人课表」（#所有人在上什么课 / #全局课表）的使用权限：
+#   owner       仅 Bot 主人
+#   ownerAdmin  Bot 主人 + 群主/群管理员（默认，与旧版一致）
+#   everyone    所有人（含私聊）
+allSchedulePermission: "ownerAdmin"
+# 「所有人课表」的隐藏策略（只作用于该命令，#clstb 群课表不受影响）：
+#   everyone   所有人看到脱敏版
+#   nonMaster  非 Bot 主人看到脱敏版（默认）
+#   off        都不隐藏
+# 脱敏内容：头像高斯模糊、教室整行不显示（保留占位不改变卡片高度）、
+#          非本群群友昵称高斯模糊（拿不到本群成员列表时按非本群处理）
+allSchedulePrivacy: "nonMaster"
 # 群课表图片中隐藏学期已结束超过该天数的成员，设置为 0 表示不过滤
 hideEndedDays: 30
 # 生日列表是否展示QQ号

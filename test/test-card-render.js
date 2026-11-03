@@ -1,4 +1,4 @@
-﻿// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
+// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
 // 覆盖：上课中/分身中/翘课中 → 「剩余」；未开始 → 「距离上课」；已结束/无课程 → 均不显示
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-card-render.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替

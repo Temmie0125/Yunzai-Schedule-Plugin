@@ -137,6 +137,23 @@
             box-shadow: 0 0 0 2px rgba(242, 216, 92, 0.45), 0 6px 18px rgba(242, 216, 92, 0.35);
         }
 
+        /* ===== 「所有人课表」隐私遮罩（仅该命令会传入 blurAvatar / blurNickname / hideLocation） ===== */
+        /* 头像高斯模糊：略放大避免模糊边缘透出容器底色 */
+        .member-avatar img.avatar-blur {
+            filter: blur(8px);
+            transform: scale(1.08);
+        }
+
+        /* 非本群群友昵称高斯模糊：只模糊文字本身，保留前面的箭头装饰 */
+        .member-name .name-blur {
+            filter: blur(4px);
+        }
+
+        /* 隐藏教室：整行保留占位（用 visibility 而非 display），卡片高度与未隐藏时一致 */
+        .course-detail.loc-hidden {
+            visibility: hidden;
+        }
+
         /* 左侧双箭头装饰 */
         .member-card::before,
         .member-card::after {
@@ -632,7 +649,7 @@
             <div class="member-card{{if member.isSelf}} is-self{{/if}}" style="--status-color: {{member.statusColor || '#00897B'}}; --status-color-soft: {{member.statusColorSoft || '#73BEB6'}};">
                 <!-- 头像区域 -->
                 <div class="member-avatar avatar-{{member.avatarBorderMode}}"{{if member.avatarBorderMode === 'progress'}} style="--progress: {{member.avatarProgress}}; --ring-strong: {{member.ringStrong}}; --ring-soft: {{member.ringSoft}};"{{/if}}>
-                    <img src="{{member.avatar}}" alt="{{member.nickname}}">
+                    <img src="{{member.avatar}}" alt="{{member.nickname}}"{{if member.blurAvatar}} class="avatar-blur"{{/if}}>
                     {{if member.skipStatus && member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <span class="skip-tag">翘课模式</span>
                     {{/if}}
@@ -640,7 +657,7 @@
 
                 <!-- 右侧信息容器：昵称 + 状态行 -->
                 <div class="member-info-right">
-                    <div class="member-name">{{member.nickname}}</div>
+                    <div class="member-name"><span{{if member.blurNickname}} class="name-blur"{{/if}}>{{member.nickname}}</span></div>
                     {{if member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <div class="member-status-row">
                         <div class="member-status status-{{member.status}}">{{member.status}}</div>
@@ -702,7 +719,7 @@
                         <span class="course-icon">📖</span>
                         <div class="course-info">{{member.overlapCourseLabel}}</div>
                     </div>
-                    <div class="course-detail">
+                    <div class="course-detail{{if member.hideLocation}} loc-hidden{{/if}}">
                         <span class="location-icon">📍</span>
                         <span class="location-text">{{member.overlapLocationLabel}}</span>
                     </div>
@@ -718,7 +735,7 @@
                     </div>
 
                     {{if member.currentCourse}}
-                    <div class="course-detail">
+                    <div class="course-detail{{if member.hideLocation}} loc-hidden{{/if}}">
                         <span class="location-icon">📍</span>
                         {{if member.currentCourse.location && member.currentCourse.location.trim() !== ''}}
                         <span class="location-text">{{member.currentCourse.location}}</span>

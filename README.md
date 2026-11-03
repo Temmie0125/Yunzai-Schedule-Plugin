@@ -1,4 +1,4 @@
-﻿# 📅 Schedule 课程表插件
+# 📅 Schedule 课程表插件
 
 <p align="center">
   <img alt="Yunzai Version" src="https://img.shields.io/badge/Yunzai--V3-Plugin-blue?style=flat-square"/>
@@ -109,6 +109,8 @@ pnpm install
 | `sortMode` | `userId` | 群课表成员排序方式：`userId` 按 QQ 号、`courseStatus` 按上课状态、`timeDistance` 按距上/下课时间 |
 | `avatarBorderMode` | `progress` | 群课表头像边框展示方式：`progress` 上课中用「上课进度」进度环（空 → 满、逆时针推进，填充与轨道为同色系深浅双色）、其他状态用淡化的状态色边框；`solid` 所有状态都用淡化的状态色边框；`off` 关闭（恢复白色细边框）。也可用管理员命令 `#课表头像边框 进度\|实色\|关闭` 切换（写入配置，重启生效） |
 | `hideEndedDays` | `30` | 学期已结束超过该天数的成员不再出现在群课表图片中，`0` 表示不过滤 |
+| `allSchedulePermission` | `ownerAdmin` | 「所有人课表」（`#所有人在上什么课` / `#全局课表`）的使用权限：`owner` 仅 Bot 主人、`ownerAdmin` Bot 主人 + 群主/群管理员（默认，与旧版一致）、`everyone` 所有人（含私聊） |
+| `allSchedulePrivacy` | `nonMaster` | 「所有人课表」的隐藏策略：`everyone` 所有人看到脱敏版、`nonMaster` 非 Bot 主人看到脱敏版（默认）、`off` 都不隐藏。脱敏内容：头像高斯模糊、教室整行不显示（保留占位、卡片高度不变）、非本群群友昵称高斯模糊；本群成员昵称与全部课程信息照常显示。拿不到本群成员列表时（私聊触发、官方 Bot 群成员缓存为空）按非本群处理。该策略只作用于「所有人课表」，`#clstb` 群课表不受影响 |
 
 `timeDistance`（按距上/下课时间）排序口径：先按状态分组（上课中/分身中/翘课中 → 未开始 → 其他），组内按距最近一次上/下课的时间升序——越接近下课或上课的成员越靠前；「其他」组内更接近下课的「已结束」成员也更靠前，其余按状态顺序与 QQ 号。
 
@@ -144,6 +146,7 @@ pnpm install
 | `#我的课表` | 查看个人信息及课表概览 |
 | `#clstb` 或 `#课程表` | 查看本群群友上课状态。也可以使用`群友在上什么课` |
 | `@某人 在上什么课` | 视奸指定成员的上课状态 |
+| `#所有人在上什么课` / `#全局课表` | 跨群聚合所有已设置课表的成员。使用权限由 `allSchedulePermission` 决定（默认 Bot 主人 + 群管理），隐藏策略由 `allSchedulePrivacy` 决定（默认对非 Bot 主人脱敏：头像模糊、教室隐藏、非本群群友昵称模糊） |
 | `#翘课` / `#取消翘课` | 开启/关闭翘课模式。会自动在当前课程或者下一节课结束时取消。也可使用`#clsskip`、`#clsunskip` |
 | `#开启课表订阅` / `#关闭课表订阅` | 开关次日课表推送（需加 Bot 好友） |
 | `#课表更新` | 从 GitHub 更新插件（需主人权限） |
