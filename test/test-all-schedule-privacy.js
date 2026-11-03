@@ -65,7 +65,8 @@ check('不脱敏：所有标记为 false',
 check('不脱敏：不修改原数组', members[0].blurAvatar === undefined);
 
 const onResult = applyAllSchedulePrivacy(members, { hide: true, memberIds: groupIds });
-check('脱敏：头像一律模糊', onResult.every(m => m.blurAvatar === true));
+check('脱敏：本群群友头像不模糊（互相认识，照常显示）', onResult[0].blurAvatar === false && onResult[2].blurAvatar === false);
+check('脱敏：非本群群友头像模糊', onResult[1].blurAvatar === true);
 check('脱敏：教室一律隐藏', onResult.every(m => m.hideLocation === true));
 check('脱敏：本群成员昵称不模糊', onResult[0].blurNickname === false && onResult[2].blurNickname === false);
 check('脱敏：非本群成员昵称模糊', onResult[1].blurNickname === true);
@@ -95,17 +96,24 @@ const renderCard = (extra = {}) => art(tplFile, {
 // 断言只看 <body>：类名同样出现在 <style> 中，不能直接把整页 HTML 当判断依据
 const bodyOf = (html) => html.split('<body>')[1] || html;
 const plain = renderCard();
-check('未脱敏：头像/昵称无模糊类、教室行不带隐藏类',
-    !bodyOf(plain).includes('avatar-blur') && !bodyOf(plain).includes('name-blur') && !bodyOf(plain).includes('loc-hidden'));
+check('未脱敏：头像无 is-blurred、昵称无 name-blur、教室行不带隐藏类',
+    !bodyOf(plain).includes('is-blurred') && !bodyOf(plain).includes('name-blur') && !bodyOf(plain).includes('loc-hidden'));
+check('未脱敏：头像仍包在裁剪遮罩内（结构不变，只是不模糊）',
+    bodyOf(plain).includes('class="avatar-mask"'));
 
 const masked = renderCard({ blurAvatar: true, blurNickname: true, hideLocation: true });
-check('脱敏：头像带 avatar-blur', bodyOf(masked).includes('class="avatar-blur"'));
+check('脱敏：头像遮罩带 is-blurred', bodyOf(masked).includes('avatar-mask is-blurred'));
 check('脱敏：昵称带 name-blur', bodyOf(masked).includes('name-blur'));
 check('脱敏：教室行带 loc-hidden', bodyOf(masked).includes('loc-hidden'));
-check('样式表定义了模糊与占位隐藏',
-    /\.avatar-blur\s*\{[^}]*blur\(8px\)/.test(tplSrc)
-    && /\.name-blur\s*\{[^}]*blur\(4px\)/.test(tplSrc)
-    && /\.loc-hidden\s*\{[^}]*visibility:\s*hidden/.test(tplSrc));
+check('样式表：头像遮罩 overflow:hidden（模糊不越界、不透底色）',
+    /\.avatar-mask\s*\{[^}]*overflow:\s*hidden/.test(tplSrc));
+check('样式表：头像遮罩内放大 + 8px 模糊（裁掉半透明边缘）',
+    /\.avatar-mask\.is-blurred img\s*\{[^}]*blur\(8px\)[^}]*scale\(1\.25\)/.test(tplSrc));
+check('样式表：昵称模糊 8px（4px 仍可依稀辨字）',
+    /\.member-name \.name-blur\s*\{[^}]*blur\(8px\)/.test(tplSrc)
+    && !/\.name-blur\s*\{[^}]*blur\(4px\)/.test(tplSrc));
+check('样式表：教室隐藏保留占位（visibility）',
+    /\.loc-hidden\s*\{[^}]*visibility:\s*hidden/.test(tplSrc));
 // 教室只是“不可见”，DOM 仍在（保证卡片高度不变）
 check('教室隐藏采用 visibility 占位而非移除节点',
     bodyOf(masked).includes('loc-hidden') && bodyOf(masked).includes('location-text'));

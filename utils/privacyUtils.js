@@ -12,10 +12,10 @@ export const DEFAULT_ALL_SCHEDULE_PERMISSION = 'ownerAdmin';
 export const ALL_SCHEDULE_PRIVACY_MODES = ['everyone', 'nonMaster', 'off'];
 export const DEFAULT_ALL_SCHEDULE_PRIVACY = 'nonMaster';
 
-/** 头像高斯模糊半径（px），头像 90px 时 8px 已无法辨认 */
+/** 头像高斯模糊半径（px）：配合外层裁剪遮罩，模糊边缘不会透出边框底色、也不越界 */
 export const AVATAR_BLUR_PX = 8;
-/** 昵称模糊半径（px），配合 28px 字号可保留文字轮廓但无法阅读 */
-export const NICKNAME_BLUR_PX = 4;
+/** 昵称模糊半径（px）：4px 仍能依稀辨认字形，8px 对 28px 字号已糊成色块 */
+export const NICKNAME_BLUR_PX = 8;
 
 /**
  * 规范化「所有人课表」权限档位
@@ -91,8 +91,10 @@ export function applyAllSchedulePrivacy(members, { hide = false, memberIds = nul
         const inGroup = ids ? ids.has(String(member.userId)) : false;
         return {
             ...member,
-            blurAvatar: true,
+            // 头像与昵称只对「非本群群友」脱敏：本群群友互相认识，头像与昵称照常显示
+            blurAvatar: !inGroup,
             blurNickname: !inGroup,
+            // 教室对所有成员一律隐藏（不区分是否本群）
             hideLocation: true
         };
     });

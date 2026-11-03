@@ -138,15 +138,24 @@
         }
 
         /* ===== 「所有人课表」隐私遮罩（仅该命令会传入 blurAvatar / blurNickname / hideLocation） ===== */
-        /* 头像高斯模糊：略放大避免模糊边缘透出容器底色 */
-        .member-avatar img.avatar-blur {
+        /* 头像裁剪遮罩：模糊只发生在遮罩内部 —— 模糊后的半透明边缘被裁掉，
+           既不会越出头像边框，也不会透出进度环/容器底色 */
+        .avatar-mask {
+            width: 100%;
+            height: 100%;
+            border-radius: inherit;
+            overflow: hidden;
+        }
+
+        .avatar-mask.is-blurred img {
+            /* 放大 1.25 倍，使 8px 的模糊边缘全部落在遮罩外被裁掉 */
             filter: blur(8px);
-            transform: scale(1.08);
+            transform: scale(1.25);
         }
 
         /* 非本群群友昵称高斯模糊：只模糊文字本身，保留前面的箭头装饰 */
         .member-name .name-blur {
-            filter: blur(4px);
+            filter: blur(8px);
         }
 
         /* 隐藏教室：整行保留占位（用 visibility 而非 display），卡片高度与未隐藏时一致 */
@@ -649,7 +658,7 @@
             <div class="member-card{{if member.isSelf}} is-self{{/if}}" style="--status-color: {{member.statusColor || '#00897B'}}; --status-color-soft: {{member.statusColorSoft || '#73BEB6'}};">
                 <!-- 头像区域 -->
                 <div class="member-avatar avatar-{{member.avatarBorderMode}}"{{if member.avatarBorderMode === 'progress'}} style="--progress: {{member.avatarProgress}}; --ring-strong: {{member.ringStrong}}; --ring-soft: {{member.ringSoft}};"{{/if}}>
-                    <img src="{{member.avatar}}" alt="{{member.nickname}}"{{if member.blurAvatar}} class="avatar-blur"{{/if}}>
+                    <div class="avatar-mask{{if member.blurAvatar}} is-blurred{{/if}}"><img src="{{member.avatar}}" alt="{{member.nickname}}"></div>
                     {{if member.skipStatus && member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <span class="skip-tag">翘课模式</span>
                     {{/if}}
