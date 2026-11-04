@@ -164,8 +164,10 @@ function isStarlinkJsonFormat(jsonData) {
  */
 async function saveScheduleWithUserData(userId, scheduleData, event) {
   const oldData = DataManager.loadSchedule(userId);
-  let nickname = oldData?.nickname;
-  let signature = oldData?.signature;
+  // 课表文件不存在时（刚 #清除课表 过）从用户资料恢复昵称/签名，避免重新导入后丢失
+  const profile = DataManager.getUserProfile(userId);
+  let nickname = oldData?.nickname || profile?.nickname;
+  let signature = oldData?.signature || profile?.signature;
   if (!nickname) {
     nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
   }
@@ -412,10 +414,11 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
       // replyMsg += `检测到您的JSON未提供学期开始日期，将使用默认值 ${semesterStart}，可使用#学期开始日期 命令更改\n`
       logger.warn(`[课表导入] 用户 ${userId} 的JSON未提供学期开始日期，使用默认值 ${semesterStart}`);
     }
-    // 加载原有数据保留昵称和签名
+    // 加载原有数据保留昵称和签名（课表文件不存在时回退到用户资料，兼容 #清除课表 后重新导入）
     const oldData = DataManager.loadSchedule(userId);
-    let nickname = oldData?.nickname;
-    let signature = oldData?.signature;
+    const profile = DataManager.getUserProfile(userId);
+    let nickname = oldData?.nickname || profile?.nickname;
+    let signature = oldData?.signature || profile?.signature;
     if (!nickname) {
       nickname = (await DataManager.getUserNickname(userId, event)) || userId.toString();
     }

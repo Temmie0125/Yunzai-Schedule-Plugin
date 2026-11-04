@@ -543,12 +543,20 @@ export class ScheduleManage extends plugin {
     }
     /**
      * 清除课表
+     * 删除课表数据文件本身（而非只清空 courses），这样该用户会彻底从群课表/所有人课表中消失，
+     * 不会留下一张「今日暂无课程」的空卡片；昵称与签名转入用户资料保留，重新导入后继续生效
      */
     async clearSchedule() {
         const userId = this.e.user_id;
-        const result = DataManager.clearUserCourses(userId);
+        const result = DataManager.removeUserSchedule(userId);
         if (result.success) {
-            await this.reply("你的课程表已清除");
+            const kept = [];
+            if (result.nickname) kept.push(`昵称「${result.nickname}」`);
+            if (result.signature) kept.push('个性签名');
+            const keepText = kept.length
+                ? `，${kept.join('和')}已为你保留（重新导入课表后继续生效）`
+                : '';
+            await this.reply(`✅ 你的课程表已清除${keepText}~\n清除后你不会再出现在群课表里。`);
         } else {
             if (!result.exists) {
                 await this.reply("你还没有设置课程表");

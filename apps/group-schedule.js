@@ -236,6 +236,9 @@ export class GroupSchedulePlugin extends plugin {
     await this.checkAndAutoExpireSkip(userId);
     const scheduleData = DataManager.loadSchedule(userId);
     if (!scheduleData) return null;
+    // 没有课程记录的用户不进群课表：历史版本「清空 courses 但保留文件」会留下一张
+    // 「今日暂无课程」的空卡片，这里统一按“未设置课表”处理（与 getAllUserSchedules 口径一致）
+    if (!Array.isArray(scheduleData.courses) || scheduleData.courses.length === 0) return null;
     // 优先使用群名片，其次昵称
     const fallbackNickname = memberInfo.card || memberInfo.nickname || null;
     return this._buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname);
