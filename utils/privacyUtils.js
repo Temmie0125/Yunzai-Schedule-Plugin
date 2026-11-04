@@ -12,6 +12,13 @@ export const DEFAULT_ALL_SCHEDULE_PERMISSION = 'ownerAdmin';
 export const ALL_SCHEDULE_PRIVACY_MODES = ['everyone', 'nonMaster', 'off'];
 export const DEFAULT_ALL_SCHEDULE_PRIVACY = 'nonMaster';
 
+/** 权限档位的中文描述（帮助页展示用，必须与 canUseAllSchedule 的实际判定一致） */
+const ALL_SCHEDULE_PERMISSION_LABELS = {
+    owner: '仅 Bot 主人',
+    ownerAdmin: 'Bot 主人或群管理员',
+    everyone: '所有人（含私聊）'
+};
+
 /** 头像高斯模糊半径（px）：配合外层裁剪遮罩，模糊边缘不会透出边框底色、也不越界 */
 export const AVATAR_BLUR_PX = 8;
 /** 昵称模糊半径（px）：4px 仍能依稀辨认字形，8px 对 28px 字号已糊成色块 */
@@ -98,4 +105,120 @@ export function applyAllSchedulePrivacy(members, { hide = false, memberIds = nul
             hideLocation: true
         };
     });
+}
+
+// ==================== 帮助页 / 导入提示用的文案 ====================
+
+/**
+ * 权限档位的中文描述
+ * @param {*} value 配置中的 allSchedulePermission
+ * @returns {string}
+ */
+export function describeAllSchedulePermission(value) {
+    const normalized = normalizeAllSchedulePermission(value);
+    return ALL_SCHEDULE_PERMISSION_LABELS[normalized]
+        || ALL_SCHEDULE_PERMISSION_LABELS[DEFAULT_ALL_SCHEDULE_PERMISSION];
+}
+
+/** 「所有人课表」帮助条目的说明：跟随 Guoba 里配置的权限档位 */
+export function buildAllScheduleHelpDesc(permission) {
+    return `查看所有用户的上课状态，当前权限：${describeAllSchedulePermission(permission)}。也可使用 #全局课表`;
+}
+
+/**
+ * 课表可见范围的完整说明（帮助页）
+ * 重点提示的是「跨群可见」：自己上传的课表会被「所有人课表」跨群聚合，
+ * 其他群的用户（能使用该命令的人）也可能看到，而不是本群内部互相查看
+ */
+export const SCHEDULE_VISIBILITY_TIP =
+    '上传的课表可能被其他群的用户通过「所有人课表」（#全局课表）看到；' +
+    '可见范围与头像/教室脱敏由 Bot 主配置（allSchedulePermission / allSchedulePrivacy）决定，如需调整可联系 Bot 主';
+
+/** 课表可见范围的短提示（导入成功回复里追加一行，避免过度强调） */
+export const SCHEDULE_VISIBILITY_TIP_SHORT =
+    '课表可能被其他群用户通过 #全局课表 看到；可见范围与脱敏由 Bot 主配置，如需调整可联系 Bot 主';
+
+/** 帮助页里「课表可见范围」条目的标题（用于去重） */
+export const SCHEDULE_VISIBILITY_TIP_TITLE = '课表可见范围';
+
+/** 匹配帮助页里的「所有人课表」条目 */
+const ALL_SCHEDULE_TITLE_RE = /所有人(?:在)?上什么课|所有人课表/;
+
+/**
+ * 在导入成功的回复末尾追加课表可见范围的轻提示（幂等：已包含则不再追加）
+ * @param {string} text
+ * @returns {string}
+ */
+export function appendScheduleVisibilityTip(text) {
+    if (typeof text !== 'string' || !text) return text;
+    if (text.includes(SCHEDULE_VISIBILITY_TIP_SHORT)) return text;
+    return `${text}\n\n🔒 ${SCHEDULE_VISIBILITY_TIP_SHORT}`;
+}
+
+/** 取该分组下一个可用的图标序号（沿用帮助页 1、2、3… 的数字序号风格） */
+function nextHelpIcon(group) {
+    const nums = (Array.isArray(group?.list) ? group.list : [])
+        .map(item => Number(item?.icon))
+        .filter(n => Number.isFinite(n));
+    return nums.length ? Math.max(...nums) + 1 : (group?.list?.length || 0) + 1;
+}
+
+/**
+ * 把「所有人课表」的当前权限与课表可见范围提示注入帮助数据：
+ * - 权限说明随 Guoba 配置的 allSchedulePermission 实时变化，不再写死在 help.json 里；
+ * - help.json 被用户自定义/缺失时也能补上这两条，且重复调用不会产生重复条目；
+ * - 直接就地修改并返回 helpData（调用方通常就是本次渲染专用的数据副本）。
+ * @param {object} helpData 帮助数据（{ groups: [{ group, list: [{icon,title,desc}] }] }）
+ * @param {object} config 插件配置
+ * @returns {object} 同一份 helpData
+ */
+export function applyAllScheduleHelpInfo(helpData, config = {}) {
+    if (!helpData || !Array.isArray(helpData.groups)) return helpData;
+    const groups = helpData.groups.filter(group => group && Array.isArray(group.list));
+    if (groups.length === 0) return helpData;
+
+    const findItem = (re) => {
+        for (const group of groups) {
+            const item = group.list.find(entry => re.test(String(entry?.title ?? '')));
+            if (item) return { group, item };
+        }
+        return null;
+    };
+    // 新条目优先挂到「群互动」分组，没有该分组时挂到最后一组
+    const hostingGroup = () =>
+        groups.find(group => /群互动|互动/.test(String(group.group ?? ''))) || groups[groups.length - 1];
+    const isAdminGroup = (group) => /管理员|管理命令/.test(String(group?.group ?? ''));
+
+    // 1. 「所有人课表」：更新权限说明；旧版 help.json 把它放在「管理员命令」下时顺带挪到群互动
+    const desc = buildAllScheduleHelpDesc(config.allSchedulePermission);
+    const found = findItem(ALL_SCHEDULE_TITLE_RE);
+    if (found) {
+        found.item.desc = desc;
+        if (isAdminGroup(found.group)) {
+            const target = hostingGroup();
+            if (target !== found.group) {
+                found.group.list = found.group.list.filter(entry => entry !== found.item);
+                found.item.icon = nextHelpIcon(target);
+                target.list.push(found.item);
+            }
+        }
+    } else {
+        const group = hostingGroup();
+        group.list.push({
+            icon: nextHelpIcon(group),
+            title: '所有人在上什么课',
+            desc
+        });
+    }
+
+    // 2. 课表可见范围提示：只补一条，避免刷屏
+    if (!findItem(new RegExp(SCHEDULE_VISIBILITY_TIP_TITLE))) {
+        const group = hostingGroup();
+        group.list.push({
+            icon: nextHelpIcon(group),
+            title: SCHEDULE_VISIBILITY_TIP_TITLE,
+            desc: SCHEDULE_VISIBILITY_TIP
+        });
+    }
+    return helpData;
 }

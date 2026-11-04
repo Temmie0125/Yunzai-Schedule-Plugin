@@ -90,29 +90,43 @@ export function filterAccessibleGroupIds(groupIds) {
 }
 
 /**
+ * 已包装过的原型（TRSS-Yunzai 每条消息都会 new 一次插件实例，
+ * 包装一次原型即可覆盖之后所有实例，避免每条消息重复包一遍）
+ */
+const wrappedPrototypes = new WeakSet()
+
+/**
  * 给插件实例的每条 rule 套上黑白名单闸门
- * - 包装方法挂在实例上，遮蔽原型上的同名方法：rule.fnc 无需改写，日志中仍是原方法名
+ * - 优先包装原型方法（同类实例共用），只有 fnc 是实例自有属性时才退回写实例
+ * - rule.fnc 不改写：日志中仍是原方法名
  * - 被拦下的群返回 false（宿主会继续把消息交给其他插件），不产生任何回复
  * @param {object} instance 插件实例
  */
 function installGroupGate(instance) {
-    if (!instance || instance.__groupGateInstalled) return
-    if (!Array.isArray(instance.rule)) return
-    instance.__groupGateInstalled = true
-    const wrappedNames = new Set()
+    if (!instance || !Array.isArray(instance.rule)) return
+    const proto = Object.getPrototypeOf(instance)
+    const wrapOnPrototype = !wrappedPrototypes.has(proto)
+    if (wrapOnPrototype) wrappedPrototypes.add(proto)
+
     for (const rule of instance.rule) {
         const name = rule?.fnc
         if (typeof name !== 'string') continue
-        if (wrappedNames.has(name)) continue
-        const original = instance[name]
-        if (typeof original !== 'function') continue
-        wrappedNames.add(name)
-        instance[name] = async function groupGatedFnc(...args) {
+        const target = Object.prototype.hasOwnProperty.call(instance, name) ? instance : proto
+        if (typeof target[name] !== 'function' || target[name].__groupGated) continue
+        const original = target[name]
+        const gated = async function groupGatedFnc(...args) {
             const e = this.e || args[0]
             if (isGroupBlocked(e?.group_id)) return false
             return original.apply(this, args)
         }
+        gated.__groupGated = true
+        // 挂到原型上时用普通属性定义，保持可枚举性/可读性不变
+        target[name] = gated
     }
+    // 供测试与排障使用
+    Object.defineProperty(instance, '__groupGateInstalled', {
+        value: true, enumerable: false, configurable: true
+    })
 }
 
 /**

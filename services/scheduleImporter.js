@@ -5,6 +5,7 @@ import { DataManager } from '../components/DataManager.js'
 import { ConfigManager } from '../components/ConfigManager.js'  // 新增
 import { getCurrentFullDate, getMondayOfSameWeek, calculateWeekFromDate, normalizeHM } from '../utils/timeUtils.js'
 import { normalizeIcsTimezoneIds } from '../utils/icsTimezone.js'
+import { appendScheduleVisibilityTip } from '../utils/privacyUtils.js'
 import ICalExpander from 'ical-expander';
 // 默认节次时间映射
 const DEFAULT_TIME_SLOTS = {
@@ -186,8 +187,9 @@ async function saveScheduleWithUserData(userId, scheduleData, event) {
  * @param {string} sourceLabel - 来源标签（如“✨ 星链”、“”）
  * @param {boolean} showTableName - 是否显示课表名称
  * @param {boolean} inGroup - 是否在群聊中
+ * @param {string[]} [extraLines] - 追加在提示前的额外说明行（如星链时间表同步结果）
  */
-function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabel, showTableName = true, inGroup = false) {
+function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabel, showTableName = true, inGroup = false, extraLines = []) {
   let replyMsg = `${sourceLabel}课表导入成功！\n`;
   const shouldShowTableName = showTableName && scheduleData.tableName && (!inGroup || showTableName);
   if (shouldShowTableName) {
@@ -202,7 +204,11 @@ function buildSuccessReply(userId, scheduleData, nickname, signature, sourceLabe
   if (nickname === String(userId)) {
     replyMsg += `\n⚠️ 建议使用 #课表设置昵称 设置昵称`;
   }
-  return replyMsg;
+  for (const line of Array.isArray(extraLines) ? extraLines : []) {
+    if (line) replyMsg += `\n${line}`;
+  }
+  // 轻提示：课表会对同群成员可见，可见范围由 Bot 主配置决定（不阻断流程，只指路）
+  return appendScheduleVisibilityTip(replyMsg);
 }
 
 /**
@@ -458,7 +464,8 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
       replyMsg += `\n   您可以使用 #设置学期开始 YYYY-MM-DD 命令进行修正（例如 #设置学期开始 2026-03-02）。`;
     }
 
-    return { success: true, message: replyMsg };
+    // 轻提示：课表会对同群成员可见，可见范围由 Bot 主配置决定
+    return { success: true, message: appendScheduleVisibilityTip(replyMsg) };
   } catch (err) {
     logger.error(`[课表导入] 处理JSON数据失败: ${err}`);
     return { success: false, message: "导入失败，请检查文件格式或联系管理员" };
@@ -488,12 +495,11 @@ export async function importScheduleFromStarlinkCode(userId, code, event) {
     }
 
     const { nickname, signature } = await saveScheduleWithUserData(userId, scheduleData, event);
-    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, "✨ 星链", true, !!event.group);
-    if (Array.isArray(scheduleData.timeSlots) && scheduleData.timeSlots.length) {
-      replyMsg += `\n🕘 已同步课表自带的时间表，共 ${scheduleData.timeSlots.length} 节`;
-    } else {
-      replyMsg += `\n⏰ 未识别到课表自带的时间表，已按默认节次解析，可发送 #导入时间表 更新上课时间`;
-    }
+    // 时间表同步结果作为额外说明行传入，保证隐私轻提示始终在回复末尾
+    const timeTableLine = (Array.isArray(scheduleData.timeSlots) && scheduleData.timeSlots.length)
+      ? `🕘 已同步课表自带的时间表，共 ${scheduleData.timeSlots.length} 节`
+      : `⏰ 未识别到课表自带的时间表，已按默认节次解析，可发送 #导入时间表 更新上课时间`;
+    let replyMsg = buildSuccessReply(userId, scheduleData, nickname, signature, '✨ 星链', true, !!event.group, [timeTableLine]);
     replyMsg = await handleAutoRecall(replyMsg, event, autoRecallCode, botName);
 
     return { success: true, message: replyMsg };

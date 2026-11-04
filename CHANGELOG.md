@@ -4,6 +4,8 @@
 
 ### 新增
 
+- `#课表帮助` 里的**「所有人在上什么课」不再固定在「管理员命令」分组**：改到「群互动」分组，并按 Guoba 配置的 `allSchedulePermission` **实时显示当前权限档位**（`owner` 仅 Bot 主人 / `ownerAdmin` Bot 主人或群管理员 / `everyone` 所有人）。说明文案由 `applyAllScheduleHelpInfo` 在渲染时注入，用户自定义过 `config/help.json` 也能生效（旧版布局会自动从管理员分组挪出，重复调用不会产生重复条目）
+- 新增**课表可见范围的轻提示**：导入课表成功的回复末尾追加一行、`#课表帮助` 新增一条「课表可见范围」条目，提示**自己上传的课表可能被其他群的用户通过 `#全局课表`（所有人课表）看到**，可见范围与脱敏由 Bot 主配置（`allSchedulePermission` / `allSchedulePrivacy`）决定、需要调整可联系 Bot 主。不拦截任何操作，也不改变原有权限判定
 - 新增**全局群黑白名单**：配置项 `groupWhitelist` / `groupBlacklist`（Guoba 可视化选择群，支持官方Bot复合群ID，热更新无需重启）。名单内的群（以及白名单非空时名单外的群）本插件**完全静默**——不回复任何提示，也不会向该群发送生日祝福。实现为全部 app 的插件类统一继承 `components/GroupAccess.js` 的 `SchedulePlugin` 基类：构造时给每条 rule 套一层闸门（命中时返回 `false`，宿主会继续把消息交给其他插件；不改写 `rule.fnc`，日志中仍是原方法名），上下文回调经 `getContext` 拦截，生日主动推送经 `filterAccessibleGroupIds` 过滤。私聊不受限制；配置读取带 3 秒缓存，避免每条规则都同步读盘解析 YAML。新增测试 `test/test-group-access.js`
 - 「所有人课表」（`#所有人在上什么课` / `#全局课表`）**使用权限可配置**：新增配置项 `allSchedulePermission`，三档可选——`owner` 仅 Bot 主人、`ownerAdmin` Bot 主人 + 群主/群管理员（默认，与原行为一致）、`everyone` 所有人（含私聊）；无权限时的提示文案随档位变化。支持 Guoba 可视化配置
 - 「所有人课表」**隐私脱敏**：新增配置项 `allSchedulePrivacy`，三档可选——`everyone` 所有人看到脱敏版、`nonMaster` 非 Bot 主人脱敏（默认）、`off` 都不隐藏。需要脱敏时：
