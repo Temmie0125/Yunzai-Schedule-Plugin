@@ -128,19 +128,19 @@ export function buildAllScheduleHelpDesc(permission) {
 }
 
 /**
- * 课表可见范围的完整说明（帮助页）
+ * 课表可见范围的完整说明（帮助页底部注意条）
  * 重点提示的是「跨群可见」：自己上传的课表会被「所有人课表」跨群聚合，
  * 其他群的用户（能使用该命令的人）也可能看到，而不是本群内部互相查看
  */
 export const SCHEDULE_VISIBILITY_TIP =
     '上传的课表可能被其他群的用户通过「所有人课表」（#全局课表）看到；' +
-    '可见范围与头像/教室脱敏由 Bot 主配置（allSchedulePermission / allSchedulePrivacy）决定，如需调整可联系 Bot 主';
+    '可见范围与头像/教室脱敏由 Bot 主配置，如需调整可联系 Bot 主';
 
 /** 课表可见范围的短提示（导入成功回复里追加一行，避免过度强调） */
 export const SCHEDULE_VISIBILITY_TIP_SHORT =
     '课表可能被其他群用户通过 #全局课表 看到；可见范围与脱敏由 Bot 主配置，如需调整可联系 Bot 主';
 
-/** 帮助页里「课表可见范围」条目的标题（用于去重） */
+/** 帮助页底部注意条的标题（不再混入命令列表） */
 export const SCHEDULE_VISIBILITY_TIP_TITLE = '课表可见范围';
 
 /** 匹配帮助页里的「所有人课表」条目 */
@@ -168,7 +168,8 @@ function nextHelpIcon(group) {
 /**
  * 把「所有人课表」的当前权限与课表可见范围提示注入帮助数据：
  * - 权限说明随 Guoba 配置的 allSchedulePermission 实时变化，不再写死在 help.json 里；
- * - help.json 被用户自定义/缺失时也能补上这两条，且重复调用不会产生重复条目；
+ * - 课表可见范围提示写到 helpData.visibilityTip（帮助页底部单独一条注意条），
+ *   不混进命令列表；help.json 被用户自定义/缺失时同样生效，重复调用不会重复叠加；
  * - 直接就地修改并返回 helpData（调用方通常就是本次渲染专用的数据副本）。
  * @param {object} helpData 帮助数据（{ groups: [{ group, list: [{icon,title,desc}] }] }）
  * @param {object} config 插件配置
@@ -213,14 +214,11 @@ export function applyAllScheduleHelpInfo(helpData, config = {}) {
         });
     }
 
-    // 2. 课表可见范围提示：只补一条，避免刷屏
-    if (!findItem(new RegExp(SCHEDULE_VISIBILITY_TIP_TITLE))) {
-        const group = hostingGroup();
-        group.list.push({
-            icon: nextHelpIcon(group),
-            title: SCHEDULE_VISIBILITY_TIP_TITLE,
-            desc: SCHEDULE_VISIBILITY_TIP
-        });
-    }
+    // 2. 课表可见范围提示：不塞进命令列表（会和命令混在一起），
+    //    改为写在 helpData.visibilityTip 上，由帮助页模板在最底部渲染成一条独立注意条
+    helpData.visibilityTip = {
+        title: SCHEDULE_VISIBILITY_TIP_TITLE,
+        desc: SCHEDULE_VISIBILITY_TIP
+    };
     return helpData;
 }

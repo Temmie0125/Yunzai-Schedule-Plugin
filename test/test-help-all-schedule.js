@@ -1,11 +1,13 @@
-// 临时测试：课表帮助里的「所有人课表」权限随配置变化 + 课表可见范围轻提示
+// 临时测试：课表帮助里的「所有人课表」权限随配置变化 + 课表可见范围注意条
 // 背景：原来「所有人在上什么课」被摆在帮助页的「管理员命令」下，且权限说明是写死的；
-//       现在权限来自 Guoba 配置（allSchedulePermission），改为在群互动分组展示，
-//       同时在帮助页与导入成功回复里补一条“课表可能被他群用户看到，可找 Bot 主调整”的轻提示。
+//       现在权限来自 Guoba 配置（allSchedulePermission），改为在群互动分组展示；
+//       课表可见范围提示不再混进命令列表，而是帮助页最底部单独一条醒目底色的注意条，
+//       导入成功回复里也追加一行同样的短提示。
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-help-all-schedule.js
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import art from 'art-template';
 
 let fail = 0;
 function check(label, cond) {
@@ -77,10 +79,13 @@ try {
         interactGroup.list.some(i => /所有人在上什么课/.test(i.title)));
     check('权限说明按配置刷新为 owner',
         interactGroup.list.find(i => /所有人在上什么课/.test(i.title)).desc.includes('仅 Bot 主人'));
-    check('新增了一条「课表可见范围」提示',
-        interactGroup.list.some(i => i.title === SCHEDULE_VISIBILITY_TIP_TITLE));
-    check('提示文案指引联系 Bot 主调整权限',
-        interactGroup.list.find(i => i.title === SCHEDULE_VISIBILITY_TIP_TITLE).desc.includes('联系 Bot 主'));
+    // 可见范围提示不再混进命令列表，而是帮助页底部单独一条注意条
+    check('「课表可见范围」没有混进任何命令列表',
+        !groups.some(g => g.list.some(i => String(i.title).includes(SCHEDULE_VISIBILITY_TIP_TITLE))));
+    check('提示写到了 helpData.visibilityTip（供帮助页底部注意条渲染）',
+        help.visibilityTip?.title === SCHEDULE_VISIBILITY_TIP_TITLE
+        && help.visibilityTip?.desc === SCHEDULE_VISIBILITY_TIP);
+    check('提示文案指引联系 Bot 主调整权限', help.visibilityTip.desc.includes('联系 Bot 主'));
     // 重点校验：提示的是「跨群可见」（其他群用户通过 #全局课表 看到），不是本群群课表
     check('帮助提示强调“其他群的用户”看到课表',
         SCHEDULE_VISIBILITY_TIP.includes('其他群') && SCHEDULE_VISIBILITY_TIP.includes('全局课表'));
@@ -93,20 +98,41 @@ try {
         .flatMap(g => g.list)
         .filter(i => titleRe.test(String(i.title))).length;
     check('重复处理不会产生重复的「所有人课表」条目', countOf(/所有人在上什么课/) === 1);
-    check('重复处理不会产生重复的「课表可见范围」条目', countOf(new RegExp(SCHEDULE_VISIBILITY_TIP_TITLE)) === 1);
+    check('重复处理不会让注意条叠加（仍是单个对象）',
+        !Array.isArray(again.visibilityTip) && again.visibilityTip.desc === SCHEDULE_VISIBILITY_TIP);
     check('权限文案随配置变化',
         again.groups.flatMap(g => g.list).find(i => /所有人在上什么课/.test(i.title)).desc.includes('所有人'));
 
-    // ===== 4. 自定义帮助数据：没有群互动分组 → 追加到最后一组 =====
+    // ===== 4. 自定义帮助数据（没有群互动分组）同样能拿到注意条 =====
     const custom = {
         groups: [{ group: '自定义分组', list: [{ icon: 1, title: '#导入课表', desc: 'x' }] }]
     };
     applyAllScheduleHelpInfo(custom, { allSchedulePermission: 'ownerAdmin' });
-    check('缺少群互动分组时新条目追加到最后一组',
-        custom.groups[0].list.some(i => i.title === SCHEDULE_VISIBILITY_TIP_TITLE)
-        && custom.groups[0].list.some(i => /所有人在上什么课/.test(i.title)));
+    check('缺少群互动分组时「所有人课表」追加到最后一组',
+        custom.groups[0].list.some(i => /所有人在上什么课/.test(i.title)));
+    check('自定义帮助数据同样带上注意条', custom.visibilityTip?.desc === SCHEDULE_VISIBILITY_TIP);
     check('图标序号顺延（不与已有条目冲突）',
         custom.groups[0].list.every((item, idx, arr) => arr.findIndex(o => o.icon === item.icon) === idx));
+
+    // ===== 4.5 模板：注意条渲染在最底部且有醒目底色，且不混入命令表格 =====
+    const tplFile = path.join(import.meta.dirname, '..', 'resources', 'template', 'help-template.html');
+    const tplSrc = fs.readFileSync(tplFile, 'utf8');
+    const bodyOf = (html) => html.split('<body>')[1] || '';
+    const renderHelp = (extra = {}) => art(tplFile, {
+        ...help, ...extra, _fontInlineUrl: 'data:,', _fontFormat: 'opentype', updateTime: 'x'
+    });
+    check('模板里注意条由 visibilityTip 控制显示', /\{\{if visibilityTip\}\}/.test(tplSrc));
+    check('注意条使用醒目底色 + 左侧强调条',
+        /\.visibility-notice\s*\{[^}]*background:\s*#FFF6E0/i.test(tplSrc)
+        && /\.visibility-notice\s*\{[^}]*border-left:\s*6px\s+solid/i.test(tplSrc));
+    const noticeBody = bodyOf(renderHelp());
+    check('渲染结果包含注意条', noticeBody.includes('visibility-notice'));
+    check('注意条只渲染一条', noticeBody.split('visibility-notice').length - 1 === 1);
+    check('注意条位于所有命令分组之后（页面最底部区域）',
+        noticeBody.indexOf('visibility-notice') > noticeBody.lastIndexOf('help-table'));
+    check('模板里注意条写在命令分组循环之外（不与命令条目混排）',
+        /\{\{\/each\}\}\s*<\/div>\s*\{\{if visibilityTip\}\}/.test(tplSrc));
+    check('没有 visibilityTip 时注意条不渲染', !bodyOf(renderHelp({ visibilityTip: null })).includes('visibility-notice'));
 
     // ===== 5. 导入回复的轻提示：只追加一次 =====
     const once = appendScheduleVisibilityTip('✅ 课表导入成功！');
