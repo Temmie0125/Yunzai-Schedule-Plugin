@@ -2,7 +2,7 @@
 // 「所有人课表」（跨群聚合）的可见性与脱敏规则（纯函数，便于单测）
 // - 权限三档：owner 仅 Bot 主人 / ownerAdmin Bot 主人+群管理（默认）/ everyone 所有人
 // - 隐藏三档：everyone 所有人看到脱敏版 / nonMaster 非 Bot 主人脱敏（默认）/ off 不脱敏
-// - 脱敏：头像高斯模糊 + 教室整行不可见（保留占位使卡片高度不变）+ 非本群群友昵称模糊
+// - 脱敏：非本群群友的头像、昵称、教室（地点）一律高斯模糊；本群群友照常显示
 // 拿不到本群成员列表（私聊、官方 Bot 群成员缓存为空）时一律按「非本群」处理，隐私优先。
 
 /** 权限可选项 */
@@ -23,6 +23,8 @@ const ALL_SCHEDULE_PERMISSION_LABELS = {
 export const AVATAR_BLUR_PX = 8;
 /** 昵称模糊半径（px）：4px 仍能依稀辨认字形，8px 对 28px 字号已糊成色块 */
 export const NICKNAME_BLUR_PX = 8;
+/** 教室（地点）模糊半径（px）：与昵称同一档，只模糊文字本身、保留 📍 图标 */
+export const LOCATION_BLUR_PX = 8;
 
 /**
  * 规范化「所有人课表」权限档位
@@ -78,7 +80,7 @@ export function shouldHideAllScheduleInfo(mode, { isMaster = false } = {}) {
  * @param {Array} members 成员数据
  * @param {{hide?: boolean, memberIds?: Set<string>|Iterable<string>|null}} options
  *   hide：是否需要脱敏；memberIds：本群成员 ID 集合（拿不到时传 null/空 → 全部视为非本群）
- * @returns {Array} 浅拷贝后的成员数组，附带 blurAvatar / blurNickname / hideLocation
+ * @returns {Array} 浅拷贝后的成员数组，附带 blurAvatar / blurNickname / blurLocation
  */
 export function applyAllSchedulePrivacy(members, { hide = false, memberIds = null } = {}) {
     const list = Array.isArray(members) ? members : [];
@@ -87,7 +89,7 @@ export function applyAllSchedulePrivacy(members, { hide = false, memberIds = nul
             ...member,
             blurAvatar: false,
             blurNickname: false,
-            hideLocation: false
+            blurLocation: false
         }));
     }
     const ids = memberIds
@@ -98,11 +100,11 @@ export function applyAllSchedulePrivacy(members, { hide = false, memberIds = nul
         const inGroup = ids ? ids.has(String(member.userId)) : false;
         return {
             ...member,
-            // 头像与昵称只对「非本群群友」脱敏：本群群友互相认识，头像与昵称照常显示
+            // 头像、昵称、教室统一只对「非本群群友」高斯模糊：本群群友互相认识，
+            // 这些信息在他们自己的群课表里本来就可见，照常显示即可
             blurAvatar: !inGroup,
             blurNickname: !inGroup,
-            // 教室对所有成员一律隐藏（不区分是否本群）
-            hideLocation: true
+            blurLocation: !inGroup
         };
     });
 }

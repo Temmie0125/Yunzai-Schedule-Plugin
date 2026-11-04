@@ -307,7 +307,8 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
     );
     members.forEach((member, index) => {
         let text = ``
-        // 隐私脱敏（仅「所有人课表」会带上这些标记）：文本无法做高斯模糊，非本群群友昵称以 *** 代替
+        // 隐私脱敏（仅「所有人课表」会带上这些标记）：文本无法做高斯模糊，
+        // 非本群群友的昵称与教室（地点）同样以 *** 代替——地点行照旧输出，保持与其他成员一致
         text += `${index + 1}. ${member.blurNickname ? '***' : member.nickname}`;
         if (member.skipStatus) text += ' [翘课模式]';
         text += `\n   状态: ${member.status}\n`;
@@ -315,23 +316,24 @@ export function generateTextSchedule(members, currentWeek, currentDay) {
         if ((member.status === '无课程' || member.status === '已结束') && member.signature) {
             text += `   签名: ${member.signature}\n`;
         }
+        // 地点脱敏：有地点时输出该行，非本群群友以 *** 代替（与昵称同一处理）
+        const locationLine = (course) => {
+            const location = course?.location;
+            if (!location) return '';
+            return `   地点: ${member.blurLocation ? '***' : location}\n`;
+        };
         if (member.currentCourse) {
             if (member.overlapCourses && member.overlapCourses.length > 1) {
                 // 多课程真实重叠（分身中 / 翘课中+重叠）：逐门输出全部重合课程
                 member.overlapCourses.forEach((course, index) => {
                     text += `   课程${index + 1}: ${course.name}\n`;
                     text += `   时间: ${course.startTime}-${course.endTime}\n`;
-                    // 隐藏教室时不输出地点行
-                    if (course.location && !member.hideLocation) {
-                        text += `   地点: ${course.location}\n`;
-                    }
+                    text += locationLine(course);
                 });
             } else {
                 text += `   课程: ${member.currentCourse.name}\n`;
                 text += `   时间: ${member.currentCourse.startTime}-${member.currentCourse.endTime}\n`;
-                if (member.currentCourse.location && !member.hideLocation) {
-                    text += `   地点: ${member.currentCourse.location}\n`;
-                }
+                text += locationLine(member.currentCourse);
             }
             if (member.remainingTime) {
                 if (member.status === '上课中' || member.status === '分身中' || member.status === '翘课中') {
