@@ -7,6 +7,7 @@ import {
   stopClassReminderScheduler,
   reloadClassReminderScheduler
 } from '../components/ClassReminderScheduler.js';
+import { SchedulePlugin } from '../components/GroupAccess.js';
 
 const MIN_THRESHOLD = 5;
 const MAX_THRESHOLD = 60;
@@ -33,7 +34,7 @@ function bindReminderConfigListener() {
   }
 }
 
-export class ClassReminder extends plugin {
+export class ClassReminder extends SchedulePlugin {
   constructor() {
     super({
       name: "[Schedule] 上课提醒",

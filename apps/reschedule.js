@@ -1,7 +1,8 @@
 import { DataManager } from '../components/DataManager.js'
 import { parseDateInput, parseChineseDateToMD, parseWeekday, getDateByRelativeWeek } from '../utils/timeUtils.js';
+import { SchedulePlugin } from '../components/GroupAccess.js';
 
-export class ScheduleReschedule extends plugin {
+export class ScheduleReschedule extends SchedulePlugin {
     constructor() {
         super({
             name: "[Schedule] 调课管理",

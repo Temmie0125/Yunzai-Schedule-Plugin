@@ -1,6 +1,7 @@
 import { DataManager } from '../components/DataManager.js'
 import { generateHelpImage } from '../components/Renderer.js'
-export class ScheduleHelp extends plugin {
+import { SchedulePlugin } from '../components/GroupAccess.js'
+export class ScheduleHelp extends SchedulePlugin {
     constructor() {
         super({
             name: "[Schedule] 课程表帮助",

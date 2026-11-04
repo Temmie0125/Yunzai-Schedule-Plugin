@@ -4,11 +4,12 @@ import { exec } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import common from '../../../lib/common/common.js'
+import { SchedulePlugin } from '../components/GroupAccess.js'
 
 const PLUGIN_PATH = path.join(process.cwd(), 'plugins/schedule')
 let uping = false
 
-export class ScheduleUpdate extends plugin {
+export class ScheduleUpdate extends SchedulePlugin {
     constructor() {
         super({
             name: '[Schedule] 课程表插件更新',

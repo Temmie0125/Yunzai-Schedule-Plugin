@@ -12,8 +12,9 @@ import {
 } from '../utils/timeUtils.js';
 import { generateUserScheduleImage, generateUserInfoImage, generateWeeklyScheduleImage } from '../components/Renderer.js'
 import { scheduleButtons } from '../components/buttons.js'
+import { SchedulePlugin } from '../components/GroupAccess.js'
 
-export class ScheduleQuery extends plugin {
+export class ScheduleQuery extends SchedulePlugin {
     constructor() {
         super({
             name: "[Schedule] 课程表查询",

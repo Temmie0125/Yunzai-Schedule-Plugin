@@ -7,6 +7,7 @@ import { renderBirthdayList } from '../components/Renderer.js'
 import { makeForwardMsg, checkPermission, getBotName, checkFriend, getMemberName, getAvatarUrl, getGroupMemberMap, shortId } from '../components/common.js'
 import { birthdayButtons } from '../components/buttons.js'
 import { getCurrentDate, getDaysToBirthday, parseBirthdayString, isTodayCelebration, parseLunarBirthdayString, lunarToUpcomingSolarDate, refreshLunarBirthdays, getLunarMonthName, getLunarDayName } from '../utils/timeUtils.js';
+import { SchedulePlugin, isGroupBlocked, filterAccessibleGroupIds } from '../components/GroupAccess.js';
 // 全局键名，避免与其他插件冲突
 const GLOBAL_BIRTHDAY_JOB = '__birthdayPushJob'
 const GLOBAL_BIRTHDAY_CRON = '__birthdayPushCron'
@@ -60,7 +61,7 @@ function bindGlobalListeners() {
     }
 }
 
-export class BirthdayReminder extends plugin {
+export class BirthdayReminder extends SchedulePlugin {
     constructor() {
         super({
             name: "[Schedule] 生日提醒",
@@ -228,6 +229,9 @@ export class BirthdayReminder extends plugin {
             // 白名单为空时，排除黑名单内的群
             return !blacklist.some(b => String(b) === gidStr);
         });
+        // 全局群黑白名单（schedule.yaml 的 groupWhitelist / groupBlacklist）：
+        // 被静默的群连生日祝福也不发，保持“黑名单群内本插件完全不响应”的一致性
+        groupIds = filterAccessibleGroupIds(groupIds);
         if (groupIds && groupIds.length) {
             for (const groupId of groupIds) {
                 if (String(groupId) === 'stdin') continue
@@ -330,6 +334,8 @@ export class BirthdayReminder extends plugin {
     async _deliverPendingPushes(data) {
         try {
             if (typeof data?.reply !== 'function') return
+            // 群黑白名单：被静默的群不参与任何推送/被动送达
+            if (isGroupBlocked(data.group_id)) return
             const key = data.group_id ? `group:${data.group_id}` : (data.user_id ? `user:${data.user_id}` : null)
             if (!key) return
             const list = this._pendingPushes[key]

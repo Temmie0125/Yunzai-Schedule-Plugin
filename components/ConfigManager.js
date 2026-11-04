@@ -95,13 +95,20 @@ export class ConfigManager {
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
             urlImportEnabled: true,  // URL直链导入总开关
-            birthdayCustomName: true  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称
+            birthdayCustomName: true,  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称
+            // 全局群黑白名单：命中的群聊本插件完全不响应（不回复任何提示，也不影响其他插件）
+            // 白名单为空表示不限制；白名单非空时只有白名单内的群可用（与生日黑白名单口径一致）
+            groupWhitelist: [],   // 只在这些群工作
+            groupBlacklist: []    // 这些群完全不响应（白名单优先）
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
         // 确保新增字段存在（防止旧配置没有这两个字段）
         if (!config.birthdayWhitelistGroups) config.birthdayWhitelistGroups = [];
         if (!config.birthdayBlacklistGroups) config.birthdayBlacklistGroups = [];
+        // 全局群黑白名单兜底（旧配置没有这两个字段）
+        if (!Array.isArray(config.groupWhitelist)) config.groupWhitelist = [];
+        if (!Array.isArray(config.groupBlacklist)) config.groupBlacklist = [];
         if (config.wakeupServiceUrl === undefined) config.wakeupServiceUrl = "https://wakeup.cpc.cn.eu.org/";
         if (config.wakeupApiEndpoint === undefined) config.wakeupApiEndpoint = "/parse";
         if (config.wakeupAuthType === undefined) config.wakeupAuthType = "Bearer";
@@ -272,7 +279,8 @@ export class ConfigManager {
             botName, font,
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             allSchedulePermission, allSchedulePrivacy,
-            watchFiles, urlImportEnabled, birthdayCustomName
+            watchFiles, urlImportEnabled, birthdayCustomName,
+            groupWhitelist, groupBlacklist
         } = data;
         const configToSave = {
             pushHour,
@@ -291,7 +299,8 @@ export class ConfigManager {
             botName, font,
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             allSchedulePermission, allSchedulePrivacy,
-            watchFiles, urlImportEnabled, birthdayCustomName
+            watchFiles, urlImportEnabled, birthdayCustomName,
+            groupWhitelist, groupBlacklist
         };
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {

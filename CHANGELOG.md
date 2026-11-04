@@ -4,6 +4,7 @@
 
 ### 新增
 
+- 新增**全局群黑白名单**：配置项 `groupWhitelist` / `groupBlacklist`（Guoba 可视化选择群，支持官方Bot复合群ID，热更新无需重启）。名单内的群（以及白名单非空时名单外的群）本插件**完全静默**——不回复任何提示，也不会向该群发送生日祝福。实现为全部 app 的插件类统一继承 `components/GroupAccess.js` 的 `SchedulePlugin` 基类：构造时给每条 rule 套一层闸门（命中时返回 `false`，宿主会继续把消息交给其他插件；不改写 `rule.fnc`，日志中仍是原方法名），上下文回调经 `getContext` 拦截，生日主动推送经 `filterAccessibleGroupIds` 过滤。私聊不受限制；配置读取带 3 秒缓存，避免每条规则都同步读盘解析 YAML。新增测试 `test/test-group-access.js`
 - 「所有人课表」（`#所有人在上什么课` / `#全局课表`）**使用权限可配置**：新增配置项 `allSchedulePermission`，三档可选——`owner` 仅 Bot 主人、`ownerAdmin` Bot 主人 + 群主/群管理员（默认，与原行为一致）、`everyone` 所有人（含私聊）；无权限时的提示文案随档位变化。支持 Guoba 可视化配置
 - 「所有人课表」**隐私脱敏**：新增配置项 `allSchedulePrivacy`，三档可选——`everyone` 所有人看到脱敏版、`nonMaster` 非 Bot 主人脱敏（默认）、`off` 都不隐藏。需要脱敏时：
   - **非本群群友的头像与昵称高斯模糊**（`blur(8px)`；昵称只模糊文字本身、保留前面的箭头装饰），本群群友的头像与昵称照常显示；
@@ -11,6 +12,10 @@
   - 教室**整行不显示但保留占位**（`visibility: hidden`，卡片高度与未隐藏时一致）。
   本群成员判定取当前群成员列表，拿不到时（私聊触发、官方 Bot 群成员缓存为空）一律按非本群处理；文本降级输出同步（昵称以 `***` 代替、不输出地点行）。该策略只作用于「所有人课表」，`#clstb` 群课表不受影响。规则实现为纯函数 `utils/privacyUtils.js`，新增测试 `test/test-all-schedule-privacy.js`
 - 新增导出 `isGroupManager(e)`（只判断群主/群管理员、不含 Bot 主人），`checkPermission` 改为复用它
+
+### 修复
+
+- 修复 `#清除课表` 后**群课表里仍留着一张「今日暂无课程」空卡片**的问题：旧实现只清空 `courses`、课表文件留着，而群课表/所有人课表的成员来源就是 `data/<id>.json` 文件本身。现在 `DataManager.removeUserSchedule()` 直接删除课表数据文件，清除后立即从群课表消失；昵称与个性签名在删除前转入新增的 `data/user-profiles.json` 保留，重新导入课表时自动恢复（不再有“彻底删除会丢签名”的顾虑）。`saveUserNickname`/`saveUserSignature` 在没有课表时只写用户资料，不再生成空课表文件（避免清除后改昵称让空卡片复活）；群课表对没有课程记录的成员统一按“未设置课表”处理，历史遗留的空课表文件同样不再显示。新增测试 `test/test-clear-schedule.js`
 
 ## [1.2.0] - 2026-10-19
 

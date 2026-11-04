@@ -20,6 +20,7 @@ import {
     parseSemesterStartDate,
     formatDate
 } from '../utils/timeUtils.js';
+import { SchedulePlugin } from '../components/GroupAccess.js';
 
 // 直链导入教程图（tmpfile.link 上传指引截图）
 const URL_GUIDE_IMAGE = path.join(process.cwd(), 'plugins', 'schedule', 'resources', 'images', 'url_guide.png')
@@ -29,7 +30,7 @@ const RECV_SETTING_TEXT = {
     only_mention: '仅接收@消息',
     mention_and_context: '仅接收@与上下文消息'
 }
-export class ScheduleManage extends plugin {
+export class ScheduleManage extends SchedulePlugin {
     constructor() {
         super({
             name: "[Schedule] 课程表管理",

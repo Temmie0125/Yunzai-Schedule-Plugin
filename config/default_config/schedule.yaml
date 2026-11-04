@@ -76,3 +76,9 @@ watchFiles: false
 urlImportEnabled: true
 # 生日列表允许使用自定义昵称，关闭则同步QQ昵称
 birthdayCustomName: true
+# ===== 全局群黑白名单 =====
+# 命中的群聊本插件「完全不响应」（不回复任何提示，也不影响其他插件工作）
+# 白名单为空 = 不限制；白名单非空时只有白名单内的群可用（白名单优先）
+# 群号按字符串填写；官方Bot的复合群ID（形如 botUin:OpenID）同样支持
+groupWhitelist: []
+groupBlacklist: []

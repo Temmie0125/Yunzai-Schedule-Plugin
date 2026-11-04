@@ -6,6 +6,7 @@ import { ConfigManager } from '../components/ConfigManager.js'
 import { generateUserScheduleImage } from '../components/Renderer.js'
 import { calculateWeekFromDate } from '../utils/timeUtils.js'
 import { checkHolidayUpdate } from '../services/holidayUpdater.js'
+import { SchedulePlugin } from '../components/GroupAccess.js'
 const config = ConfigManager.getConfig()
 const pushCron = config.pushCron  // 存储 cron 供 task 使用
 
@@ -31,7 +32,7 @@ function bindPushConfigListener() {
   }
 }
 
-export class SchedulePush extends plugin {
+export class SchedulePush extends SchedulePlugin {
   constructor() {
     super({
       name: "[Schedule] 课程表推送",

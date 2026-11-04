@@ -6,8 +6,9 @@ import { getGroupMembers, getGroupMemberMap, getAvatarUrl, getBotName, makeForwa
 import { scheduleButtons } from '../components/buttons.js'
 import { generateScheduleImage, generateTextSchedule } from '../components/Renderer.js'
 import { canUseAllSchedule, shouldHideAllScheduleInfo, applyAllSchedulePrivacy } from '../utils/privacyUtils.js'
+import { SchedulePlugin } from '../components/GroupAccess.js'
 import { calculateCurrentWeek, calculateRemainingTime, calculateTimeUntil, calculateWeekFromDate, calculateDateFromWeekAndDay, timeToMinutes, compareByStartTime, computeBoundaryMinutes, compareByTimeDistance, computeAvatarProgress, buildCourseDots } from '../utils/timeUtils.js'
-export class GroupSchedulePlugin extends plugin {
+export class GroupSchedulePlugin extends SchedulePlugin {
   constructor() {
     super({
       name: "[Schedule] 群课表查询",
