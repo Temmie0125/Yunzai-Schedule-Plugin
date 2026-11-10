@@ -5,6 +5,8 @@ import fs from 'fs'
 import path from 'path'
 import common from '../../../lib/common/common.js'
 import { SchedulePlugin } from '../components/GroupAccess.js'
+import { ConfigManager } from '../components/ConfigManager.js'
+import { normalizeBranchName, pickRemote, buildUpdateCommands } from '../utils/updateBranch.js'
 
 const PLUGIN_PATH = path.join(process.cwd(), 'plugins/schedule')
 let uping = false
@@ -67,21 +69,25 @@ export class ScheduleUpdate extends SchedulePlugin {
     async runUpdate(isForce) {
         await this.ensureGitignore();
         const oldPkg = await this.getPackageJsonContent();
-        const branch = await this.getCurrentBranch();
         const repoPath = PLUGIN_PATH;
-        let command;
+        const config = ConfigManager.getConfig();
+        const currentBranch = await this.getCurrentBranch();
+        const remote = pickRemote(await this.listRemotes());
+        // 目标分支：Guoba 里选了就用选的，留空则跟随插件当前所在分支
+        const branch = normalizeBranchName(config.updateBranch) || currentBranch;
+        if (!remote) {
+            await this.reply('未找到可用的 git 远端（origin 等），请检查插件仓库配置');
+            return false;
+        }
+        const switching = branch !== currentBranch;
+        const switchNote = switching ? `，将切换到该分支` : '';
         if (isForce) {
-            command = [
-                `git -C "${repoPath}" fetch --all --prune`,
-                `git -C "${repoPath}" reset --hard origin/${branch}`,
-                `git -C "${repoPath}" clean -fd`
-            ].join(' && ');
-            await this.reply('开始强制更新，将丢弃所有本地修改...');
+            await this.reply(`开始强制更新（分支：${branch}${switchNote}），将丢弃所有本地修改...`);
         } else {
-            command = `git -C "${repoPath}" pull --no-rebase`;
-            await this.reply('开始更新课程表插件...');
+            await this.reply(`开始更新课程表插件（分支：${branch}${switchNote}）...`);
         }
         const oldCommit = await this.getCommitId();
+        const command = buildUpdateCommands({ repoPath, remote, branch, isForce }).join(' && ');
         const { error, stdout, stderr } = await this.execAsync(command);
         if (error) {
             logger.error(`git 命令执行失败: ${error}`);
@@ -198,9 +204,15 @@ export class ScheduleUpdate extends SchedulePlugin {
         const cmd = `git -C "${PLUGIN_PATH}" symbolic-ref --short HEAD`
         const { stdout, error } = await this.execAsync(cmd)
         if (error) return 'main'  // 默认分支
-        const branch = stdout.trim()
         // 校验分支名只包含安全字符，避免拼接到 shell 命令时被注入
-        return /^[\w./-]+$/.test(branch) ? branch : 'main'
+        return normalizeBranchName(stdout) || 'main'
+    }
+
+    // 列出 git 远端（无 origin 时也能用，例如只配了 github）
+    async listRemotes() {
+        const { stdout, error } = await this.execAsync(`git -C "${PLUGIN_PATH}" remote`)
+        if (error) return []
+        return stdout.split('\n').map(name => name.trim()).filter(Boolean)
     }
 
     // 获取当前 commit id
@@ -242,15 +254,22 @@ export class ScheduleUpdate extends SchedulePlugin {
 
     // 处理 git 错误
     async handleGitError(error, stdout, stderr) {
+        const message = String(error?.message || '')
+        const output = `${message}${stdout || ''}${stderr || ''}`
         let msg = '更新失败'
-        if (error.message.includes('Timed out')) {
+        if (message.includes('Timed out')) {
             msg += '：连接超时'
-        } else if (error.message.includes('Failed to connect') || error.message.includes('unable to access')) {
+        } else if (message.includes('Failed to connect') || message.includes('unable to access')) {
             msg += '：网络连接失败'
-        } else if (stdout.includes('CONFLICT') || error.message.includes('be overwritten by merge')) {
+        } else if (output.includes('CONFLICT') || message.includes('be overwritten by merge')) {
             msg += '：存在冲突，请先解决冲突或使用强制更新'
+        } else if (/did not match any|pathspec|unknown revision|not found in upstream/i.test(output)) {
+            // 最常见的原因是「更新分支」填了远端不存在的分支名
+            msg += '：分支不存在或远端没有该分支，请检查 Guoba 里「更新分支」的填写（例如 main）'
+        } else if (/local changes|would be overwritten|overwritten by checkout/i.test(output)) {
+            msg += '：本地有未提交的改动导致无法切换分支，请先提交/还原改动，或使用 #课表强制更新'
         } else {
-            msg += `：${error.message}`
+            msg += `：${message}`
         }
         await this.reply(msg)
     }
