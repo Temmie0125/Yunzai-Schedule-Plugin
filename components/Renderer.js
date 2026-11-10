@@ -380,12 +380,15 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
         hasRescheduled: userData.hasRescheduled || false,
         courses: userData.courses.map(c => ({
             name: c.name,
-            teacher: c.teacher || '未知教师',
+            // 活动没有教师，留空让模板不渲染教师行
+            teacher: c.isActivity ? (c.teacher || '') : (c.teacher || '未知教师'),
             startTime: c.startTime,
             endTime: c.endTime,
             location: c.location || '未知地点',
             rescheduled: c.rescheduled || false,
-            originalDate: c.originalDate || ''
+            originalDate: c.originalDate || '',
+            // 活动（会议/考试等）在卡片上带「活动」标签
+            isActivity: c.isActivity === true
         })),
         updateTime: new Date().toLocaleString('zh-CN')
     };

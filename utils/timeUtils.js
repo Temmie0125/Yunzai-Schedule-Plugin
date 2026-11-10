@@ -256,6 +256,112 @@ export function computeAvatarProgress(startTime, endTime, nowMinutes) {
     return Math.min(1, Math.max(0, elapsed))
 }
 
+// ===== 活动（会议/活动/考试等临时安排）的时间解析 =====
+
+/**
+ * 判断 "HH:MM" 是否为合法时间
+ * @param {string} time
+ * @returns {boolean}
+ */
+export function isValidHm(time) {
+    if (typeof time !== 'string') return false
+    const match = time.trim().match(/^(\d{1,2}):(\d{2})$/)
+    if (!match) return false
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+}
+
+/**
+ * 解析时间段的一侧：1000 / 930 / 10 / 10:00
+ */
+function parseTimeSide(digits, minutePart) {
+    if (minutePart !== undefined) {
+        const hour = Number(digits)
+        const minute = Number(minutePart)
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null
+        if (!Number.isInteger(minute) || minute < 0 || minute > 59) return null
+        return { hour, minute }
+    }
+    if (digits.length >= 3) {
+        // 紧凑写法：1000 → 10:00，930 → 09:30
+        const hour = Number(digits.slice(0, digits.length - 2))
+        const minute = Number(digits.slice(-2))
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null
+        if (!Number.isInteger(minute) || minute < 0 || minute > 59) return null
+        return { hour, minute }
+    }
+    const hour = Number(digits)
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null
+    return { hour, minute: 0 }
+}
+
+/**
+ * 解析时间段：1000-1600 / 930-1130 / 10:00-16:00 / 10:00~12:00 / 10 至 12
+ * @param {string} input
+ * @returns {{ startTime: string, endTime: string }|null} 补零后的 HH:MM；非法或结束不晚于开始时返回 null
+ */
+export function parseTimeRange(input) {
+    const text = String(input ?? '').trim()
+    const match = text.match(/^(\d{1,4})(?:[:：](\d{2}))?\s*[-~～—至到]\s*(\d{1,4})(?:[:：](\d{2}))?$/)
+    if (!match) return null
+    const start = parseTimeSide(match[1], match[2])
+    const end = parseTimeSide(match[3], match[4])
+    if (!start || !end) return null
+    const startMinutes = start.hour * 60 + start.minute
+    const endMinutes = end.hour * 60 + end.minute
+    if (endMinutes <= startMinutes) return null
+    const toHm = (side) => `${String(side.hour).padStart(2, '0')}:${String(side.minute).padStart(2, '0')}`
+    return { startTime: toHm(start), endTime: toHm(end) }
+}
+
+/**
+ * 归一化时间为补零的 "HH:MM"（在 normalizeHM 之上额外接受紧凑写法 1000 / 930）
+ * 用于活动这类可能来自用户输入或外部 JSON 的时间字段
+ * @param {string} value
+ * @returns {string} 归一化后的 HH:MM；无法解析时原样返回
+ */
+export function normalizeTimeValue(value) {
+    if (typeof value !== 'string') return value
+    const text = value.trim()
+    const compact = text.match(/^(\d{3,4})$/)
+    if (compact) {
+        const side = parseTimeSide(compact[1], undefined)
+        if (side) {
+            return `${String(side.hour).padStart(2, '0')}:${String(side.minute).padStart(2, '0')}`
+        }
+    }
+    return normalizeHM(text)
+}
+
+/**
+ * 解析活动日期：20261112 / 2026-11-12 / 2026/11/12 / 11-12（按学期开始年份推断）
+ * @param {string} input
+ * @param {string} [semesterStart] 用于补全年份的学期开始日期
+ * @returns {Date|null} 当天 00:00
+ */
+export function parseActivityDate(input, semesterStart) {
+    const text = String(input ?? '').trim()
+    if (!text) return null
+    // 紧凑写法 20261112
+    const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/)
+    if (compact) {
+        const year = Number(compact[1])
+        const month = Number(compact[2])
+        const day = Number(compact[3])
+        const date = new Date(year, month - 1, day)
+        if (date.getFullYear() === year && date.getMonth() + 1 === month && date.getDate() === day) {
+            date.setHours(0, 0, 0, 0)
+            return date
+        }
+        return null
+    }
+    const date = parseDateInput(text, semesterStart)
+    if (!date) return null
+    date.setHours(0, 0, 0, 0)
+    return date
+}
+
 // ===== 今日课程节数圆点 =====
 /** 圆点最多展示数量（超出时把两端的「已上完 / 即将上」合并成数字） */
 export const MAX_COURSE_DOTS = 6;
@@ -263,18 +369,20 @@ export const MAX_COURSE_DOTS = 6;
 /**
  * 生成「今天上课节数」的分色圆点数据（纯函数，便于单测）
  * 每门课按当前时刻判定为：finished 已上完 / ongoing 正在上 / upcoming 即将上 / skipped 已翘课
+ * 活动（isActivity）额外带 `-activity` 后缀，渲染成空心圈以便与课程区分
  * 课程数超过上限时，以「当前时刻」为中心取窗口，保证正在上/已翘课的圆点始终可见，
  * 两端被省略的部分分别以 hiddenPast（已上完）、hiddenFuture（即将上）的数字表示
- * @param {Array} courses 当日课程（按开始时间升序），每项含 startTime/endTime
+ * @param {Array} courses 当日课程（按开始时间升序），每项含 startTime/endTime，可选 isActivity
  * @param {number} nowMinutes 当前时间（当日分钟数）
  * @param {{skippedCourses?: Array, maxDots?: number}} [options]
  *   skippedCourses：被标记为「已翘课」的课程对象（引用相等）
  * @returns {{visible: string[], hiddenPast: number, hiddenFuture: number, total: number}}
+ *   visible 中的元素形如 finished / ongoing / upcoming / skipped，活动为 finished-activity 等
  */
 export function buildCourseDots(courses, nowMinutes, { skippedCourses = [], maxDots = MAX_COURSE_DOTS } = {}) {
     const list = Array.isArray(courses) ? courses : [];
     const now = Number.isFinite(nowMinutes) ? nowMinutes : null;
-    const states = list.map(course => {
+    const baseStates = list.map(course => {
         const start = timeToMinutes(course?.startTime);
         const end = timeToMinutes(course?.endTime);
         // 时间无法解析时按「即将上」处理，避免误显示为正在上
@@ -283,6 +391,8 @@ export function buildCourseDots(courses, nowMinutes, { skippedCourses = [], maxD
         if (start > now) return 'upcoming';
         return skippedCourses.includes(course) ? 'skipped' : 'ongoing';
     });
+    // 活动用「同状态 + -activity」后缀表达：模板只需拼 class，无需额外分支
+    const states = baseStates.map((state, index) => (list[index]?.isActivity ? `${state}-activity` : state));
     const total = states.length;
     if (total === 0) return { visible: [], hiddenPast: 0, hiddenFuture: 0, total: 0 };
 
@@ -290,8 +400,8 @@ export function buildCourseDots(courses, nowMinutes, { skippedCourses = [], maxD
     if (total <= limit) return { visible: states, hiddenPast: 0, hiddenFuture: 0, total };
 
     // 以「正在上/已翘课」为锚点居中取窗口；当天已全部结束时贴住末尾
-    const focusIndex = states.findIndex(s => s === 'ongoing' || s === 'skipped');
-    const upcomingIndex = states.findIndex(s => s === 'upcoming');
+    const focusIndex = baseStates.findIndex(s => s === 'ongoing' || s === 'skipped');
+    const upcomingIndex = baseStates.findIndex(s => s === 'upcoming');
     const center = focusIndex !== -1 ? focusIndex : (upcomingIndex !== -1 ? upcomingIndex : total - 1);
     const start = Math.max(0, Math.min(center - Math.floor((limit - 1) / 2), total - limit));
     return {
@@ -631,6 +741,40 @@ export function formatDate(date) {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+}
+
+/**
+ * 归一化为 YYYY-MM-DD 字符串（接受 Date / "YYYY-MM-DD" / "YYYY/M/D" / "20261112"）
+ * 无法解析时返回 null（用于活动日期这类只需要“日期”而不需要时间的场景）
+ * @param {Date|string|number} value
+ * @returns {string|null}
+ */
+export function normalizeDateOnly(value) {
+    if (value instanceof Date) {
+        if (isNaN(value)) return null;
+        return formatDate(value);
+    }
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+    const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (compact) {
+        const year = Number(compact[1]);
+        const month = Number(compact[2]);
+        const day = Number(compact[3]);
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() !== year || date.getMonth() + 1 !== month || date.getDate() !== day) return null;
+        return formatDate(date);
+    }
+    const separated = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (separated) {
+        const year = Number(separated[1]);
+        const month = Number(separated[2]);
+        const day = Number(separated[3]);
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() !== year || date.getMonth() + 1 !== month || date.getDate() !== day) return null;
+        return formatDate(date);
+    }
+    return null;
 }
 
 // ========== 农历生日相关 ==========

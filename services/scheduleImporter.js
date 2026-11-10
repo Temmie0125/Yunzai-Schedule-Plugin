@@ -435,6 +435,10 @@ export async function importScheduleFromJsonData(userId, jsonData, event) {
       courses: courses,
       updateTime: new Date().toISOString()
     };
+    // 导入内容里带活动时一并替换（不带 activities 字段则沿用文件里已有的活动，避免误清空）
+    if (Array.isArray(jsonData.activities)) {
+      scheduleData.activities = DataManager.normalizeActivities(jsonData.activities);
+    }
     // 保存
     DataManager.saveSchedule(userId, scheduleData, nickname, signature);
     // 如果导入的数据包含时间表配置，同步保存

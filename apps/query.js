@@ -452,10 +452,13 @@ export class ScheduleQuery extends SchedulePlugin {
                 : '--';
             const isToday = targetDate && targetDate.getTime() === today.getTime();
 
-            // 筛选该天的课程
-            const dayCourses = schedule.courses.filter(c =>
+            // 筛选该天的课程，并并入当天添加的活动（会议/活动/考试等）
+            let dayCourses = schedule.courses.filter(c =>
                 parseInt(c.day) === d && c.weeks.includes(week)
             );
+            if (targetDate) {
+                dayCourses = DataManager.withDayActivities(dayCourses, schedule, targetDate);
+            }
             dayCourses.sort(compareByStartTime);
 
             days.push({
@@ -469,7 +472,8 @@ export class ScheduleQuery extends SchedulePlugin {
                     endTime: c.endTime,
                     location: c.location || '',
                     rescheduled: c.rescheduled || false,
-                    originalDate: c.originalDate || ''
+                    originalDate: c.originalDate || '',
+                    isActivity: c.isActivity === true
                 }))
             });
         }
