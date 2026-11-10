@@ -139,9 +139,10 @@ check('圆点：省略的已上完用 ×N 表示', dotsCard.includes('×2'));
 check('圆点：省略的即将上用 +N 表示', dotsCard.includes('+1'));
 check('圆点：与剩余时长同一行（course-meta 内）', /class="course-meta"[\s\S]{0,400}remaining-time[\s\S]{0,400}course-dots/.test(dotsCard));
 check('圆点：圆点靠右（CSS margin-left: auto）', /\.course-dots\s*\{[^}]*margin-left:\s*auto/.test(tplSrc));
-// 配色与尺寸：四态高对比、正在上放大、已上完偏灰（不再用 opacity 淡化，避免小圆点糊在一起）
+// 配色与尺寸：四态高对比、正在上放大、已上完为鲜绿实色（不再用 opacity 淡化，避免小圆点糊在一起）
+// 注：34e8fe9 把已上完的圆点从偏灰 #82A696 改成了鲜绿 #00C86E，测试同步到这里
 const dotRule = (cls) => tplSrc.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`))?.[1] || '';
-check('圆点：已上完用偏灰配色（灰绿）', /#82A696/i.test(dotRule('dot-finished')));
+check('圆点：已上完用鲜绿实色 #00C86E', /#00C86E/i.test(dotRule('dot-finished')));
 check('圆点：已上完不再使用 opacity 淡化', !/opacity/.test(dotRule('dot-finished')));
 check('圆点：即将上为饱和蓝（不再 opacity 淡化）',
     /#3949AB/i.test(dotRule('dot-upcoming')) && !/opacity/.test(dotRule('dot-upcoming')));
