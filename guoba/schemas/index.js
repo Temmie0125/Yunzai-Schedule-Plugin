@@ -367,83 +367,7 @@ export const schemas = [
         defaultValue: false,
         bottomHelpMessage: "开启后，在群内且Bot有管理员权限时，将自动撤回用户发送的口令消息"
     },
-    // 分组
-    {
-        component: "SOFT_GROUP_BEGIN",
-        label: "生日模块设置"
-    },
-    {
-        component: 'Divider',
-        label: '基础设置'
-    },
-    {
-        field: "birthdayPushHour",
-        label: "推送时间",
-        component: "InputNumber",
-        helpMessage: "设置每天几点推送生日提醒",
-        required: true,
-        componentProps: {
-            min: 0,
-            max: 23,
-            step: 1,
-            placeholder: '请输入0-23的小时数',
-            addonAfter: '点'
-        },
-        defaultValue: 0,                      // 默认0点
-        bottomHelpMessage: "设置每天几点推送生日提醒。例如：0 表示每天0点推送。"
-    },
-    {
-        field: "allowSelfModify",
-        label: "允许修改生日",
-        helpMessage: "是否允许成员重新设置生日",
-        component: "Switch",
-        defaultValue: true,
-        bottomHelpMessage: "开启后，成员可以自行重新设置或清除生日以进行修改"
-    },
-    {
-        field: "showQQ",
-        label: "展示QQ号",
-        helpMessage: "是否在生日列表卡片中展示成员QQ号。",
-        component: "Switch",
-        defaultValue: true,
-        bottomHelpMessage: "开启后，会在生日列表卡片的头像下方显示QQ号。"
-    },
-    {
-        field: "birthdayCustomName",
-        label: "允许自定义昵称",
-        helpMessage: "是否允许成员使用自定义昵称来显示生日信息。",
-        component: "Switch",
-        defaultValue: true,
-        bottomHelpMessage: "开启后，成员可使用 #生日修改昵称 自定义生日提醒的显示名称。关闭后，生日名称将强制同步为QQ昵称，所有已存储的自定义昵称也会被QQ昵称覆盖。"
-    },
-    {
-        component: 'Divider',
-        label: '群单独设置'
-    },
-    {
-        field: "birthdayWhitelistGroups",
-        label: "白名单群",
-        helpMessage: "填写时仅对这些群生效",
-        component: "GSelectGroup",
-        componentProps: {
-            placeholder: "选择需要推送生日提醒的群（留空则推送所有群）",
-            mode: "multiple"   // 多选
-        },
-        defaultValue: [],
-        bottomHelpMessage: "仅在这些群中发送生日祝福。留空则所有群都会尝试推送（但会被黑名单排除）。"
-    },
-    {
-        field: "birthdayBlacklistGroups",
-        label: "黑名单群",
-        helpMessage: "填写时跳过这些群聊。会被白名单覆盖。",
-        component: "GSelectGroup",
-        componentProps: {
-            placeholder: "选择不推送生日提醒的群",
-            mode: "multiple"
-        },
-        defaultValue: [],
-        bottomHelpMessage: "这些群将不会收到生日祝福。白名单优先：如果白名单非空，黑名单无效。"
-    },
+    // ===== 以下归入「课表模块设置」分组（原先错放在生日分组下）=====
     {
         component: 'Divider',
         label: '全局群黑白名单'
@@ -521,5 +445,82 @@ export const schemas = [
         component: "Switch",
         defaultValue: false,
         bottomHelpMessage: "默认禁止绑定内网/本机日历地址，避免把 Bot 当成内网探测器。只有用户自建 CalDAV 在内网时才需要打开。"
-    }
+    },
+    // 分组
+    {
+        component: "SOFT_GROUP_BEGIN",
+        label: "生日模块设置"
+    },
+    {
+        component: 'Divider',
+        label: '基础设置'
+    },
+    {
+        field: "birthdayPushHour",
+        label: "推送时间",
+        component: "InputNumber",
+        helpMessage: "设置每天几点推送生日提醒",
+        required: true,
+        componentProps: {
+            min: 0,
+            max: 23,
+            step: 1,
+            placeholder: '请输入0-23的小时数',
+            addonAfter: '点'
+        },
+        defaultValue: 0,                      // 默认0点
+        bottomHelpMessage: "设置每天几点推送生日提醒。例如：0 表示每天0点推送。"
+    },
+    {
+        field: "allowSelfModify",
+        label: "允许修改生日",
+        helpMessage: "是否允许成员重新设置生日",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "开启后，成员可以自行重新设置或清除生日以进行修改"
+    },
+    {
+        field: "showQQ",
+        label: "展示QQ号",
+        helpMessage: "是否在生日列表卡片中展示成员QQ号。",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "开启后，会在生日列表卡片的头像下方显示QQ号。"
+    },
+    {
+        field: "birthdayCustomName",
+        label: "允许自定义昵称",
+        helpMessage: "是否允许成员使用自定义昵称来显示生日信息。",
+        component: "Switch",
+        defaultValue: true,
+        bottomHelpMessage: "开启后，成员可使用 #生日修改昵称 自定义生日提醒的显示名称。关闭后，生日名称将强制同步为QQ昵称，所有已存储的自定义昵称也会被QQ昵称覆盖。"
+    },
+    {
+        component: 'Divider',
+        label: '群单独设置'
+    },
+    {
+        field: "birthdayWhitelistGroups",
+        label: "白名单群",
+        helpMessage: "填写时仅对这些群生效",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择需要推送生日提醒的群（留空则推送所有群）",
+            mode: "multiple"   // 多选
+        },
+        defaultValue: [],
+        bottomHelpMessage: "仅在这些群中发送生日祝福。留空则所有群都会尝试推送（但会被黑名单排除）。"
+    },
+    {
+        field: "birthdayBlacklistGroups",
+        label: "黑名单群",
+        helpMessage: "填写时跳过这些群聊。会被白名单覆盖。",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择不推送生日提醒的群",
+            mode: "multiple"
+        },
+        defaultValue: [],
+        bottomHelpMessage: "这些群将不会收到生日祝福。白名单优先：如果白名单非空，黑名单无效。"
+    },
 ];
