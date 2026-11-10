@@ -431,31 +431,6 @@
             background: #DB6F2D;
         }
 
-        /* 全天事件行（不参与「分身中」等时间判定，只在这里标注） */
-        .all-day-line {
-            display: flex;
-            align-items: baseline;
-            gap: 6px;
-            font-size: 17px;
-            color: #5a6b7b;
-            background: #f4f8fb;
-            border-left: 3px solid #9bb7c9;
-            border-radius: 6px;
-            padding: 4px 10px;
-            margin-bottom: 6px;
-        }
-
-        .all-day-line .all-day-icon {
-            flex: 0 0 auto;
-            font-size: 17px;
-        }
-
-        .all-day-line .all-day-text {
-            flex: 1;
-            min-width: 0;
-            word-break: break-word;
-        }
-
         /* 活动（会议/活动/考试等）用空心圈区分：与课程同色描边、内部透明，尺寸略大保证空心可辨 */
         .dot-finished-activity {
             width: 10px;
@@ -815,14 +790,6 @@
                     <div class="member-signature">💭 {{member.signature}}</div>
                     {{/if}}
                     {{/if}}
-                    {{/if}}
-
-                    <!-- 全天事件（日历同步来的节假日/运动会等）：不参与时间判定，单独标注 -->
-                    {{if member.allDayActivities && member.allDayActivities.length}}
-                    <div class="all-day-line">
-                        <span class="all-day-icon">📅</span>
-                        <span class="all-day-text">全天：{{member.allDayActivitiesText}}</span>
-                    </div>
                     {{/if}}
 
                     <!-- 今日课程节数圆点：紧跟剩余时长/签名行右侧；课程多时两端以数字省略 -->

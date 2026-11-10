@@ -130,9 +130,18 @@ try {
     const allDayMember = await groupPlugin.getMemberScheduleData('10003', { card: '小明' }, weekday, '10:30');
     check('全天事件不会把状态挤成「分身中」', allDayMember?.status === '上课中');
     check('当前课程是真正的课程而非全天事件', allDayMember?.currentCourse?.name === '高等数学');
-    check('全天事件单独标注出来（含名称）',
-        allDayMember?.allDayActivitiesText?.includes('运动会'));
     check('全天事件不进入今日圆点', allDayMember?.courseDots?.total === 2);
+    // 群课表卡片是网格排版：全天事件不另起一行，避免改掉卡片高度、和同排成员错位
+    const art = (await import('art-template')).default;
+    const tplPath = path.join(import.meta.dirname, '..', 'resources/template/schedule-template.html');
+    const cardBody = art(tplPath, {
+        weekday: '三', currentTime: '10:30', updateTime: 'x', columns: 2, canvasWidth: 1080,
+        totalMembers: 1, studyingCount: 1, skippingCount: 0,
+        members: [{ ...allDayMember, avatar: 'data:,', avatarBorderMode: 'off' }],
+        _fontInlineUrl: 'data:,', _fontFormat: 'opentype'
+    }).split('<body>')[1] || '';
+    check('群课表卡片里不出现全天标注（不改变卡片高度）', !cardBody.includes('全天'));
+    check('群课表卡片仍然正常渲染当日课程', cardBody.includes('高等数学'));
     const allDayText = formatCourses([
         { name: '运动会', teacher: '', location: '', startTime: '00:00', endTime: '23:59', allDay: true }
     ], 2, weekday, '小明');
