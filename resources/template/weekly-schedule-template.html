@@ -173,6 +173,22 @@
             margin-left: 6px;
             vertical-align: middle;
         }
+        /* 活动（会议/活动/考试等）：与课程同排版，仅用左侧青绿标记 + 「活动」标签区分 */
+        .activity-item {
+            background: #f2fbf9;
+            border-left: 3px solid #00897B;
+            padding-left: 17px;
+        }
+        .activity-badge {
+            display: inline-block;
+            font-size: 14px;
+            background: #00897B;
+            color: white;
+            padding: 1px 8px;
+            border-radius: 10px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
         .no-courses {
             padding: 14px 20px;
             font-size: 17px;
@@ -239,9 +255,12 @@
                 </div>
                 <div class="day-courses">
                     {{each day.courses course}}
-                    <div class="course-item {{if course.rescheduled}}rescheduled-item{{/if}}">
+                    <div class="course-item {{if course.rescheduled}}rescheduled-item{{/if}}{{if course.isActivity}} activity-item{{/if}}">
                         <span class="course-name">
                             {{if course.rescheduled}}🔄 {{/if}}{{course.name}}
+                            {{if course.isActivity}}
+                            <span class="activity-badge">活动</span>
+                            {{/if}}
                             {{if course.rescheduled}}
                             <span class="reschedule-badge">调课·{{course.originalDate}}</span>
                             {{/if}}

@@ -52,8 +52,11 @@ export class GroupSchedulePlugin extends SchedulePlugin {
     const userCurrentWeek = hasValidStart
       ? calculateWeekFromDate(semesterStart, new Date())
       : calculateCurrentWeek(semesterStart);
-    // 学期未开始：不展示任何课程，等待开学
-    if (hasValidStart && userCurrentWeek === null) {
+    // 今天添加的活动（会议/活动/考试等）：学期未开始或已结束时也要能展示出来
+    const todayActivities = DataManager.getActivitiesForDate(scheduleData, new Date());
+    const weekForDisplay = userCurrentWeek ?? 1;
+    // 学期未开始：不展示任何课程，等待开学（今天有活动时例外）
+    if (hasValidStart && userCurrentWeek === null && todayActivities.length === 0) {
       return {
         userId,
         nickname: fallbackNickname || scheduleData.nickname || `用户${userId}`,
@@ -71,7 +74,7 @@ export class GroupSchedulePlugin extends SchedulePlugin {
     if (scheduleData.courses && scheduleData.courses.length > 0) {
       maxWeek = Math.max(...scheduleData.courses.flatMap(course => course.weeks));
     }
-    const semesterEnded = maxWeek > 0 && userCurrentWeek > maxWeek;
+    const semesterEnded = maxWeek > 0 && userCurrentWeek > maxWeek && todayActivities.length === 0;
     if (semesterEnded) {
       // 学期结束日 = 最大周所在周的周日，据此计算已结束天数（供展示层按配置 hideEndedDays 过滤）
       // 无个人开学日的老数据按配置默认开学日计算，与上方结束判定保持同一口径；无法计算时为 null（不过滤）
@@ -96,14 +99,20 @@ export class GroupSchedulePlugin extends SchedulePlugin {
         semesterEnded: true,
         status: '学期结束',
         signature,
-        currentWeek: userCurrentWeek,
+        currentWeek: weekForDisplay,
         hasSemesterStart: !!semesterStart,
         daysSinceSemesterEnd
       };
     }
-    // 筛选今日课程
-    const todayCourses = scheduleData.courses.filter(course =>
-      parseInt(course.day) === currentDay && course.weeks.includes(userCurrentWeek)
+    // 筛选今日课程（含今天添加的活动：会议/活动/考试等，带 isActivity 标记）
+    const todayCourses = DataManager.withDayActivities(
+      scheduleData.courses.filter(course =>
+        userCurrentWeek !== null
+        && parseInt(course.day) === currentDay
+        && course.weeks.includes(userCurrentWeek)
+      ),
+      scheduleData,
+      new Date()
     );
     todayCourses.sort(compareByStartTime);
     let currentCourse = null;
@@ -189,7 +198,7 @@ export class GroupSchedulePlugin extends SchedulePlugin {
       }),
       skipStatus: skipStatus.enabled,
       signature,
-      currentWeek: userCurrentWeek,
+      currentWeek: weekForDisplay,
       hasSemesterStart: !!semesterStart,
       // 真实时间交叠时的多课程展示数据（其余情况不带这些字段）
       ...(overlapCourses ? {
@@ -237,9 +246,11 @@ export class GroupSchedulePlugin extends SchedulePlugin {
     await this.checkAndAutoExpireSkip(userId);
     const scheduleData = DataManager.loadSchedule(userId);
     if (!scheduleData) return null;
-    // 没有课程记录的用户不进群课表：历史版本「清空 courses 但保留文件」会留下一张
+    // 既没有课程也没有活动的用户不进群课表：历史版本「清空 courses 但保留文件」会留下一张
     // 「今日暂无课程」的空卡片，这里统一按“未设置课表”处理（与 getAllUserSchedules 口径一致）
-    if (!Array.isArray(scheduleData.courses) || scheduleData.courses.length === 0) return null;
+    const hasCourses = Array.isArray(scheduleData.courses) && scheduleData.courses.length > 0;
+    const hasActivities = DataManager.normalizeActivities(scheduleData.activities).length > 0;
+    if (!hasCourses && !hasActivities) return null;
     // 优先使用群名片，其次昵称
     const fallbackNickname = memberInfo.card || memberInfo.nickname || null;
     return this._buildUserData(userId, scheduleData, currentDay, currentTime, fallbackNickname);

@@ -3,8 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigManager } from './ConfigManager.js'
 import { safeId } from './common.js'
-import { calculateWeekFromDate, getMondayOfSameWeek, normalizeHM, compareByStartTime } from '../utils/timeUtils.js';
+import { calculateWeekFromDate, getMondayOfSameWeek, normalizeHM, compareByStartTime, timeToMinutes, isValidHm, formatDate, normalizeDateOnly, normalizeTimeValue } from '../utils/timeUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
+// 活动（会议/活动/考试等临时安排）约束：字段长度与每用户条数上限
+export const ACTIVITY_MAX_NAME = 30;
+export const ACTIVITY_MAX_LOCATION = 30;
+export const MAX_ACTIVITIES = 200;
 // 用户资料（昵称/签名）与课表数据解耦：#清除课表 会删除课表文件，但昵称/签名走这里保留，
 // 重新导入课表后仍然生效；也避免「课表已清空但文件还在」在群课表里留下一张“今日暂无课程”的空卡片
 const USER_PROFILE_PATH = path.join(DATA_PATH, 'user-profiles.json')
@@ -35,7 +39,7 @@ export class DataManager {
     }
 
     /**
- * 获取所有已设置课表的用户数据（仅包含有效课程的用户）
+ * 获取所有已设置课表的用户数据（有课程或有活动才算，避免空白文件进群课表）
  * @returns {Array<{userId: string, schedule: object}>} 用户ID与课表对象的数组
  */
     static getAllUserSchedules() {
@@ -50,7 +54,11 @@ export class DataManager {
         for (const file of files) {
             const fileKey = path.basename(file, '.json');
             const schedule = this.loadSchedule(fileKey);
-            if (!schedule || !Array.isArray(schedule.courses) || schedule.courses.length === 0) continue;
+            if (!schedule) continue;
+            const courseCount = Array.isArray(schedule.courses) ? schedule.courses.length : 0;
+            // 只有活动、没有课程的用户同样要出现在群课表/所有人课表里
+            const activityCount = this.normalizeActivities(schedule.activities).length;
+            if (courseCount === 0 && activityCount === 0) continue;
             const userId = schedule.userId || (/^\d+$/.test(fileKey) ? fileKey : null);
             if (!userId) continue;
             result.push({ userId, schedule });
@@ -245,6 +253,15 @@ export class DataManager {
             fullData.timeSlots = this.normalizeTimeSlots(existing.timeSlots)
         }
 
+        // 活动：导入时可显式传入（scheduleData.activities），否则沿用文件里已有的，
+        // 避免重新导入/调课/更新时间表时把用户添加的活动冲掉
+        const activities = this.normalizeActivities(
+            scheduleData.activities !== undefined ? scheduleData.activities : existing.activities
+        )
+        if (activities.length > 0) {
+            fullData.activities = activities
+        }
+
         // 确保目录存在
         const dir = path.dirname(filePath)
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -291,7 +308,7 @@ export class DataManager {
     }
 
     /**
-   * 获取指定日期的课程
+   * 获取指定日期的课程（含当天添加的活动）
    * @param {number} userId 用户QQ
    * @param {Date} date 查询日期
    * @returns {Promise<Object>} 包含 courses, week, day, displayName 或 error
@@ -318,6 +335,8 @@ export class DataManager {
             // 转换为数字避免数值类型问题
             parseInt(course.day) === day && course.weeks.includes(week)
         );
+        // 并入当天添加的活动（会议/考试等），活动带 isActivity 标记，其余与课程同样处理
+        courses = this.withDayActivities(courses, schedule, date);
         // 按开始时间排序（升序）
         courses.sort(compareByStartTime);
         const displayName = schedule.nickname || `用户${userId}`;
@@ -368,6 +387,148 @@ export class DataManager {
             logger.error(`删除用户 ${userId} 课表数据失败: ${err}`);
             return { success: false, exists: true };
         }
+    }
+
+    // ---------- 活动（会议/活动/考试等临时安排） ----------
+    // 活动与课程一样存在用户自己的数据文件里（schedule.activities），
+    // 因此 #清除课表 删除文件时活动会一并清除；渲染时按日期并入当天的“课程”列表，
+    // 只额外带 isActivity 标记（群课表圆点渲染成空心圈，个人卡片带「活动」标签）。
+
+    /**
+     * 规范化活动数组（容错 + 字段裁剪 + 按日期/时间排序）
+     * @param {Array} list
+     * @returns {Array<{id:string,name:string,location:string,date:string,startTime:string,endTime:string,createdAt:string}>}
+     */
+    static normalizeActivities(list) {
+        if (!Array.isArray(list)) return [];
+        const result = [];
+        const seen = new Set();
+        for (const raw of list) {
+            if (!raw || typeof raw !== 'object') continue;
+            const date = normalizeDateOnly(raw.date);
+            const startTime = normalizeTimeValue(raw.startTime);
+            const endTime = normalizeTimeValue(raw.endTime);
+            if (!date || !isValidHm(startTime) || !isValidHm(endTime)) continue;
+            if (timeToMinutes(endTime) <= timeToMinutes(startTime)) continue;
+            const name = String(raw.name ?? '').trim().slice(0, ACTIVITY_MAX_NAME);
+            if (!name) continue;
+            const id = String(raw.id ?? '').trim() || this.createActivityId();
+            if (seen.has(id)) continue;
+            seen.add(id);
+            result.push({
+                id,
+                name,
+                location: String(raw.location ?? '').trim().slice(0, ACTIVITY_MAX_LOCATION),
+                date,
+                startTime,
+                endTime,
+                createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : new Date().toISOString()
+            });
+        }
+        result.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+        // 上限保护：避免误操作/恶意数据把数据文件撑爆
+        return result.slice(0, MAX_ACTIVITIES);
+    }
+
+    /** 生成活动唯一 ID（用于删除/撤销） */
+    static createActivityId() {
+        return `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+
+    /**
+     * 读取用户的活动列表
+     * @param {string|number} userId
+     * @returns {Array}
+     */
+    static getActivities(userId) {
+        return this.normalizeActivities(this.loadSchedule(userId)?.activities);
+    }
+
+    /**
+     * 写回用户的活动列表（保留课表其它字段；没有课表文件时创建最小骨架，让活动可以独立存在）
+     * @param {string|number} userId
+     * @param {Array} activities
+     * @returns {boolean}
+     */
+    static saveActivities(userId, activities) {
+        const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`);
+        try {
+            let data = null;
+            if (fs.existsSync(filePath)) {
+                try { data = JSON.parse(fs.readFileSync(filePath, 'utf8')) || {}; } catch { data = null; }
+            }
+            if (!data) {
+                // 还没导入课表（或刚 #清除课表 过）：建最小骨架，让活动能独立使用
+                data = {
+                    userId: String(userId),
+                    tableName: '活动日程',
+                    semesterStart: ConfigManager.getConfig().defaultSemesterStart || formatDate(new Date()),
+                    nickname: String(userId),
+                    signature: '',
+                    courses: []
+                };
+            }
+            const normalized = this.normalizeActivities(activities);
+            if (normalized.length > 0) {
+                data.activities = normalized;
+            } else {
+                delete data.activities;
+            }
+            data.updateTime = new Date().toISOString();
+            const dir = path.dirname(filePath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+            return true;
+        } catch (err) {
+            logger.error(`保存用户 ${userId} 活动失败: ${err}`);
+            return false;
+        }
+    }
+
+    /**
+     * 取某一天的活动
+     * @param {object} schedule 用户课表数据
+     * @param {Date|string} date 目标日期
+     * @returns {Array}
+     */
+    static getActivitiesForDate(schedule, date) {
+        const dateStr = normalizeDateOnly(date);
+        if (!dateStr) return [];
+        return this.normalizeActivities(schedule?.activities).filter(item => item.date === dateStr);
+    }
+
+    /**
+     * 把活动转换成“当天课程”的形状，供状态判定/渲染复用
+     * 不带 day/weeks（按日期直接命中，不参与周次计算）
+     * @param {object} activity
+     * @returns {object}
+     */
+    static activityToDayEntry(activity) {
+        return {
+            name: activity.name,
+            teacher: '',
+            location: activity.location || '',
+            startTime: activity.startTime,
+            endTime: activity.endTime,
+            isActivity: true,
+            activityId: activity.id,
+            activityDate: activity.date
+        };
+    }
+
+    /**
+     * 把某一天的活动并入课程列表（返回新数组，不改动入参）
+     * @param {Array} courses 当天的课程
+     * @param {object} schedule 用户课表数据
+     * @param {Date|string} date 目标日期
+     * @returns {Array}
+     */
+    static withDayActivities(courses, schedule, date) {
+        const list = Array.isArray(courses) ? [...courses] : [];
+        for (const activity of this.getActivitiesForDate(schedule, date)) {
+            list.push(this.activityToDayEntry(activity));
+        }
+        return list;
     }
 
     // ---------- 翘课状态 ----------
@@ -451,8 +612,14 @@ export class DataManager {
             if (course.rescheduled) {
                 reply += `🔄 [调课·原${course.originalDate}] `;
             }
+            // 活动（会议/活动/考试等）与课程同样展示，仅多一个标记
+            if (course.isActivity) {
+                reply += `📌 [活动] `;
+            }
             reply += `${course.name}\n`;
-            reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
+            if (!course.isActivity) {
+                reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
+            }
             reply += `   🕐 ${course.startTime} - ${course.endTime}\n`;
             reply += `   📍 ${course.location || '未知地点'}\n`;
             if (index < courses.length - 1) reply += "\n";
@@ -728,6 +895,12 @@ export class DataManager {
         // 保留用户时间表配置（如果有）
         if (scheduleData.timeSlots && Array.isArray(scheduleData.timeSlots)) {
             result.timeSlots = scheduleData.timeSlots
+        }
+
+        // 保留用户添加的活动（会议/活动/考试等），随原生格式一起导出/导入
+        const activities = this.normalizeActivities(scheduleData.activities)
+        if (activities.length > 0) {
+            result.activities = activities
         }
 
         return result;
