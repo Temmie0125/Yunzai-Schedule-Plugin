@@ -26,8 +26,13 @@ import {
 
 /** 轮询添加的会话（模块级：TRSS-Yunzai 每条消息都会新建插件实例，不能挂在实例上） */
 const sessions = new Map()
+/** 待确认的删除计划（同样放模块级，避免每条消息新建实例后丢失） */
+const pendingDeletes = new Map()
 const SESSION_TTL_MS = 5 * 60 * 1000
 const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+/** 单次删除最多覆盖的天数 / 预览最多展示的条目数 */
+const MAX_DELETE_DAYS = 366
+const MAX_PREVIEW_ITEMS = 10
 
 function sessionKey(userId, selfId) {
     return `${selfId ?? ''}:${userId}`
@@ -68,6 +73,28 @@ function clip(text, max = 30) {
     return value.length > max ? `${value.slice(0, max)}…` : value
 }
 
+/** 课程的稳定指纹：确认删除时用它校验数据是否被改过 */
+function fingerprintOfCourse(course) {
+    return [course?.name || '', course?.day ?? '', course?.startTime || '', course?.endTime || ''].join('|')
+}
+
+/**
+ * 解析删除用的“日期词”：今天/明天/昨天，或 20261112 / 2026-11-12 / 11-12
+ * @returns {Date|null}
+ */
+function resolveDateToken(token, semesterStart) {
+    const text = String(token ?? '').trim()
+    if (!text) return null
+    const offsetMap = { '今天': 0, '今日': 0, '明天': 1, '明日': 1, '昨天': -1, '昨日': -1 }
+    if (offsetMap[text] !== undefined) {
+        const base = new Date()
+        base.setHours(0, 0, 0, 0)
+        base.setDate(base.getDate() + offsetMap[text])
+        return base
+    }
+    return parseActivityDate(text, semesterStart)
+}
+
 export class ScheduleActivity extends SchedulePlugin {
     constructor() {
         super({
@@ -80,7 +107,9 @@ export class ScheduleActivity extends SchedulePlugin {
             rule: [
                 { reg: '^#clsadd(?:\\s+([\\s\\S]+))?$', fnc: 'addActivity' },
                 { reg: '^#(?:取消|撤销)添加(?:活动|日程)?(?:\\s+(.+))?$', fnc: 'cancelAdd' },
-                { reg: '^#(?:活动列表|我的活动)(?:\\s+(.+))?$', fnc: 'listActivities' }
+                { reg: '^#(?:活动列表|我的活动)(?:\\s+(.+))?$', fnc: 'listActivities' },
+                // 删除课程/活动：按日期（单日或区间）+ 条件（第几节/时间段/教室/名称），需二次确认
+                { reg: '^#clsdel(?:\\s+([\\s\\S]+))?$', fnc: 'deleteEntries' }
             ]
         })
     }
@@ -470,6 +499,305 @@ export class ScheduleActivity extends SchedulePlugin {
         reply += '\n\n如需删除：发送 #clsdel 查看删除用法'
         await this.reply(reply)
         return true
+    }
+
+    // ========== 删除课程/活动 ==========
+    /**
+     * #clsdel [日期|日期 日期] [条件]
+     * 条件支持：第N节 / 第N-M节、1000-1200、地点:xxx、课程:xxx、裸词（名称或地点包含）
+     * 不给条件 = 删除该日期（或区间）内的全部条目；执行前会列出预览并要求「确认」
+     */
+    async deleteEntries() {
+        const arg = String(this.e.msg || '').replace(/^#clsdel\s*/, '').trim()
+        const parsed = this._parseDeleteArgs(arg)
+        if (parsed.error) {
+            await this.reply(parsed.error)
+            return true
+        }
+        const plan = this._buildDeletePlan(parsed)
+        if (plan.error) {
+            await this.reply(plan.error)
+            return true
+        }
+        if (plan.matched.length === 0) {
+            await this.reply(
+                `没有找到匹配的条目喵~\n\n${this._deleteUsage()}`
+            )
+            return true
+        }
+        pendingDeletes.set(sessionKey(this.e.user_id, this.e.self_id), { plan, at: Date.now() })
+        this.setContext('clsdel_confirm', false, 120)
+        await this.reply(this._formatDeletePreview(plan))
+        return true
+    }
+
+    /** 删除用法提示 */
+    _deleteUsage() {
+        return '用法：#clsdel [日期|日期 日期] [条件]\n' +
+            '· 日期：20261112 / 2026-11-12 / 11-12 / 今天 / 明天（两个日期表示区间，不带则默认今天）\n' +
+            '· 条件：第3节 / 第2-4节、1000-1200、地点:教107、课程:高等数学\n' +
+            '· 不带条件 = 删除该日期（或区间）内的全部课程与活动\n' +
+            '例如：#clsdel 20261112 第3节 、 #clsdel 今天 1000-1200 、 #clsdel 20261112 20261120'
+    }
+
+    /**
+     * 解析删除参数
+     * @param {string} arg
+     * @returns {{start?: Date, end?: Date, filter?: object, error?: string}}
+     */
+    _parseDeleteArgs(arg) {
+        const schedule = DataManager.loadSchedule(this.e.user_id)
+        const semesterStart = schedule?.semesterStart || ConfigManager.getConfig().defaultSemesterStart
+        const tokens = String(arg || '').split(/\s+/).filter(Boolean)
+        const dates = []
+        let index = 0
+        while (index < tokens.length && dates.length < 2) {
+            const date = resolveDateToken(tokens[index], semesterStart)
+            if (!date) break
+            dates.push(date)
+            index++
+        }
+        // 没写日期时默认今天
+        if (dates.length === 0) {
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            dates.push(today)
+        }
+        const start = new Date(Math.min(...dates.map(d => d.getTime())))
+        const end = new Date(Math.max(...dates.map(d => d.getTime())))
+        const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+        if (days > MAX_DELETE_DAYS) {
+            return { error: `删除范围太长了喵~ 一次最多 ${MAX_DELETE_DAYS} 天` }
+        }
+        const restText = tokens.slice(index).join(' ').trim()
+        return { start, end, filter: this._parseDeleteFilter(restText) }
+    }
+
+    /**
+     * 解析删除条件
+     * @param {string} text
+     * @returns {{kind: string, keyword?: string, from?: number, to?: number, startTime?: string, endTime?: string}}
+     */
+    _parseDeleteFilter(text) {
+        if (!text) return { kind: 'all' }
+        const period = text.match(/^第\s*(\d{1,2})(?:\s*[-~～到至]\s*(\d{1,2}))?\s*节$/)
+        if (period) {
+            const from = Number(period[1])
+            const to = Number(period[2] || period[1])
+            if (from >= 1 && to >= from) return { kind: 'period', from, to }
+        }
+        const range = parseTimeRange(text)
+        if (range) return { kind: 'time', ...range }
+        const location = text.match(/^(?:地点|教室)[:：]\s*(.+)$/)
+        if (location) return { kind: 'location', keyword: location[1].trim() }
+        const name = text.match(/^(?:课程|名称|活动名?)[:：]\s*(.+)$/)
+        if (name) return { kind: 'name', keyword: name[1].trim() }
+        return { kind: 'any', keyword: text }
+    }
+
+    /**
+     * 逐日收集候选条目并按条件筛选，生成删除计划
+     * @param {{start: Date, end: Date, filter: object}} parsed
+     * @returns {object} 计划（含 matched 预览条目、activities/courses 待执行动作）
+     */
+    _buildDeletePlan({ start, end, filter }) {
+        const userId = this.e.user_id
+        const schedule = DataManager.loadSchedule(userId)
+        if (!schedule) return { error: '你还没有设置课表喵~ 先 #导入课表 或 #clsadd 添加活动吧' }
+        const entries = []
+        const cursor = new Date(start)
+        const last = new Date(end)
+        while (cursor.getTime() <= last.getTime()) {
+            const date = new Date(cursor)
+            const dateStr = formatDate(date)
+            const day = date.getDay() === 0 ? 7 : date.getDay()
+            const week = calculateWeekFromDate(schedule.semesterStart, date)
+            if (week !== null) {
+                (schedule.courses || []).forEach((course, courseIndex) => {
+                    if (parseInt(course.day) !== day) return
+                    if (!Array.isArray(course.weeks) || !course.weeks.includes(week)) return
+                    entries.push({
+                        kind: 'course',
+                        dateStr,
+                        name: course.name || '未命名课程',
+                        location: course.location || '',
+                        startTime: course.startTime,
+                        endTime: course.endTime,
+                        courseIndex,
+                        week,
+                        fingerprint: fingerprintOfCourse(course)
+                    })
+                })
+            }
+            for (const activity of DataManager.getActivitiesForDate(schedule, date)) {
+                entries.push({
+                    kind: 'activity',
+                    dateStr,
+                    name: activity.name,
+                    location: activity.location || '',
+                    startTime: activity.startTime,
+                    endTime: activity.endTime,
+                    activityId: activity.id
+                })
+            }
+            cursor.setDate(cursor.getDate() + 1)
+        }
+        const matched = this._filterDeleteEntries(entries, filter)
+        const activities = []
+        const courses = []
+        const seenCourse = new Set()
+        for (const entry of matched) {
+            if (entry.kind === 'activity') {
+                if (!activities.includes(entry.activityId)) activities.push(entry.activityId)
+                continue
+            }
+            const key = `${entry.courseIndex}-${entry.week}`
+            if (seenCourse.has(key)) continue
+            seenCourse.add(key)
+            courses.push({ index: entry.courseIndex, week: entry.week, fingerprint: entry.fingerprint })
+        }
+        matched.sort((a, b) => a.dateStr.localeCompare(b.dateStr) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
+        return {
+            rangeText: filter.kind === 'all' && start.getTime() === end.getTime()
+                ? formatDate(start)
+                : `${formatDate(start)} ~ ${formatDate(end)}`,
+            matched,
+            activities,
+            courses
+        }
+    }
+
+    /**
+     * 按条件筛选条目
+     * @param {Array} entries
+     * @param {object} filter
+     * @returns {Array}
+     */
+    _filterDeleteEntries(entries, filter) {
+        switch (filter.kind) {
+            case 'all':
+                return [...entries]
+            case 'period': {
+                // 「第几节」= 按开始时间排序后的第几个条目（跨多天时先按日期再按时间）
+                const sorted = [...entries].sort((a, b) =>
+                    a.dateStr.localeCompare(b.dateStr) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
+                return sorted.slice(filter.from - 1, filter.to)
+            }
+            case 'time': {
+                const startMinutes = timeToMinutes(filter.startTime)
+                const endMinutes = timeToMinutes(filter.endTime)
+                return entries.filter(entry =>
+                    timeToMinutes(entry.startTime) < endMinutes && startMinutes < timeToMinutes(entry.endTime))
+            }
+            case 'name':
+                return entries.filter(entry => String(entry.name).includes(filter.keyword))
+            case 'location':
+                return entries.filter(entry => String(entry.location).includes(filter.keyword))
+            case 'any':
+            default:
+                return entries.filter(entry =>
+                    String(entry.name).includes(filter.keyword)
+                    || String(entry.location).includes(filter.keyword))
+        }
+    }
+
+    /** 删除预览文本 */
+    _formatDeletePreview(plan) {
+        const kindLabel = (entry) => (entry.kind === 'activity' ? '📌' : '📘')
+        let reply = `🗑 待删除 ${plan.matched.length} 条（${plan.rangeText}）\n`
+        reply += '='.repeat(22) + '\n'
+        plan.matched.slice(0, MAX_PREVIEW_ITEMS).forEach((entry, index) => {
+            const location = entry.location ? `（${clip(entry.location, 12)}）` : ''
+            reply += `${index + 1}. ${entry.dateStr} ${entry.startTime}-${entry.endTime} `
+                + `${kindLabel(entry)} ${clip(entry.name, 16)}${location}\n`
+        })
+        if (plan.matched.length > MAX_PREVIEW_ITEMS) {
+            reply += `…还有 ${plan.matched.length - MAX_PREVIEW_ITEMS} 条\n`
+        }
+        reply += '\n📌=活动（整条删除）　📘=课程（只删该日期这一次，其它周次保留）'
+        reply += '\n\n回复「确认」执行删除，回复「取消」放弃喵~'
+        return reply
+    }
+
+    /** 确认删除（上下文回调） */
+    async clsdel_confirm() {
+        const key = sessionKey(this.e.user_id, this.e.self_id)
+        const pending = pendingDeletes.get(key)
+        const finishAll = () => {
+            pendingDeletes.delete(key)
+            this.finish('clsdel_confirm')
+        }
+        if (!pending || Date.now() - pending.at > SESSION_TTL_MS) {
+            finishAll()
+            await this.reply('这次删除已经超时啦，请重新发送 #clsdel 喵~')
+            return true
+        }
+        const text = String(this.e.msg || '').trim()
+        if (/^(取消|放弃|cancel)/i.test(text)) {
+            finishAll()
+            await this.reply('已取消删除喵~')
+            return true
+        }
+        if (!/^(确认|确定|好|可以|是|yes|y|ok)$/i.test(text)) {
+            await this.reply('回复「确认」执行删除，或回复「取消」放弃喵~')
+            return true
+        }
+        finishAll()
+        const result = this._applyDeletePlan(pending.plan)
+        if (result.error) {
+            await this.reply(result.error)
+            return true
+        }
+        let reply = `✅ 删除完成\n`
+        reply += `📌 活动：${result.activityCount} 条\n`
+        reply += `📘 课程：${result.courseCount} 条（仅删除所选日期的这一次，其它周次保留）`
+        if (result.mismatch) {
+            reply += '\n\n⚠️ 部分条目在这期间被修改过，已跳过未删除'
+        }
+        await this.reply(reply)
+        return true
+    }
+
+    /**
+     * 执行删除计划
+     * @param {object} plan
+     * @returns {{activityCount?: number, courseCount?: number, mismatch?: boolean, error?: string}}
+     */
+    _applyDeletePlan(plan) {
+        const userId = this.e.user_id
+        const schedule = DataManager.loadSchedule(userId)
+        if (!schedule) return { error: '课表数据不见了，请重新 #导入课表 喵~' }
+        let mismatch = false
+        // 课程：只去掉对应周次（数据被改动过则跳过）
+        const changes = new Map()
+        for (const removal of plan.courses) {
+            const course = (schedule.courses || [])[removal.index]
+            if (!course || fingerprintOfCourse(course) !== removal.fingerprint) {
+                mismatch = true
+                continue
+            }
+            if (!changes.has(removal.index)) {
+                changes.set(removal.index, { course, weeks: new Set(Array.isArray(course.weeks) ? course.weeks : []) })
+            }
+            changes.get(removal.index).weeks.delete(removal.week)
+        }
+        let courseCount = 0
+        for (const { course, weeks } of changes.values()) {
+            course.weeks = Array.from(weeks).filter(w => Number.isFinite(Number(w))).map(Number).sort((a, b) => a - b)
+            courseCount++
+        }
+        // 周次被清空的课程整体移除（等于这门课在这天彻底没了）
+        schedule.courses = (schedule.courses || []).filter(course =>
+            Array.isArray(course.weeks) && course.weeks.length > 0)
+        // 活动：整条移除
+        const removeIds = new Set(plan.activities)
+        const before = DataManager.normalizeActivities(schedule.activities)
+        const rest = before.filter(item => !removeIds.has(item.id))
+        const activityCount = before.length - rest.length
+        schedule.activities = rest
+        // 一次写入同时落盘课程与活动（saveSchedule 会保留 nickname/signature/timeSlots）
+        DataManager.saveSchedule(userId, schedule)
+        return { courseCount, activityCount, mismatch }
     }
 }
 
