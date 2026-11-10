@@ -1,7 +1,8 @@
 // apps/holiday.js
 import { checkHolidayUpdate } from '../services/holidayUpdater.js'
+import { SchedulePlugin } from '../components/GroupAccess.js'
 
-export class HolidayUpdate extends plugin {
+export class HolidayUpdate extends SchedulePlugin {
   constructor() {
     super({
       name: '[Schedule] 节假日数据更新',

@@ -1,7 +1,8 @@
-﻿// components/ConfigManager.js 
+// components/ConfigManager.js 
 import fs from 'node:fs'
 import path from 'node:path'
 import YAML from 'yaml'
+import { normalizeAllSchedulePermission, normalizeAllSchedulePrivacy } from '../utils/privacyUtils.js'
 export const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/default_config');
 export const CONFIG_PATH = path.join(process.cwd(), 'plugins/schedule/config/config');
 export const CONFIG_FILE = 'schedule.yaml';
@@ -87,16 +88,30 @@ export class ConfigManager {
             scheduleColumns: 2,    // 群课表每行成员列数：'auto' 按人数自动加列，或固定 2/3/4
             avatarBorderMode: "progress",  // 群课表头像边框：progress 进度环 / solid 实色 / off 关闭
             hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
+            // 「所有人课表」使用权限：owner 仅Bot主人 / ownerAdmin Bot主人+群管理（默认）/ everyone 所有人
+            allSchedulePermission: "ownerAdmin",
+            // 「所有人课表」隐藏策略：everyone 所有人看到脱敏版 / nonMaster 非Bot主人脱敏（默认）/ off 不脱敏
+            allSchedulePrivacy: "nonMaster",
             showQQ: true,    // 生日列表是否展示QQ号。默认开启
             watchFiles: false,  // 监听所有文件以尝试自动导入课表，默认关闭
             urlImportEnabled: true,  // URL直链导入总开关
-            birthdayCustomName: true  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称
+            birthdayCustomName: true,  // 生日列表允许使用自定义昵称，关闭则同步QQ昵称
+            // 全局群黑白名单：命中的群聊本插件完全不响应（不回复任何提示，也不影响其他插件）
+            // 白名单为空表示不限制；白名单非空时只有白名单内的群可用（与生日黑白名单口径一致）
+            groupWhitelist: [],   // 只在这些群工作
+            groupBlacklist: [],    // 这些群完全不响应（白名单优先）
+            // 「#课表更新」使用的分支：留空 = 跟随插件当前所在分支；
+            // 填了别的分支（如 main / EchoDev）会先切过去再更新
+            updateBranch: ""
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
         // 确保新增字段存在（防止旧配置没有这两个字段）
         if (!config.birthdayWhitelistGroups) config.birthdayWhitelistGroups = [];
         if (!config.birthdayBlacklistGroups) config.birthdayBlacklistGroups = [];
+        // 全局群黑白名单兜底（旧配置没有这两个字段）
+        if (!Array.isArray(config.groupWhitelist)) config.groupWhitelist = [];
+        if (!Array.isArray(config.groupBlacklist)) config.groupBlacklist = [];
         if (config.wakeupServiceUrl === undefined) config.wakeupServiceUrl = "https://wakeup.cpc.cn.eu.org/";
         if (config.wakeupApiEndpoint === undefined) config.wakeupApiEndpoint = "/parse";
         if (config.wakeupAuthType === undefined) config.wakeupAuthType = "Bearer";
@@ -115,6 +130,9 @@ export class ConfigManager {
         config.scheduleColumns = ConfigManager.normalizeColumnsSetting(config.scheduleColumns);
         // 头像边框展示方式兜底：仅允许 progress / solid / off
         config.avatarBorderMode = ConfigManager.normalizeAvatarBorderMode(config.avatarBorderMode);
+        // 「所有人课表」权限与隐藏策略兜底（非法值回落默认）
+        config.allSchedulePermission = normalizeAllSchedulePermission(config.allSchedulePermission);
+        config.allSchedulePrivacy = normalizeAllSchedulePrivacy(config.allSchedulePrivacy);
         // 若 pushHour 为空（比如旧配置解析失败），则使用默认值
         if (!config.pushHour) {
             config.pushHour = defaultConfig.pushHour;
@@ -263,7 +281,10 @@ export class ConfigManager {
             defaultSemesterStart,
             botName, font,
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
-            watchFiles, urlImportEnabled, birthdayCustomName
+            allSchedulePermission, allSchedulePrivacy,
+            watchFiles, urlImportEnabled, birthdayCustomName,
+            groupWhitelist, groupBlacklist,
+            updateBranch
         } = data;
         const configToSave = {
             pushHour,
@@ -281,7 +302,10 @@ export class ConfigManager {
             defaultSemesterStart,
             botName, font,
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
-            watchFiles, urlImportEnabled, birthdayCustomName
+            allSchedulePermission, allSchedulePrivacy,
+            watchFiles, urlImportEnabled, birthdayCustomName,
+            groupWhitelist, groupBlacklist,
+            updateBranch
         };
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {

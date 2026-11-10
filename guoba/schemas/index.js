@@ -1,4 +1,4 @@
-﻿// guoba/schemas/index.js
+// guoba/schemas/index.js
 export const schemas = [
     // 分组
     {
@@ -110,6 +110,20 @@ export const schemas = [
         },
         defaultValue: 10000,
         bottomHelpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms。"
+    },
+    {
+        component: 'Divider',
+        label: '插件更新'
+    },
+    {
+        field: "updateBranch",
+        label: "更新分支",
+        component: "Input",
+        componentProps: {
+            placeholder: "留空 = 跟随当前分支（如 main / EchoDev / MoistDev）"
+        },
+        defaultValue: "",
+        bottomHelpMessage: "「#课表更新」从哪个分支拉取：留空表示沿用插件当前所在分支；填别的分支会先切换过去再更新（如 main / EchoDev / MoistDev）。本地有未提交改动时切换会失败，可改用 #课表强制更新。"
     },
     {
         component: 'SOFT_GROUP_BEGIN',
@@ -306,6 +320,36 @@ export const schemas = [
         bottomHelpMessage: "进度环：上课中的成员用头像边框显示这节课的完成进度，其他状态用淡化的状态色边框。实色边框：所有状态都用淡化的状态色边框，不显示进度。关闭：白色细边框。也可用管理员命令 #课表头像边框 进度|实色|关闭 随时切换。"
     },
     {
+        field: "allSchedulePermission",
+        label: "所有人课表权限",
+        helpMessage: "谁可以使用「所有人在上什么课」（跨群聚合课表）",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "仅Bot主人", value: "owner" },
+                { label: "Bot主人+群管理（默认）", value: "ownerAdmin" },
+                { label: "所有人", value: "everyone" }
+            ]
+        },
+        defaultValue: "ownerAdmin",
+        bottomHelpMessage: "控制 #所有人在上什么课 / #全局课表 的使用权限。仅Bot主人：只有主人可用；Bot主人+群管理：群主/群管理员与主人可用（默认，与旧版行为一致）；所有人：任何群成员（含私聊）都可使用。"
+    },
+    {
+        field: "allSchedulePrivacy",
+        label: "所有人课表隐藏策略",
+        helpMessage: "对「所有人课表」中的头像、教室、非本群群友昵称做脱敏",
+        component: "RadioGroup",
+        componentProps: {
+            options: [
+                { label: "所有人看到脱敏版", value: "everyone" },
+                { label: "非Bot主人脱敏（默认）", value: "nonMaster" },
+                { label: "都不隐藏", value: "off" }
+            ]
+        },
+        defaultValue: "nonMaster",
+        bottomHelpMessage: "需要脱敏时：非本群群友的头像、昵称、教室（地点）高斯模糊（头像模糊套在裁剪遮罩内，不会越出头像框、也不会透出进度环底色；教室行照旧输出，只模糊📍后面的文字，卡片不留空白）、本群群友照常显示。拿不到本群成员列表时（私聊触发、或官方Bot群成员缓存为空）按非本群处理。该策略只作用于「所有人课表」，#clstb 群课表不受影响。"
+    },
+    {
         field: "hideEndedDays",
         label: "结束成员隐藏天数",
         helpMessage: "学期已结束超过该天数的成员不再显示在群课表图片中",
@@ -336,6 +380,35 @@ export const schemas = [
         component: "Switch",
         defaultValue: false,
         bottomHelpMessage: "开启后，在群内且Bot有管理员权限时，将自动撤回用户发送的口令消息"
+    },
+    // ===== 以下归入「课表模块设置」分组（原先错放在生日分组下）=====
+    {
+        component: 'Divider',
+        label: '全局群黑白名单'
+    },
+    {
+        field: "groupWhitelist",
+        label: "白名单群",
+        helpMessage: "填写后仅这些群可用课表插件",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择允许使用课表插件的群（留空则不限群）",
+            mode: "multiple"
+        },
+        defaultValue: [],
+        bottomHelpMessage: "白名单为空表示所有群都可用。白名单非空时，名单外的群将完全静默（不回复任何内容，也不影响其他插件）。"
+    },
+    {
+        field: "groupBlacklist",
+        label: "黑名单群",
+        helpMessage: "这些群内课表插件完全静默",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择禁止使用课表插件的群",
+            mode: "multiple"
+        },
+        defaultValue: [],
+        bottomHelpMessage: "名单内的群不会收到课表插件的任何回复（包括 #课表帮助），也不会发送生日祝福；其他插件不受影响。白名单优先。"
     },
     // 分组
     {

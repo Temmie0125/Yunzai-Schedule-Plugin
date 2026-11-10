@@ -1,4 +1,4 @@
-﻿// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
+// 临时测试：群课表卡片渲染（直接渲染真实模板，校验剩余/距离上课时间的显示分支）
 // 覆盖：上课中/分身中/翘课中 → 「剩余」；未开始 → 「距离上课」；已结束/无课程 → 均不显示
 // 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-card-render.js
 global.logger = console; // 插件代码依赖 Yunzai 全局 logger，此处用 console 代替
@@ -139,9 +139,10 @@ check('圆点：省略的已上完用 ×N 表示', dotsCard.includes('×2'));
 check('圆点：省略的即将上用 +N 表示', dotsCard.includes('+1'));
 check('圆点：与剩余时长同一行（course-meta 内）', /class="course-meta"[\s\S]{0,400}remaining-time[\s\S]{0,400}course-dots/.test(dotsCard));
 check('圆点：圆点靠右（CSS margin-left: auto）', /\.course-dots\s*\{[^}]*margin-left:\s*auto/.test(tplSrc));
-// 配色与尺寸：四态高对比、正在上放大、已上完偏灰（不再用 opacity 淡化，避免小圆点糊在一起）
+// 配色与尺寸：四态高对比、正在上放大、已上完为鲜绿（不再用 opacity 淡化，避免小圆点糊在一起）
+// 注：配色由主人手动调整为鲜绿 #00C86E，旧断言里的偏灰 #82A696 已过期，这里同步过来
 const dotRule = (cls) => tplSrc.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`))?.[1] || '';
-check('圆点：已上完用偏灰配色（灰绿）', /#82A696/i.test(dotRule('dot-finished')));
+check('圆点：已上完用鲜绿 #00C86E', /#00C86E/i.test(dotRule('dot-finished')));
 check('圆点：已上完不再使用 opacity 淡化', !/opacity/.test(dotRule('dot-finished')));
 check('圆点：即将上为饱和蓝（不再 opacity 淡化）',
     /#3949AB/i.test(dotRule('dot-upcoming')) && !/opacity/.test(dotRule('dot-upcoming')));

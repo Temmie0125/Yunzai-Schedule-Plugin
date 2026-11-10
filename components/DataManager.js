@@ -5,6 +5,9 @@ import { ConfigManager } from './ConfigManager.js'
 import { safeId } from './common.js'
 import { calculateWeekFromDate, getMondayOfSameWeek, normalizeHM, compareByStartTime } from '../utils/timeUtils.js';
 const DATA_PATH = path.join(process.cwd(), 'plugins/schedule/data/')
+// 用户资料（昵称/签名）与课表数据解耦：#清除课表 会删除课表文件，但昵称/签名走这里保留，
+// 重新导入课表后仍然生效；也避免「课表已清空但文件还在」在群课表里留下一张“今日暂无课程”的空卡片
+const USER_PROFILE_PATH = path.join(DATA_PATH, 'user-profiles.json')
 const SKIP_STATUS_PATH = path.join(DATA_PATH, 'skip-status.json')
 const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
 const CLASS_REMINDER_PATH = path.join(DATA_PATH, 'class-reminder.json'); // 上课提醒配置
@@ -41,7 +44,7 @@ export class DataManager {
         // 真实用户ID以文件内记录的 userId 字段为准；旧数据（纯数字文件名、无 userId 字段）兼容取文件名
         const files = fs.readdirSync(DATA_PATH).filter(f =>
             f.endsWith('.json') &&
-            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json', 'birthdayPendingPushes.json'].includes(f)
+            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json', 'birthdayPendingPushes.json', 'user-profiles.json'].includes(f)
         );
         const result = [];
         for (const file of files) {
@@ -53,6 +56,63 @@ export class DataManager {
             result.push({ userId, schedule });
         }
         return result;
+    }
+
+    // ---------- 用户资料（昵称/签名，与课表生命周期解耦） ----------
+    /**
+     * 加载全部用户资料
+     * 结构：{ [userId]: { nickname?, signature?, updateTime } }
+     * @returns {Object}
+     */
+    static loadUserProfiles() {
+        if (!fs.existsSync(USER_PROFILE_PATH)) return {}
+        try {
+            const data = JSON.parse(fs.readFileSync(USER_PROFILE_PATH, 'utf8'))
+            return data && typeof data === 'object' ? data : {}
+        } catch (err) {
+            logger.error(`[用户资料] 加载失败: ${err}`)
+            return {}
+        }
+    }
+
+    /**
+     * 获取单个用户的资料
+     * @param {string|number} userId
+     * @returns {{nickname?: string, signature?: string, updateTime?: string}|null}
+     */
+    static getUserProfile(userId) {
+        return this.loadUserProfiles()[String(userId)] || null
+    }
+
+    /**
+     * 保存/更新用户资料（昵称、签名）
+     * 传空字符串表示清除该字段；两个字段都为空时整条记录移除
+     * @param {string|number} userId
+     * @param {{nickname?: string, signature?: string}} patch
+     * @returns {boolean}
+     */
+    static saveUserProfile(userId, patch = {}) {
+        try {
+            const all = this.loadUserProfiles()
+            const key = String(userId)
+            const next = { ...(all[key] || {}), ...patch, updateTime: new Date().toISOString() }
+            for (const field of ['nickname', 'signature']) {
+                if (next[field] === undefined || next[field] === null || next[field] === '') delete next[field]
+            }
+            // 只剩 updateTime 说明没有任何有效资料，直接移除该用户的记录
+            if (Object.keys(next).length <= 1) {
+                delete all[key]
+            } else {
+                all[key] = next
+            }
+            const dir = path.dirname(USER_PROFILE_PATH)
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+            fs.writeFileSync(USER_PROFILE_PATH, JSON.stringify(all, null, 2), 'utf8')
+            return true
+        } catch (err) {
+            logger.error(`保存用户 ${userId} 资料失败: ${err}`)
+            return false
+        }
     }
 
     /**
@@ -74,15 +134,9 @@ export class DataManager {
                 // 保存数据
                 fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
             } else {
-                // 创建新的数据文件
-                const data = {
-                    tableName: '未设置',
-                    semesterStart: new Date().toISOString().split('T')[0],
-                    updateTime: new Date().toISOString(),
-                    nickname: nickname,
-                    courses: []
-                }
-                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
+                // 没有课表时只写「用户资料」，不再生成一个空课表文件
+                // （空课表会让该用户在群课表里显示成一张“今日暂无课程”的空卡片）
+                this.saveUserProfile(userId, { nickname })
             }
 
             return true
@@ -111,16 +165,8 @@ export class DataManager {
                 // 保存数据
                 fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
             } else {
-                // 如果还没有课程表数据，创建新的数据文件
-                const data = {
-                    tableName: '未设置',
-                    semesterStart: new Date().toISOString().split('T')[0],
-                    updateTime: new Date().toISOString(),
-                    nickname: userId.toString(),
-                    signature: signature,  // 新增签名字段
-                    courses: []
-                }
-                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
+                // 没有课表时只写「用户资料」，避免生成空课表文件（同昵称处理）
+                this.saveUserProfile(userId, { signature })
             }
 
             return true
@@ -174,6 +220,10 @@ export class DataManager {
     static saveSchedule(userId, scheduleData, nickname = null, signature = null, timeSlots = undefined) {
         const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`)
         const existing = this.loadSchedule(userId) || {}
+        // 课表文件不存在时（如刚 #清除课表 过）从用户资料里恢复昵称/签名，避免重新导入后丢失
+        const profile = existing.nickname && existing.signature !== undefined
+            ? null
+            : (this.getUserProfile(userId) || {})
 
         const fullData = {
             // 记录真实用户ID（官方机器人场景文件名为 safeId 后的键，推送/查询需要原始 ID）
@@ -181,8 +231,10 @@ export class DataManager {
             tableName: scheduleData.tableName,
             semesterStart: scheduleData.semesterStart,
             updateTime: new Date().toISOString(),
-            nickname: nickname || existing.nickname || userId.toString(),
-            signature: signature !== null ? signature : (existing.signature || ''),
+            nickname: nickname || existing.nickname || profile?.nickname || userId.toString(),
+            signature: signature !== null && signature !== undefined
+                ? signature
+                : (existing.signature || profile?.signature || ''),
             courses: this.normalizeCourseTimes(scheduleData.courses)
         }
 
@@ -273,13 +325,21 @@ export class DataManager {
     }
 
     /**
- * 清除用户的课程数据，保留基本信息
+ * 清除用户课表：直接删除课表数据文件（#清除课表）
+ *
+ * 为什么是删除而不是“清空 courses 但保留文件”：
+ * 群课表/所有人课表的成员来源就是 data/<id>.json 文件本身，文件还在就会被当成
+ * “已设置课表的成员”渲染出一张「今日暂无课程」的空卡片。删除文件后该用户彻底从
+ * 群课表消失，也顺带回收了磁盘占用。
+ * 代价是昵称/签名会随文件一起消失，因此删除前把它们搬到 user-profiles.json 保留，
+ * 重新导入课表时由 saveSchedule 自动恢复。
  * @param {string|number} userId
- * @returns {{ success: boolean, exists: boolean }}
+ * @returns {{ success: boolean, exists: boolean, nickname?: string, signature?: string }}
  *   success: 操作是否成功
  *   exists:  文件是否存在（若文件不存在，success 为 false）
+ *   nickname/signature: 本次保留下来的用户资料（用于回复提示）
  */
-    static clearUserCourses(userId) {
+    static removeUserSchedule(userId) {
         const filePath = path.join(DATA_PATH, `${safeId(userId)}.json`);
 
         // 文件不存在，直接返回
@@ -288,20 +348,24 @@ export class DataManager {
         }
 
         try {
-            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-            // 清空课程，保留其他信息
-            data.courses = [];
-            data.updateTime = new Date().toISOString();
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf8')) || {};
+            const nickname = typeof data.nickname === 'string' ? data.nickname.trim() : '';
+            const signature = typeof data.signature === 'string' ? data.signature.trim() : '';
+            // 只保留“用户自己设置过的资料”：与 QQ 号同名的自动兜底昵称没有保留价值
+            const keepNickname = nickname && nickname !== String(userId);
+            if (keepNickname) this.saveUserProfile(userId, { nickname });
+            if (signature) this.saveUserProfile(userId, { signature });
 
-            // 确保目录存在（理论上已有，但为安全可保留）
-            const dir = path.dirname(filePath);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-            fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-            logger.info(`用户 ${userId} 课程数据已清除，基本信息保留`);
-            return { success: true, exists: true };
+            fs.unlinkSync(filePath);
+            logger.info(`用户 ${userId} 课表数据已删除（昵称/签名已保留）`);
+            return {
+                success: true,
+                exists: true,
+                nickname: keepNickname ? nickname : '',
+                signature
+            };
         } catch (err) {
-            logger.error(`清除用户 ${userId} 课程数据失败: ${err}`);
+            logger.error(`删除用户 ${userId} 课表数据失败: ${err}`);
             return { success: false, exists: true };
         }
     }
@@ -352,6 +416,9 @@ export class DataManager {
         // 先从已有数据获取
         const data = this.loadSchedule(userId)
         if (data?.nickname) return data.nickname
+        // 课表已清除但资料仍在时，沿用用户此前设置过的昵称
+        const profile = this.getUserProfile(userId)
+        if (profile?.nickname) return profile.nickname
         // 尝试获得用户昵称：群名片->直接昵称
         const nickname = event.sender?.card || event.sender?.nickname || null
         return nickname
@@ -416,7 +483,7 @@ export class DataManager {
                     group: "基础功能",
                     list: [
                         { icon: 1, title: "#导入课表", desc: "导入课表文件/直链/分享口令" },
-                        { icon: 2, title: "#清除课表", desc: "清除自己的课程表" },
+                        { icon: 2, title: "#清除课表", desc: "清除自己的课程表（昵称与签名会保留）" },
                         { icon: 3, title: "#课表设置昵称", desc: "修改显示昵称" },
                         { icon: 4, title: "#课表设置签名", desc: "设置个性签名(最多30字)" }
                     ]
@@ -436,7 +503,9 @@ export class DataManager {
                         { icon: 9, title: "#群课表", desc: "查看群友上课状态" },
                         { icon: 10, title: "#翘课", desc: "开启/关闭翘课模式" },
                         { icon: 11, title: "#开启课表订阅", desc: "开启明日课表推送(需加好友)" },
-                        { icon: 12, title: "#开启上课提醒", desc: "上课前提醒(需加好友)，可带阈值如 15 分钟" }
+                        { icon: 12, title: "#开启上课提醒", desc: "上课前提醒(需加好友)，可带阈值如 15 分钟" },
+                        // 说明文案由 applyAllScheduleHelpInfo 按配置实时覆盖
+                        { icon: 13, title: "所有人在上什么课", desc: "查看所有用户的上课状态，也可使用 #全局课表" }
                     ]
                 }
             ]
@@ -449,7 +518,7 @@ export class DataManager {
 ==========
 【#导入课表 [文件/直链/口令]】导入课程表
 【#导入课表直链教程】查看直链导入教程
-【#清除课表】清除自己的课表
+【#清除课表】清除自己的课表（昵称与签名会保留，清除后不再出现在群课表）
 【#课表设置昵称 昵称】修改昵称
 【#课表设置签名 签名】设置个性签名(最多30字)
 【#今日课表|明日课表】查看自己今日/明日课表
@@ -458,7 +527,10 @@ export class DataManager {
 【#课程表|群课表】查看（视奸）群友的上课状态
 【#翘课|取消翘课】开关翘课状态
 【#开启|关闭课表订阅】开关课表订阅通知（需要加bot好友）
-【#开启|关闭上课提醒 [阈值]】开关上课提醒（需要加bot好友），阈值5~60分钟(5的倍数)，默认10分钟`
+【#开启|关闭上课提醒 [阈值]】开关上课提醒（需要加bot好友），阈值5~60分钟(5的倍数)，默认10分钟
+【#所有人在上什么课|#全局课表】查看所有用户的上课状态（权限见 Bot 主配置）
+
+🔒 你的课表可能被其他群的用户通过 #全局课表 看到；可见范围与脱敏由 Bot 主配置，如需调整可联系 Bot 主`
     }
 
     /**

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `#课表帮助` 里的**「所有人在上什么课」不再固定在「管理员命令」分组**：改到「群互动」分组，并按 Guoba 配置的 `allSchedulePermission` **实时显示当前权限档位**（`owner` 仅 Bot 主人 / `ownerAdmin` Bot 主人或群管理员 / `everyone` 所有人）。说明文案由 `applyAllScheduleHelpInfo` 在渲染时注入，用户自定义过 `config/help.json` 也能生效（旧版布局会自动从管理员分组挪出，重复调用不会产生重复条目）
+- 新增**课表可见范围的注意条**：导入课表成功的回复末尾追加一行短提示；`#课表帮助` 图片**最底部**、在所有命令分组之后新增一条**带醒目底色（淡琥珀底 + 左侧强调条）的独立注意条**，不与命令条目混排。内容提示**自己上传的课表可能被其他群的用户通过 `#全局课表`（所有人课表）看到**，可见范围与脱敏由 Bot 主配置（`allSchedulePermission` / `allSchedulePrivacy`）决定、需要调整可联系 Bot 主。注意条由 `helpData.visibilityTip` 驱动（`applyAllScheduleHelpInfo` 注入），不拦截任何操作，也不改变原有权限判定
+- 新增**全局群黑白名单**：配置项 `groupWhitelist` / `groupBlacklist`（Guoba 可视化选择群，支持官方Bot复合群ID，热更新无需重启）。名单内的群（以及白名单非空时名单外的群）本插件**完全静默**——不回复任何提示，也不会向该群发送生日祝福。实现为全部 app 的插件类统一继承 `components/GroupAccess.js` 的 `SchedulePlugin` 基类：构造时给每条 rule 套一层闸门（命中时返回 `false`，宿主会继续把消息交给其他插件；不改写 `rule.fnc`，日志中仍是原方法名），上下文回调经 `getContext` 拦截，生日主动推送经 `filterAccessibleGroupIds` 过滤。私聊不受限制；配置读取带 3 秒缓存，避免每条规则都同步读盘解析 YAML。新增测试 `test/test-group-access.js`
+- 「所有人课表」（`#所有人在上什么课` / `#全局课表`）**使用权限可配置**：新增配置项 `allSchedulePermission`，三档可选——`owner` 仅 Bot 主人、`ownerAdmin` Bot 主人 + 群主/群管理员（默认，与原行为一致）、`everyone` 所有人（含私聊）；无权限时的提示文案随档位变化。支持 Guoba 可视化配置
+- 「所有人课表」**隐私脱敏**：新增配置项 `allSchedulePrivacy`，三档可选——`everyone` 所有人看到脱敏版、`nonMaster` 非 Bot 主人脱敏（默认）、`off` 都不隐藏。需要脱敏时：
+  - **非本群群友的头像、昵称、教室（地点）统一高斯模糊**（`blur(8px)`；昵称只模糊文字本身、保留前面的箭头装饰），本群群友的头像、昵称与教室照常显示（这些信息在他们自己的群课表里本来就可见）；
+  - 头像模糊**套一层裁剪遮罩**（`overflow: hidden` + 继承圆角，图片放大 1.25 倍）：模糊产生的半透明边缘被裁掉，既不会越出头像边框，也不会透出进度环/容器底色；
+  - 教室**行照旧输出，只模糊 📍 后面的文字**（取代此前 `visibility: hidden` 整行不可见的方案——那时卡片里会留一块空白，看着像少了一行）。
+  本群成员判定取当前群成员列表，拿不到时（私聊触发、官方 Bot 群成员缓存为空）一律按非本群处理；文本降级输出同步（昵称与地点以 `***` 代替，地点行照旧输出）。该策略只作用于「所有人课表」，`#clstb` 群课表不受影响。规则实现为纯函数 `utils/privacyUtils.js`，新增测试 `test/test-all-schedule-privacy.js`
+- 新增导出 `isGroupManager(e)`（只判断群主/群管理员、不含 Bot 主人），`checkPermission` 改为复用它
+
+- 新增配置项 **`updateBranch`（更新分支）**：可在 Guoba 里直接选择 `#课表更新` 使用哪个分支（留空 = 沿用插件当前所在分支；填写 `main` / `EchoDev` / `MoistDev` 等会先切换过去再更新）。**命令也可以直接带分支参数**：`#课表更新 CrystalDev`、`#课表强制更新 MoistDev`（别名 `#更新课表`），优先级为 **命令行参数 > 配置 > 当前分支**，分支名不合法时会明确提示。同时修复更新逻辑的两个健壮性问题：①原先强制更新把远端写死成 `origin`，只配置了 `github` 等其它远端名的仓库会更新失败，现在会自动识别（优先 `origin`，否则取第一个远端）；②分支名统一走白名单校验（`字母/数字/-/_/./`），避免拼接进 shell 命令时被注入。改动集中在 `apps/update.js`、`utils/updateBranch.js`（`normalizeBranchName` / `pickRemote` / `buildUpdateCommands` / `parseUpdateCommand` / `resolveUpdateBranch`）、`components/ConfigManager.js`、`guoba/schemas/index.js` 与默认配置；新增测试 `test/test-update-branch.js`
+
+### 修复
+
+- 修复 `#清除课表` 后**群课表里仍留着一张「今日暂无课程」空卡片**的问题：旧实现只清空 `courses`、课表文件留着，而群课表/所有人课表的成员来源就是 `data/<id>.json` 文件本身。现在 `DataManager.removeUserSchedule()` 直接删除课表数据文件，清除后立即从群课表消失；昵称与个性签名在删除前转入新增的 `data/user-profiles.json` 保留，重新导入课表时自动恢复（不再有“彻底删除会丢签名”的顾虑）。`saveUserNickname`/`saveUserSignature` 在没有课表时只写用户资料，不再生成空课表文件（避免清除后改昵称让空卡片复活）；群课表对没有课程记录的成员统一按“未设置课表”处理，历史遗留的空课表文件同样不再显示。新增测试 `test/test-clear-schedule.js`
+
 ## [1.2.0] - 2026-10-19
 
 > 本版为自 `main`（`c303150`）分离出的 `EchoDev` 分支内容：群课表排版与排序能力（多列 / 自动列数、按距上/下课时间排序）、头像边框进度环与今日节数圆点、触发者卡片高亮；导入入口合并为 `#导入课表`；以及若干体验与稳定性修复。

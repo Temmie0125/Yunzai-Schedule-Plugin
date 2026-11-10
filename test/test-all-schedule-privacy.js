@@ -1,0 +1,144 @@
+// 临时测试：所有人课表的权限三档、隐藏策略三档与脱敏标记（含模板/文本降级渲染）
+// 运行方式（从 Yunzai 根目录）：node plugins/schedule/test/test-all-schedule-privacy.js
+global.logger = Object.assign(Object.create(console), {
+    mark: console.log, info: console.log, warn: console.warn, error: console.error,
+    debug: () => { }, green: (s) => s, blue: (s) => s, yellow: (s) => s, red: (s) => s
+});
+import fs from 'node:fs';
+import path from 'node:path';
+import art from 'art-template';
+import {
+    canUseAllSchedule, shouldHideAllScheduleInfo, applyAllSchedulePrivacy,
+    normalizeAllSchedulePermission, normalizeAllSchedulePrivacy,
+    LOCATION_BLUR_PX, NICKNAME_BLUR_PX
+} from '../utils/privacyUtils.js';
+
+let fail = 0;
+function check(label, cond) {
+    if (!cond) fail++;
+    console.log(`[${cond ? 'PASS' : 'FAIL'}] ${label}`);
+}
+
+// ========== 1. 权限三档 ==========
+const owner = { isMaster: true, isGroupManager: false };
+const manager = { isMaster: false, isGroupManager: true };
+const normal = { isMaster: false, isGroupManager: false };
+check('权限 owner：主人可用', canUseAllSchedule('owner', owner) === true);
+check('权限 owner：群管理员不可用', canUseAllSchedule('owner', manager) === false);
+check('权限 owner：普通成员不可用', canUseAllSchedule('owner', normal) === false);
+check('权限 ownerAdmin：主人可用', canUseAllSchedule('ownerAdmin', owner) === true);
+check('权限 ownerAdmin：群管理员可用', canUseAllSchedule('ownerAdmin', manager) === true);
+check('权限 ownerAdmin：普通成员不可用', canUseAllSchedule('ownerAdmin', normal) === false);
+check('权限 everyone：所有人都可用（含普通成员）',
+    canUseAllSchedule('everyone', normal) === true
+    && canUseAllSchedule('everyone', manager) === true
+    && canUseAllSchedule('everyone', owner) === true);
+check('权限非法值回落默认 ownerAdmin',
+    normalizeAllSchedulePermission('abc') === 'ownerAdmin'
+    && normalizeAllSchedulePermission(undefined) === 'ownerAdmin'
+    && canUseAllSchedule('abc', normal) === false
+    && canUseAllSchedule('abc', manager) === true);
+
+// ========== 2. 隐藏策略三档 ==========
+check('隐藏 everyone：主人也脱敏', shouldHideAllScheduleInfo('everyone', owner) === true);
+check('隐藏 everyone：普通成员脱敏', shouldHideAllScheduleInfo('everyone', normal) === true);
+check('隐藏 nonMaster：主人不脱敏', shouldHideAllScheduleInfo('nonMaster', owner) === false);
+check('隐藏 nonMaster：普通成员脱敏', shouldHideAllScheduleInfo('nonMaster', normal) === true);
+check('隐藏 off：所有人都不脱敏',
+    shouldHideAllScheduleInfo('off', owner) === false
+    && shouldHideAllScheduleInfo('off', normal) === false);
+check('隐藏策略非法值回落默认 nonMaster',
+    normalizeAllSchedulePrivacy('nope') === 'nonMaster'
+    && shouldHideAllScheduleInfo('nope', normal) === true
+    && shouldHideAllScheduleInfo('nope', owner) === false);
+
+// ========== 3. 脱敏标记 ==========
+const members = [
+    { userId: '10001', nickname: '本群成员' },
+    { userId: '10002', nickname: '别的群的人' },
+    { userId: 10003, nickname: '数字ID' }
+];
+const groupIds = new Set(['10001', '10003']);
+
+const offResult = applyAllSchedulePrivacy(members, { hide: false, memberIds: groupIds });
+check('不脱敏：所有标记为 false',
+    offResult.every(m => m.blurAvatar === false && m.blurNickname === false && m.blurLocation === false));
+check('不脱敏：不修改原数组', members[0].blurAvatar === undefined);
+
+const onResult = applyAllSchedulePrivacy(members, { hide: true, memberIds: groupIds });
+check('脱敏：本群群友头像不模糊（互相认识，照常显示）', onResult[0].blurAvatar === false && onResult[2].blurAvatar === false);
+check('脱敏：非本群群友头像模糊', onResult[1].blurAvatar === true);
+check('脱敏：本群群友教室照常显示', onResult[0].blurLocation === false && onResult[2].blurLocation === false);
+check('脱敏：非本群群友教室与昵称一样模糊', onResult[1].blurLocation === true);
+check('脱敏：本群成员昵称不模糊', onResult[0].blurNickname === false && onResult[2].blurNickname === false);
+check('脱敏：非本群成员昵称模糊', onResult[1].blurNickname === true);
+check('脱敏：返回浅拷贝，不污染入参', members[1].blurNickname === undefined && members[1].blurLocation === undefined);
+
+// 拿不到成员列表（私聊 / 官方Bot缓存为空）→ 全部按非本群处理
+for (const [label, ids] of [['null', null], ['空 Set', new Set()], ['undefined', undefined]]) {
+    const r = applyAllSchedulePrivacy(members, { hide: true, memberIds: ids });
+    check(`拿不到成员列表（${label}）：昵称全部模糊`, r.every(m => m.blurNickname === true));
+    check(`拿不到成员列表（${label}）：教室全部模糊`, r.every(m => m.blurLocation === true));
+}
+
+// ========== 4. 模板渲染：模糊与教室占位 ==========
+const tplFile = path.join(import.meta.dirname, '..', 'resources', 'template', 'schedule-template.html');
+const tplSrc = fs.readFileSync(tplFile, 'utf8');
+const baseMember = {
+    userId: '10002', avatar: 'data:,', signature: '', skipStatus: false,
+    hasSemesterStart: true, currentWeek: 5, nickname: '别的群的人', status: '上课中',
+    remainingTime: '40分钟', currentCourse: { name: '高等数学', location: '107', startTime: '10:00', endTime: '11:40' },
+    avatarBorderMode: 'off'
+};
+const renderCard = (extra = {}) => art(tplFile, {
+    weekday: '四', currentTime: '10:30', updateTime: 'x', columns: 2, canvasWidth: 1080,
+    totalMembers: 1, studyingCount: 1, skippingCount: 0,
+    members: [{ ...baseMember, ...extra }], _fontInlineUrl: 'data:,', _fontFormat: 'opentype'
+});
+
+// 断言只看 <body>：类名同样出现在 <style> 中，不能直接把整页 HTML 当判断依据
+const bodyOf = (html) => html.split('<body>')[1] || html;
+const plain = renderCard();
+check('未脱敏：头像无 is-blurred、昵称无 name-blur、教室无 location-blur',
+    !bodyOf(plain).includes('is-blurred') && !bodyOf(plain).includes('name-blur') && !bodyOf(plain).includes('location-blur'));
+check('未脱敏：头像仍包在裁剪遮罩内（结构不变，只是不模糊）',
+    bodyOf(plain).includes('class="avatar-mask"'));
+
+const masked = renderCard({ blurAvatar: true, blurNickname: true, blurLocation: true });
+check('脱敏：头像遮罩带 is-blurred', bodyOf(masked).includes('avatar-mask is-blurred'));
+check('脱敏：昵称带 name-blur', bodyOf(masked).includes('name-blur'));
+check('脱敏：教室文字带 location-blur（行保留，不再是空白）', bodyOf(masked).includes('location-text location-blur'));
+check('样式表：头像遮罩 overflow:hidden（模糊不越界、不透底色）',
+    /\.avatar-mask\s*\{[^}]*overflow:\s*hidden/.test(tplSrc));
+check('样式表：头像遮罩内放大 + 8px 模糊（裁掉半透明边缘）',
+    /\.avatar-mask\.is-blurred img\s*\{[^}]*blur\(8px\)[^}]*scale\(1\.25\)/.test(tplSrc));
+check('样式表：昵称模糊 8px（4px 仍可依稀辨字）',
+    /\.member-name \.name-blur\s*\{[^}]*blur\(8px\)/.test(tplSrc)
+    && !/\.name-blur\s*\{[^}]*blur\(4px\)/.test(tplSrc));
+check('样式表：教室文字与昵称同一档模糊（CSS 半径 = LOCATION_BLUR_PX 且与昵称一致）',
+    LOCATION_BLUR_PX === NICKNAME_BLUR_PX
+    && new RegExp(`\\.location-text\\.location-blur\\s*\\{[^}]*blur\\(${LOCATION_BLUR_PX}px\\)`).test(tplSrc));
+check('样式表：不再用 visibility 隐藏整行教室（旧方案已移除）',
+    !/\.loc-hidden\s*\{/.test(tplSrc) && !/visibility:\s*hidden/.test(tplSrc));
+// 教室行完整保留：📍 图标与文字都在 DOM 里，只是文字被模糊
+check('教室行完整保留（📍 图标 + 文字节点都在）',
+    bodyOf(masked).includes('location-icon') && bodyOf(masked).includes('location-text'));
+check('模糊只作用于文字，📍 图标不被模糊', !/location-icon[^>]*location-blur/.test(bodyOf(masked)));
+// 本群群友的教室照常显示（不模糊）
+const localCard = renderCard({ blurLocation: false });
+check('本群群友教室不模糊', bodyOf(localCard).includes('location-text') && !bodyOf(localCard).includes('location-blur'));
+
+// ========== 5. 文本降级：文本无法模糊，地点与昵称一致改用 ***（行照旧输出） ==========
+// 注意：generateTextSchedule 返回的是「行数组」，需先拼成字符串再断言
+const { generateTextSchedule } = await import('../components/Renderer.js');
+const toText = (result) => (Array.isArray(result) ? result.join('\n') : String(result));
+const maskedText = toText(generateTextSchedule([{ ...baseMember, blurNickname: true, blurLocation: true }], 5, 4));
+check('文本降级：非本群昵称以 *** 代替', maskedText.includes('***') && !maskedText.includes('别的群的人'));
+check('文本降级：地点行照旧输出（不省略行）', maskedText.includes('地点:'));
+check('文本降级：非本群地点以 *** 代替，不泄露教室', maskedText.includes('地点: ***') && !maskedText.includes('107'));
+const plainText = toText(generateTextSchedule([baseMember], 5, 4));
+check('文本降级：未脱敏时保留昵称与地点',
+    plainText.includes('别的群的人') && plainText.includes('地点: 107'));
+
+console.log(fail === 0 ? '\n全部用例通过 ✅' : `\n${fail} 个用例失败 ❌`);
+process.exit(fail === 0 ? 0 : 1);

@@ -1,6 +1,9 @@
 import { DataManager } from '../components/DataManager.js'
+import { ConfigManager } from '../components/ConfigManager.js'
 import { generateHelpImage } from '../components/Renderer.js'
-export class ScheduleHelp extends plugin {
+import { SchedulePlugin } from '../components/GroupAccess.js'
+import { applyAllScheduleHelpInfo } from '../utils/privacyUtils.js'
+export class ScheduleHelp extends SchedulePlugin {
     constructor() {
         super({
             name: "[Schedule] 课程表帮助",
@@ -17,6 +20,9 @@ export class ScheduleHelp extends plugin {
     }
     async showHelp(e) {
         const helpData = await DataManager.getHelpData()
+        // 「所有人课表」的权限说明按 Guoba 里配置的 allSchedulePermission 实时生成，
+        // 并补一条课表可见范围的轻提示（help.json 被自定义过也能补上，不会重复）
+        applyAllScheduleHelpInfo(helpData, ConfigManager.getConfig())
         const img = await generateHelpImage(helpData, { e: e })
         if (img) {
             await e.reply(segment.image(img))

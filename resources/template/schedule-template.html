@@ -137,6 +137,32 @@
             box-shadow: 0 0 0 2px rgba(242, 216, 92, 0.45), 0 6px 18px rgba(242, 216, 92, 0.35);
         }
 
+        /* ===== 「所有人课表」隐私遮罩（仅该命令会传入 blurAvatar / blurNickname / blurLocation） ===== */
+        /* 头像裁剪遮罩：模糊只发生在遮罩内部 —— 模糊后的半透明边缘被裁掉，
+           既不会越出头像边框，也不会透出进度环/容器底色 */
+        .avatar-mask {
+            width: 100%;
+            height: 100%;
+            border-radius: inherit;
+            overflow: hidden;
+        }
+
+        .avatar-mask.is-blurred img {
+            /* 放大 1.25 倍，使 8px 的模糊边缘全部落在遮罩外被裁掉 */
+            filter: blur(8px);
+            transform: scale(1.25);
+        }
+
+        /* 非本群群友昵称高斯模糊：只模糊文字本身，保留前面的箭头装饰 */
+        .member-name .name-blur {
+            filter: blur(8px);
+        }
+
+        /* 非本群群友教室（地点）高斯模糊：与昵称同一档，只模糊文字本身，📍 图标保留、行高不变 */
+        .course-detail .location-text.location-blur {
+            filter: blur(8px);
+        }
+
         /* 左侧双箭头装饰 */
         .member-card::before,
         .member-card::after {
@@ -377,8 +403,8 @@
         }
 
         /* 今日课程节数圆点（卡片与页脚图例共用同一套配色）
-           配色目标：四态一眼可分 —— 已上完偏灰（状态绿向中性灰混合，弱化但保留色相）、
-           正在上为饱和红且尺寸更大、即将上为饱和蓝、已翘课为饱和橙。
+           配色目标：四态一眼可分 —— 已上完为鲜绿 #00C86E、正在上为饱和红且尺寸更大、
+           即将上为饱和蓝、已翘课为饱和橙。
            不再用 opacity 淡化，避免小尺寸下细节糊在一起、对比度不足。 */
         .dot {
             width: 8px;
@@ -632,7 +658,7 @@
             <div class="member-card{{if member.isSelf}} is-self{{/if}}" style="--status-color: {{member.statusColor || '#00897B'}}; --status-color-soft: {{member.statusColorSoft || '#73BEB6'}};">
                 <!-- 头像区域 -->
                 <div class="member-avatar avatar-{{member.avatarBorderMode}}"{{if member.avatarBorderMode === 'progress'}} style="--progress: {{member.avatarProgress}}; --ring-strong: {{member.ringStrong}}; --ring-soft: {{member.ringSoft}};"{{/if}}>
-                    <img src="{{member.avatar}}" alt="{{member.nickname}}">
+                    <div class="avatar-mask{{if member.blurAvatar}} is-blurred{{/if}}"><img src="{{member.avatar}}" alt="{{member.nickname}}"></div>
                     {{if member.skipStatus && member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <span class="skip-tag">翘课模式</span>
                     {{/if}}
@@ -640,7 +666,7 @@
 
                 <!-- 右侧信息容器：昵称 + 状态行 -->
                 <div class="member-info-right">
-                    <div class="member-name">{{member.nickname}}</div>
+                    <div class="member-name"><span{{if member.blurNickname}} class="name-blur"{{/if}}>{{member.nickname}}</span></div>
                     {{if member.status !== '学期结束' && member.status !== '学期未开始'}}
                     <div class="member-status-row">
                         <div class="member-status status-{{member.status}}">{{member.status}}</div>
@@ -704,7 +730,7 @@
                     </div>
                     <div class="course-detail">
                         <span class="location-icon">📍</span>
-                        <span class="location-text">{{member.overlapLocationLabel}}</span>
+                        <span class="location-text{{if member.blurLocation}} location-blur{{/if}}">{{member.overlapLocationLabel}}</span>
                     </div>
                     {{else}}
                     <div class="course-info-row">
@@ -721,7 +747,7 @@
                     <div class="course-detail">
                         <span class="location-icon">📍</span>
                         {{if member.currentCourse.location && member.currentCourse.location.trim() !== ''}}
-                        <span class="location-text">{{member.currentCourse.location}}</span>
+                        <span class="location-text{{if member.blurLocation}} location-blur{{/if}}">{{member.currentCourse.location}}</span>
                         {{else}}
                         <span class="location-text" style="color:#9e9e9e;">未知地点</span>
                         {{/if}}
