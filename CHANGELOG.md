@@ -24,6 +24,8 @@
   本群成员判定取当前群成员列表，拿不到时（私聊触发、官方 Bot 群成员缓存为空）一律按非本群处理；文本降级输出同步（昵称与地点以 `***` 代替，地点行照旧输出）。该策略只作用于「所有人课表」，`#clstb` 群课表不受影响。规则实现为纯函数 `utils/privacyUtils.js`，新增测试 `test/test-all-schedule-privacy.js`
 - 新增导出 `isGroupManager(e)`（只判断群主/群管理员、不含 Bot 主人），`checkPermission` 改为复用它
 
+- 新增配置项 **`updateBranch`（更新分支）**：可在 Guoba 里直接选择 `#课表更新` 使用哪个分支（留空 = 沿用插件当前所在分支；填写 `main` / `EchoDev` / `MoistDev` 等会先切换过去再更新）。**命令也可以直接带分支参数**：`#课表更新 CrystalDev`、`#课表强制更新 MoistDev`（别名 `#更新课表`），优先级为 **命令行参数 > 配置 > 当前分支**，分支名不合法时会明确提示。同时修复更新逻辑的两个健壮性问题：①原先强制更新把远端写死成 `origin`，只配置了 `github` 等其它远端名的仓库会更新失败，现在会自动识别（优先 `origin`，否则取第一个远端）；②分支名统一走白名单校验（`字母/数字/-/_/./`），避免拼接进 shell 命令时被注入。改动集中在 `apps/update.js`、`utils/updateBranch.js`（`normalizeBranchName` / `pickRemote` / `buildUpdateCommands` / `parseUpdateCommand` / `resolveUpdateBranch`）、`components/ConfigManager.js`、`guoba/schemas/index.js` 与默认配置；新增测试 `test/test-update-branch.js`
+
 ### 修复
 
 - 修复 `#清除课表` 后**群课表里仍留着一张「今日暂无课程」空卡片**的问题：旧实现只清空 `courses`、课表文件留着，而群课表/所有人课表的成员来源就是 `data/<id>.json` 文件本身。现在 `DataManager.removeUserSchedule()` 直接删除课表数据文件，清除后立即从群课表消失；昵称与个性签名在删除前转入新增的 `data/user-profiles.json` 保留，重新导入课表时自动恢复（不再有“彻底删除会丢签名”的顾虑）。`saveUserNickname`/`saveUserSignature` 在没有课表时只写用户资料，不再生成空课表文件（避免清除后改昵称让空卡片复活）；群课表对没有课程记录的成员统一按“未设置课表”处理，历史遗留的空课表文件同样不再显示。新增测试 `test/test-clear-schedule.js`

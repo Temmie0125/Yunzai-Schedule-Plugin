@@ -106,7 +106,10 @@ export class ConfigManager {
             calendarSyncDaysBefore: 7,      // 同步窗口：向前 N 天
             calendarSyncDaysAfter: 60,      // 同步窗口：向后 N 天
             calendarMaxEvents: 150,         // 单次最多拉取的事件数（活动总数上限 200）
-            calendarAllowPrivateHost: false // 允许绑定内网/本机日历地址（自建 CalDAV 时需要）
+            calendarAllowPrivateHost: false, // 允许绑定内网/本机日历地址（自建 CalDAV 时需要）
+            // 「#课表更新」使用的分支：留空 = 跟随插件当前所在分支；
+            // 填了别的分支（如 main / EchoDev）会先切过去再更新
+            updateBranch: ""
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
@@ -290,7 +293,8 @@ export class ConfigManager {
             groupWhitelist, groupBlacklist,
             calendarSyncEnabled, calendarSyncInterval,
             calendarSyncDaysBefore, calendarSyncDaysAfter,
-            calendarMaxEvents, calendarAllowPrivateHost
+            calendarMaxEvents, calendarAllowPrivateHost,
+            updateBranch
         } = data;
         const configToSave = {
             pushHour,
@@ -313,7 +317,8 @@ export class ConfigManager {
             groupWhitelist, groupBlacklist,
             calendarSyncEnabled, calendarSyncInterval,
             calendarSyncDaysBefore, calendarSyncDaysAfter,
-            calendarMaxEvents, calendarAllowPrivateHost
+            calendarMaxEvents, calendarAllowPrivateHost,
+            updateBranch
         };
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {

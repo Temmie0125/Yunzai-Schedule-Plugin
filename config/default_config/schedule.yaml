@@ -92,3 +92,7 @@ calendarSyncDaysBefore: 7       # 同步窗口：向前 N 天
 calendarSyncDaysAfter: 60       # 同步窗口：向后 N 天
 calendarMaxEvents: 150          # 单次最多拉取事件数（活动总数上限 200）
 calendarAllowPrivateHost: false # 允许绑定内网/本机日历地址（自建 CalDAV 时才需要打开）
+# ===== 插件更新 =====
+# 「#课表更新」使用的分支：留空 = 跟随插件当前所在分支；
+# 填了别的分支（如 main / EchoDev / MoistDev）会先切过去再更新，可在 Guoba 里直接选
+updateBranch: ""

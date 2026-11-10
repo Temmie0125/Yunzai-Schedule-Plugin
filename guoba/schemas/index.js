@@ -112,6 +112,20 @@ export const schemas = [
         bottomHelpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms。"
     },
     {
+        component: 'Divider',
+        label: '插件更新'
+    },
+    {
+        field: "updateBranch",
+        label: "更新分支",
+        component: "Input",
+        componentProps: {
+            placeholder: "留空 = 跟随当前分支（如 main / EchoDev / MoistDev）"
+        },
+        defaultValue: "",
+        bottomHelpMessage: "「#课表更新」从哪个分支拉取：留空表示沿用插件当前所在分支；填别的分支会先切换过去再更新（如 main / EchoDev / MoistDev）。本地有未提交改动时切换会失败，可改用 #课表强制更新。"
+    },
+    {
         component: 'SOFT_GROUP_BEGIN',
         label: '课表模块设置'
     },
@@ -522,5 +536,5 @@ export const schemas = [
         },
         defaultValue: [],
         bottomHelpMessage: "这些群将不会收到生日祝福。白名单优先：如果白名单非空，黑名单无效。"
-    },
+    }
 ];
