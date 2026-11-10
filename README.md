@@ -142,6 +142,7 @@ pnpm install
 - **凭据安全**：账号密码用 AES-256-GCM 加密后存 `data/calendar-bindings.json`，密钥在 `data/.calendar-key`（`data/` 已被 .gitignore 忽略）；
 - **默认拒绝内网地址**：自建 CalDAV 在内网时，让 Bot 主打开 `calendarAllowPrivateHost`；
 - **同步窗口**：默认向前 7 天 / 向后 60 天，窗口内的日历活动每次同步整体替换（远端删掉本地也会消失），窗口外的历史活动与**本地活动**（`source: local`）始终保留；
+- **全天事件**（日历里的 `VALUE=DATE`，如运动会、节假日）**不占满全天、不参与任何时间判定**：不会被算成「分身中」，也不会进入今日圆点；只会在卡片上单独标注一行 `📅 全天：运动会`，个人/周课表里时长显示为「全天」；
 - **相关配置**：`calendarSyncEnabled`（定时同步总开关，默认关闭）、`calendarSyncInterval`（默认 30 分钟）、`calendarSyncDaysBefore` / `calendarSyncDaysAfter`、`calendarMaxEvents`、`calendarAllowPrivateHost`，均可在 Guoba 中配置；
 - **过渡方案**：`#日历导出` 可把课表 + 活动导出成 `.ics` 导入手机日历；真正的「双向写入」需要以本插件充当 CalDAV 服务端（要求公网 HTTPS + 证书），属于后续计划。
 

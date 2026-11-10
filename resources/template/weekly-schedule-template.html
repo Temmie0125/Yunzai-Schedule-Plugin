@@ -265,7 +265,7 @@
                             <span class="reschedule-badge">调课·{{course.originalDate}}</span>
                             {{/if}}
                         </span>
-                        <span class="course-time">🕐 {{course.startTime}}-{{course.endTime}}</span>
+                        <span class="course-time">{{if course.allDay}}🕐 全天{{else}}🕐 {{course.startTime}}-{{course.endTime}}{{/if}}</span>
                         <span class="course-info">
                             {{if course.teacher}}👨‍🏫 {{course.teacher}}{{/if}}
                             {{if course.location}} 📍 {{course.location}}{{/if}}

@@ -358,7 +358,8 @@ export function eventsToActivities(events) {
         let startTime = `${String(event.start.getHours()).padStart(2, '0')}:${String(event.start.getMinutes()).padStart(2, '0')}`
         let endTime = `${String(event.end.getHours()).padStart(2, '0')}:${String(event.end.getMinutes()).padStart(2, '0')}`
         if (event.allDay) {
-            // 全天事件：占满当天（00:00-23:59），避免被判定为“无时长”丢弃
+            // 全天事件：时间字段只为存储合法（解析/校验要求 HH:MM 且结束晚于开始），
+            // 展示层看到 allDay=true 会显示「全天」，且不参与任何时间重叠/状态判定
             startTime = '00:00'
             endTime = '23:59'
         }
@@ -375,7 +376,9 @@ export function eventsToActivities(events) {
             endTime,
             createdAt: new Date().toISOString(),
             source: 'calendar',
-            externalUid: event.uid
+            externalUid: event.uid,
+            // 全天事件：只做「全天」标注，不参与课程的时间判定（不占满全天、不会算成分身中）
+            allDay: event.allDay === true
         })
     }
     // 同一天同名同时间的去重（不同日历里重复订阅同一条事件时会出现）

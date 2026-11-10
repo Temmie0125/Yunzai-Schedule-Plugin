@@ -388,7 +388,9 @@ export async function generateUserScheduleImage(userData, targetDate = null, opt
             rescheduled: c.rescheduled || false,
             originalDate: c.originalDate || '',
             // 活动（会议/考试等）在卡片上带「活动」标签
-            isActivity: c.isActivity === true
+            isActivity: c.isActivity === true,
+            // 全天事件：模板显示「全天」而不显示 00:00-23:59
+            allDay: c.allDay === true
         })),
         updateTime: new Date().toLocaleString('zh-CN')
     };

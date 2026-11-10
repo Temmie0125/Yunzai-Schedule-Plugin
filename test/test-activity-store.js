@@ -114,7 +114,31 @@ try {
     check('圆点里活动带 -activity 后缀（渲染为空心圈）',
         memberData?.courseDots?.visible.every(v => v.endsWith('-activity')));
 
-    // ===== 6. 圆点后缀：混排课程与活动 =====
+    // ===== 6. 全天事件：只标注，不算“占满全天”（不会把课程挤成分身中）=====
+    const { formatCourses } = DataManager;
+    DataManager.saveSchedule('10003', {
+        tableName: '课表', semesterStart,
+        courses: [{ name: '高等数学', teacher: '', location: '教107', day: weekday, startTime: '10:00', endTime: '11:40', weeks: [1, 2, 3, 4] }]
+    });
+    DataManager.saveActivities('10003', [
+        { name: '运动会', location: '', date: todayStr, startTime: '00:00', endTime: '23:59', allDay: true },
+        { name: '志愿者', location: '', date: todayStr, startTime: '15:00', endTime: '16:00' }
+    ]);
+    const allDaySaved = DataManager.getActivities('10003').find(a => a.name === '运动会');
+    check('全天事件标记被持久化', allDaySaved?.allDay === true);
+    check('普通活动不带 allDay 标记', DataManager.getActivities('10003').find(a => a.name === '志愿者')?.allDay === false);
+    const allDayMember = await groupPlugin.getMemberScheduleData('10003', { card: '小明' }, weekday, '10:30');
+    check('全天事件不会把状态挤成「分身中」', allDayMember?.status === '上课中');
+    check('当前课程是真正的课程而非全天事件', allDayMember?.currentCourse?.name === '高等数学');
+    check('全天事件单独标注出来（含名称）',
+        allDayMember?.allDayActivitiesText?.includes('运动会'));
+    check('全天事件不进入今日圆点', allDayMember?.courseDots?.total === 2);
+    const allDayText = formatCourses([
+        { name: '运动会', teacher: '', location: '', startTime: '00:00', endTime: '23:59', allDay: true }
+    ], 2, weekday, '小明');
+    check('文本降级里全天事件显示「全天」', allDayText.includes('🕐 全天') && !allDayText.includes('00:00 - 23:59'));
+
+    // ===== 7. 圆点后缀：混排课程与活动 =====
     const mixed = [
         { name: '课1', startTime: '08:00', endTime: '09:00' },
         { name: '活动', startTime: '10:00', endTime: '11:00', isActivity: true },

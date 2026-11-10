@@ -164,7 +164,9 @@ try {
     check('事件转活动：带 externalUid', activities.every(a => typeof a.externalUid === 'string' && a.externalUid));
     check('事件转活动：时间为 HH:MM', activities.every(a => /^\d{2}:\d{2}$/.test(a.startTime) && /^\d{2}:\d{2}$/.test(a.endTime)));
     check('事件转活动：名称/地点被保留', activities.some(a => a.name === '志愿者活动' && a.location === '第一学科楼'));
-    check('全天事件占满当天（00:00-23:59）', activities.some(a => a.name === '运动会' && a.startTime === '00:00' && a.endTime === '23:59'));
+    check('全天事件标记 allDay=true（不作为“占满全天”的时间块参与判定）',
+        activities.some(a => a.name === '运动会' && a.allDay === true));
+    check('非全天事件不带 allDay 标记', activities.filter(a => a.name !== '运动会').every(a => !a.allDay));
     const again = eventsToActivities(parseCalendarEvents(ics, { maxEvents: 50 }));
     check('同一份日历生成的 activity id 稳定', JSON.stringify(again.map(a => a.id)) === JSON.stringify(activities.map(a => a.id)));
     check('事件数量受 maxEvents 限制', parseCalendarEvents(ics, { maxEvents: 1 }).length === 1);

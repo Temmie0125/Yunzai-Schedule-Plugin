@@ -427,7 +427,10 @@ export class DataManager {
                 createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : new Date().toISOString(),
                 // 来源：local=用户在 bot 侧添加；calendar=从用户日历同步拉取（每次同步会被替换）
                 source: raw.source === 'calendar' ? 'calendar' : 'local',
-                externalUid: typeof raw.externalUid === 'string' ? raw.externalUid.slice(0, 200) : ''
+                externalUid: typeof raw.externalUid === 'string' ? raw.externalUid.slice(0, 200) : '',
+                // 全天事件（日历里的 VALUE=DATE 事件）：只做标注，不参与时间判定，
+                // 避免和课程时间重叠被算成「分身中」；存储时用 00:00-23:59 占位保证字段合法
+                allDay: raw.allDay === true
             });
         }
         result.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
@@ -516,6 +519,8 @@ export class DataManager {
             startTime: activity.startTime,
             endTime: activity.endTime,
             isActivity: true,
+            // 全天事件：调用方需把它排除在状态/重叠/圆点计算之外，只做展示标注
+            allDay: activity.allDay === true,
             activityId: activity.id,
             activityDate: activity.date
         };
@@ -702,7 +707,10 @@ export class DataManager {
             if (!course.isActivity) {
                 reply += `   👨‍🏫 ${course.teacher || '未知教师'}\n`;
             }
-            reply += `   🕐 ${course.startTime} - ${course.endTime}\n`;
+            // 全天事件没有具体时间，标注为「全天」而不是 00:00-23:59
+            reply += course.allDay
+                ? `   🕐 全天\n`
+                : `   🕐 ${course.startTime} - ${course.endTime}\n`;
             reply += `   📍 ${course.location || '未知地点'}\n`;
             if (index < courses.length - 1) reply += "\n";
         });

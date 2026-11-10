@@ -55,6 +55,11 @@ export class GroupSchedulePlugin extends SchedulePlugin {
     // 今天添加的活动（会议/活动/考试等）：学期未开始或已结束时也要能展示出来
     const todayActivities = DataManager.getActivitiesForDate(scheduleData, new Date());
     const weekForDisplay = userCurrentWeek ?? 1;
+    // 全天事件只在卡片上单独标注（不参与时间判定）
+    const earlyAllDayNames = todayActivities.filter(item => item.allDay === true).map(item => item.name).filter(Boolean);
+    const earlyAllDayText = earlyAllDayNames.length === 0
+      ? ''
+      : `${earlyAllDayNames.slice(0, 3).join('、')}${earlyAllDayNames.length > 3 ? ` 等 ${earlyAllDayNames.length} 项` : ''}`;
     // 学期未开始：不展示任何课程，等待开学（今天有活动时例外）
     if (hasValidStart && userCurrentWeek === null && todayActivities.length === 0) {
       return {
@@ -66,7 +71,9 @@ export class GroupSchedulePlugin extends SchedulePlugin {
         semesterStartDate: semesterStart,
         signature,
         currentWeek: 1,
-        hasSemesterStart: true
+        hasSemesterStart: true,
+        allDayActivities: earlyAllDayNames,
+        allDayActivitiesText: earlyAllDayText
       };
     }
     // 计算最大周数，判断学期是否结束
@@ -101,11 +108,13 @@ export class GroupSchedulePlugin extends SchedulePlugin {
         signature,
         currentWeek: weekForDisplay,
         hasSemesterStart: !!semesterStart,
-        daysSinceSemesterEnd
+        daysSinceSemesterEnd,
+        allDayActivities: earlyAllDayNames,
+        allDayActivitiesText: earlyAllDayText
       };
     }
     // 筛选今日课程（含今天添加的活动：会议/活动/考试等，带 isActivity 标记）
-    const todayCourses = DataManager.withDayActivities(
+    const todayEntries = DataManager.withDayActivities(
       scheduleData.courses.filter(course =>
         userCurrentWeek !== null
         && parseInt(course.day) === currentDay
@@ -114,7 +123,17 @@ export class GroupSchedulePlugin extends SchedulePlugin {
       scheduleData,
       new Date()
     );
-    todayCourses.sort(compareByStartTime);
+    todayEntries.sort(compareByStartTime);
+    // 全天事件（日历同步来的运动会/节假日等）不参与时间判定：
+    // 否则占满 00:00-23:59 会和所有课程重叠，卡片上会被算成「分身中」
+    const allDayNames = todayEntries
+      .filter(entry => entry.allDay === true)
+      .map(entry => entry.name)
+      .filter(Boolean);
+    const allDayActivitiesText = allDayNames.length === 0
+      ? ''
+      : `${allDayNames.slice(0, 3).join('、')}${allDayNames.length > 3 ? ` 等 ${allDayNames.length} 项` : ''}`;
+    const todayCourses = todayEntries.filter(entry => entry.allDay !== true);
     let currentCourse = null;
     let status = '无课程';
     let remainingTime = null;
@@ -200,6 +219,9 @@ export class GroupSchedulePlugin extends SchedulePlugin {
       signature,
       currentWeek: weekForDisplay,
       hasSemesterStart: !!semesterStart,
+      // 全天事件：只在卡片上单独标注一行，不参与状态/重叠/圆点
+      allDayActivities: allDayNames,
+      allDayActivitiesText,
       // 真实时间交叠时的多课程展示数据（其余情况不带这些字段）
       ...(overlapCourses ? {
         overlapCourses,

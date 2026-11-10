@@ -473,7 +473,9 @@ export class ScheduleQuery extends SchedulePlugin {
                     location: c.location || '',
                     rescheduled: c.rescheduled || false,
                     originalDate: c.originalDate || '',
-                    isActivity: c.isActivity === true
+                    isActivity: c.isActivity === true,
+                    // 全天事件在周课表里显示「全天」
+                    allDay: c.allDay === true
                 }))
             });
         }

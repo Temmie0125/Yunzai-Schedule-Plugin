@@ -241,7 +241,7 @@
                 </div>
                 <div class="course-detail">
                     {{if course.teacher}}<span>👨‍🏫 {{course.teacher}}</span>{{/if}}
-                    <span>🕐 {{course.startTime}} - {{course.endTime}}</span>
+                    <span>{{if course.allDay}}🕐 全天{{else}}🕐 {{course.startTime}} - {{course.endTime}}{{/if}}</span>
                     <span>📍 {{course.location}}</span>
                 </div>
             </div>
