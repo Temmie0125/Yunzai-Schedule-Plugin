@@ -4,6 +4,14 @@
 
 ### 新增
 
+- 新增**日历接入（手机日历 ↔ 课表）**：把用户自己的手机日历接进插件，日历事件以**活动**形式出现在课表里（群课表圆点=**空心圈**、个人课表带「活动」标签、文本降级标 `📌 [活动]`），与课程一起参与今日/周/群课表/推送等所有展示，并随 `#清除课表` 一起清除
+  - **方向是「拉取」**：在手机/电脑日历里增删改 → 日历服务器 → 插件定时拉取（或手动 `#日历同步`）→ 课表随之更新；不需要本机开端口或公网 HTTPS，也不向第三方推送课表
+  - 支持两种接入：`#日历绑定 caldav <地址> <账号> <密码>`（Nextcloud/Radicale/Zimbra/腾讯企业邮 等）与 `#日历绑定 ics <链接>`（**Exchange/Outlook 的「发布日历」链接**、iCloud 共享链接、学校导出的 `.ics`）。Exchange 本身不提供 CalDAV，用发布出来的 ICS 链接接入即可
+  - 安全：账号密码 AES-256-GCM 加密存 `data/calendar-bindings.json`（密钥 `data/.calendar-key`，`data/` 已忽略）；群里携带密码的绑定会被拒绝并提示私聊；默认拒绝内网/本机地址（自建 CalDAV 可用 `calendarAllowPrivateHost` 打开）
+  - 同步窗口默认向前 7 天 / 向后 60 天：窗口内的日历活动整体替换（远端删除→本地同步消失），窗口外历史活动与本地活动（`source=local`）保留；重复事件（RRULE）自动展开、全天事件占满当天
+  - 新命令：`#日历同步` / `#日历状态` / `#日历解绑`（解绑只清日历来源的活动）/ `#日历导出`（课表+活动导出成 `.ics` 导入手机日历）/ `#日历帮助`
+  - 新配置：`calendarSyncEnabled`（定时同步总开关，默认关）、`calendarSyncInterval`（默认 30 分钟）、`calendarSyncDaysBefore` / `calendarSyncDaysAfter`、`calendarMaxEvents`、`calendarAllowPrivateHost`，均支持 Guoba 可视化与热重载
+  - 新增测试 `test/test-calendar-sync.js`（服务层：地址校验/凭据加密/ICS 与 CalDAV 拉取/多 VCALENDAR 归一化/RRULE 展开/合并/同步/导出往返）与 `test/test-calendar-commands.js`（命令层与批量定时同步），均用本地 http mock，不访问外网
 - `#课表帮助` 里的**「所有人在上什么课」不再固定在「管理员命令」分组**：改到「群互动」分组，并按 Guoba 配置的 `allSchedulePermission` **实时显示当前权限档位**（`owner` 仅 Bot 主人 / `ownerAdmin` Bot 主人或群管理员 / `everyone` 所有人）。说明文案由 `applyAllScheduleHelpInfo` 在渲染时注入，用户自定义过 `config/help.json` 也能生效（旧版布局会自动从管理员分组挪出，重复调用不会产生重复条目）
 - 新增**课表可见范围的注意条**：导入课表成功的回复末尾追加一行短提示；`#课表帮助` 图片**最底部**、在所有命令分组之后新增一条**带醒目底色（淡琥珀底 + 左侧强调条）的独立注意条**，不与命令条目混排。内容提示**自己上传的课表可能被其他群的用户通过 `#全局课表`（所有人课表）看到**，可见范围与脱敏由 Bot 主配置（`allSchedulePermission` / `allSchedulePrivacy`）决定、需要调整可联系 Bot 主。注意条由 `helpData.visibilityTip` 驱动（`applyAllScheduleHelpInfo` 注入），不拦截任何操作，也不改变原有权限判定
 - 新增**全局群黑白名单**：配置项 `groupWhitelist` / `groupBlacklist`（Guoba 可视化选择群，支持官方Bot复合群ID，热更新无需重启）。名单内的群（以及白名单非空时名单外的群）本插件**完全静默**——不回复任何提示，也不会向该群发送生日祝福。实现为全部 app 的插件类统一继承 `components/GroupAccess.js` 的 `SchedulePlugin` 基类：构造时给每条 rule 套一层闸门（命中时返回 `false`，宿主会继续把消息交给其他插件；不改写 `rule.fnc`，日志中仍是原方法名），上下文回调经 `getContext` 拦截，生日主动推送经 `filterAccessibleGroupIds` 过滤。私聊不受限制；配置读取带 3 秒缓存，避免每条规则都同步读盘解析 YAML。新增测试 `test/test-group-access.js`
