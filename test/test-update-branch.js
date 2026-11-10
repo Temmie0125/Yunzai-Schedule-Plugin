@@ -25,7 +25,8 @@ global.Bot = { uin: 10000, version: { toString: () => 'v3' }, on: () => { }, off
 
 const pluginRoot = path.resolve(import.meta.dirname, '..');
 
-const { normalizeBranchName, pickRemote, buildUpdateCommands } = await import('../utils/updateBranch.js');
+const { normalizeBranchName, pickRemote, buildUpdateCommands, parseUpdateCommand, resolveUpdateBranch } =
+    await import('../utils/updateBranch.js');
 const { ScheduleUpdate } = await import('../apps/update.js');
 const { ConfigManager } = await import('../components/ConfigManager.js');
 
@@ -45,7 +46,38 @@ check('指定远端优先', pickRemote(['origin', 'github'], 'github') === 'gith
 check('指定远端不存在时回退', pickRemote(['upstream'], 'origin') === 'upstream');
 check('没有远端返回空串', pickRemote([]) === '' && pickRemote(null) === '');
 
-// ===== 3. 命令生成 =====
+// ===== 3. 命令解析（#课表更新 [#分支] 与 #更新课表 别名）=====
+const cmd1 = parseUpdateCommand('#课表更新');
+check('无参数命令：不强制、无分支', cmd1.isForce === false && cmd1.branch === '' && cmd1.invalidBranch === false);
+const cmd2 = parseUpdateCommand('#课表更新 CrystalDev');
+check('#课表更新 <分支> 解析出分支', cmd2.branch === 'CrystalDev' && cmd2.isForce === false);
+const cmd3 = parseUpdateCommand('#课表强制更新 MoistDev');
+check('强制 + 分支可以一起用', cmd3.isForce === true && cmd3.branch === 'MoistDev');
+const cmd4 = parseUpdateCommand('#更新课表 EchoDev');
+check('别名 #更新课表 也支持分支', cmd4.branch === 'EchoDev');
+const cmd5 = parseUpdateCommand('#强制更新课表 main');
+check('别名 + 强制 也支持', cmd5.isForce === true && cmd5.branch === 'main');
+const cmd6 = parseUpdateCommand('#课表更新 feature/foo-1.2');
+check('带斜杠的分支名可用', cmd6.branch === 'feature/foo-1.2');
+const cmd7 = parseUpdateCommand('#课表更新 bad;rm');
+check('非法分支参数被标记', cmd7.invalidBranch === true && cmd7.branch === '');
+
+// ===== 4. 分支优先级：命令行 > 配置 > 当前分支 =====
+check('命令行优先',
+    resolveUpdateBranch({ argBranch: 'CrystalDev', configBranch: 'MoistDev', currentBranch: 'main' }).branch === 'CrystalDev'
+    && resolveUpdateBranch({ argBranch: 'CrystalDev', configBranch: 'MoistDev', currentBranch: 'main' }).source === 'command');
+check('没有命令行参数时用配置',
+    resolveUpdateBranch({ argBranch: '', configBranch: 'MoistDev', currentBranch: 'main' }).branch === 'MoistDev'
+    && resolveUpdateBranch({ argBranch: '', configBranch: 'MoistDev', currentBranch: 'main' }).source === 'config');
+check('都没有时跟随当前分支',
+    resolveUpdateBranch({ argBranch: '', configBranch: '', currentBranch: 'EchoDev' }).branch === 'EchoDev'
+    && resolveUpdateBranch({ argBranch: '', configBranch: '', currentBranch: 'EchoDev' }).source === 'current');
+check('非法参数会回落到配置',
+    resolveUpdateBranch({ argBranch: 'bad;rm', configBranch: 'main', currentBranch: 'main' }).branch === 'main');
+check('全空时兜底 main',
+    resolveUpdateBranch({}).branch === 'main' && resolveUpdateBranch({}).source === 'current');
+
+// ===== 5. 命令生成 =====
 const force = buildUpdateCommands({ repoPath: '/repo', remote: 'github', branch: 'MoistDev', isForce: true });
 check('强制更新包含 fetch', force[0].includes('fetch --all --prune'));
 check('强制更新会 checkout -B 到目标分支',
@@ -73,6 +105,9 @@ check('setConfig 的保存白名单包含 updateBranch',
 const updateSrc = fs.readFileSync(path.join(pluginRoot, 'apps/update.js'), 'utf8');
 check('更新逻辑使用配置里的分支', /config\.updateBranch/.test(updateSrc));
 check('更新逻辑使用自动识别的远端', /pickRemote\(await this\.listRemotes\(\)\)/.test(updateSrc));
+check('更新逻辑优先使用命令行参数', /resolveUpdateBranch\(\{/.test(updateSrc) && /argBranch/.test(updateSrc));
+check('命令规则支持分支参数与别名',
+    /课表\(\?:强制\)\?更新\|\(\?:强制\)\?更新课表/.test(updateSrc));
 check('apps/update.js 不再自行导出工具函数（避免被宿主当成插件类）',
     !/^export function/m.test(updateSrc));
 const schemaSrc = fs.readFileSync(path.join(pluginRoot, 'guoba/schemas/index.js'), 'utf8');

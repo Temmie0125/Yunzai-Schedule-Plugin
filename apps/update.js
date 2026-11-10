@@ -6,7 +6,10 @@ import path from 'path'
 import common from '../../../lib/common/common.js'
 import { SchedulePlugin } from '../components/GroupAccess.js'
 import { ConfigManager } from '../components/ConfigManager.js'
-import { normalizeBranchName, pickRemote, buildUpdateCommands } from '../utils/updateBranch.js'
+import {
+    normalizeBranchName, pickRemote, buildUpdateCommands,
+    parseUpdateCommand, resolveUpdateBranch
+} from '../utils/updateBranch.js'
 
 const PLUGIN_PATH = path.join(process.cwd(), 'plugins/schedule')
 let uping = false
@@ -20,7 +23,8 @@ export class ScheduleUpdate extends SchedulePlugin {
             priority: 1000,
             rule: [
                 {
-                    reg: '^#(课表)(强制)?更新$',
+                    // #课表更新 [#分支] / #课表强制更新 [#分支] / #更新课表 [#分支]
+                    reg: '^#(?:课表(?:强制)?更新|(?:强制)?更新课表)(?:\\s+\\S+)?$',
                     fnc: 'update'
                 }
             ]
@@ -52,11 +56,19 @@ export class ScheduleUpdate extends SchedulePlugin {
         }
 
 
-        const isForce = this.e.msg.includes('强制')
+        // 命令里带了分支参数就用它（优先级最高），否则用 Guoba 配置、再否则跟随当前分支
+        const parsed = parseUpdateCommand(this.e.msg)
+        if (parsed.invalidBranch) {
+            await this.reply(
+                `分支名「${parsed.rawBranch}」不合法喵~\n` +
+                '只能包含字母、数字、- _ . / （例如：#课表更新 MoistDev）'
+            )
+            return true
+        }
 
         uping = true
         try {
-            await this.runUpdate(isForce)
+            await this.runUpdate(parsed.isForce, parsed.branch)
         } catch (err) {
             logger.error(`课程表插件更新失败: ${err}`)
             await this.reply(`更新失败: ${err.message}`)
@@ -66,15 +78,23 @@ export class ScheduleUpdate extends SchedulePlugin {
         return true
     }
 
-    async runUpdate(isForce) {
+    async runUpdate(isForce, argBranch = '') {
         await this.ensureGitignore();
         const oldPkg = await this.getPackageJsonContent();
         const repoPath = PLUGIN_PATH;
         const config = ConfigManager.getConfig();
         const currentBranch = await this.getCurrentBranch();
         const remote = pickRemote(await this.listRemotes());
-        // 目标分支：Guoba 里选了就用选的，留空则跟随插件当前所在分支
-        const branch = normalizeBranchName(config.updateBranch) || currentBranch;
+        // 目标分支：命令行参数 > Guoba 配置 > 当前所在分支
+        const resolved = resolveUpdateBranch({
+            argBranch,
+            configBranch: config.updateBranch,
+            currentBranch
+        });
+        const branch = resolved.branch;
+        const sourceText = resolved.source === 'command'
+            ? '命令行指定'
+            : (resolved.source === 'config' ? 'Guoba 配置' : '当前分支');
         if (!remote) {
             await this.reply('未找到可用的 git 远端（origin 等），请检查插件仓库配置');
             return false;
@@ -82,9 +102,9 @@ export class ScheduleUpdate extends SchedulePlugin {
         const switching = branch !== currentBranch;
         const switchNote = switching ? `，将切换到该分支` : '';
         if (isForce) {
-            await this.reply(`开始强制更新（分支：${branch}${switchNote}），将丢弃所有本地修改...`);
+            await this.reply(`开始强制更新（分支：${branch}${switchNote}，来源：${sourceText}），将丢弃所有本地修改...`);
         } else {
-            await this.reply(`开始更新课程表插件（分支：${branch}${switchNote}）...`);
+            await this.reply(`开始更新课程表插件（分支：${branch}${switchNote}，来源：${sourceText}）...`);
         }
         const oldCommit = await this.getCommitId();
         const command = buildUpdateCommands({ repoPath, remote, branch, isForce }).join(' && ');

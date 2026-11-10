@@ -30,6 +30,40 @@ export function pickRemote(remoteNames, preferred = '') {
 }
 
 /**
+ * 解析更新命令：是否强制 + 目标分支参数
+ * 支持 `#课表更新`、`#课表强制更新`、`#更新课表`、`#强制更新课表`，后面都可以跟一个分支名
+ * @param {string} message 原始消息
+ * @returns {{isForce: boolean, rawBranch: string, branch: string, invalidBranch: boolean}}
+ */
+export function parseUpdateCommand(message) {
+    const text = String(message || '').trim()
+    const isForce = /强制/.test(text)
+    const match = text.match(/^#(?:课表(?:强制)?更新|(?:强制)?更新课表)(?:\s+(\S+))?$/)
+    const rawBranch = match?.[1] || ''
+    const branch = normalizeBranchName(rawBranch)
+    return {
+        isForce,
+        rawBranch,
+        branch,
+        // 写了参数但不是合法分支名（含空格/特殊字符）时给用户明确提示，而不是静默忽略
+        invalidBranch: !!rawBranch && !branch
+    }
+}
+
+/**
+ * 决定本次更新用哪个分支：命令行参数 > Guoba 配置 > 当前所在分支
+ * @param {{argBranch?: string, configBranch?: string, currentBranch?: string}} options
+ * @returns {{branch: string, source: 'command'|'config'|'current'}}
+ */
+export function resolveUpdateBranch({ argBranch = '', configBranch = '', currentBranch = '' } = {}) {
+    const fromArg = normalizeBranchName(argBranch)
+    if (fromArg) return { branch: fromArg, source: 'command' }
+    const fromConfig = normalizeBranchName(configBranch)
+    if (fromConfig) return { branch: fromConfig, source: 'config' }
+    return { branch: normalizeBranchName(currentBranch) || 'main', source: 'current' }
+}
+
+/**
  * 生成更新用的 git 命令序列
  * - 强制：fetch → checkout -B（切到目标分支并丢弃本地提交/改动）→ reset --hard → clean -fd
  * - 普通：fetch → checkout（切到目标分支）→ pull 指定远端分支
