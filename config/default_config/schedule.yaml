@@ -82,3 +82,7 @@ birthdayCustomName: true
 # 群号按字符串填写；官方Bot的复合群ID（形如 botUin:OpenID）同样支持
 groupWhitelist: []
 groupBlacklist: []
+# ===== 插件更新 =====
+# 「#课表更新」使用的分支：留空 = 跟随插件当前所在分支；
+# 填了别的分支（如 main / EchoDev / MoistDev）会先切过去再更新，可在 Guoba 里直接选
+updateBranch: ""

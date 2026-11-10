@@ -99,7 +99,10 @@ export class ConfigManager {
             // 全局群黑白名单：命中的群聊本插件完全不响应（不回复任何提示，也不影响其他插件）
             // 白名单为空表示不限制；白名单非空时只有白名单内的群可用（与生日黑白名单口径一致）
             groupWhitelist: [],   // 只在这些群工作
-            groupBlacklist: []    // 这些群完全不响应（白名单优先）
+            groupBlacklist: [],    // 这些群完全不响应（白名单优先）
+            // 「#课表更新」使用的分支：留空 = 跟随插件当前所在分支；
+            // 填了别的分支（如 main / EchoDev）会先切过去再更新
+            updateBranch: ""
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
@@ -280,7 +283,8 @@ export class ConfigManager {
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             allSchedulePermission, allSchedulePrivacy,
             watchFiles, urlImportEnabled, birthdayCustomName,
-            groupWhitelist, groupBlacklist
+            groupWhitelist, groupBlacklist,
+            updateBranch
         } = data;
         const configToSave = {
             pushHour,
@@ -300,7 +304,8 @@ export class ConfigManager {
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             allSchedulePermission, allSchedulePrivacy,
             watchFiles, urlImportEnabled, birthdayCustomName,
-            groupWhitelist, groupBlacklist
+            groupWhitelist, groupBlacklist,
+            updateBranch
         };
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {

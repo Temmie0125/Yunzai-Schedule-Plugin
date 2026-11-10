@@ -112,6 +112,20 @@ export const schemas = [
         bottomHelpMessage: "对所有的图片生效，超时后重启puppeteer，单位ms。"
     },
     {
+        component: 'Divider',
+        label: '插件更新'
+    },
+    {
+        field: "updateBranch",
+        label: "更新分支",
+        component: "Input",
+        componentProps: {
+            placeholder: "留空 = 跟随当前分支（如 main / EchoDev / MoistDev）"
+        },
+        defaultValue: "",
+        bottomHelpMessage: "「#课表更新」从哪个分支拉取：留空表示沿用插件当前所在分支；填别的分支会先切换过去再更新（如 main / EchoDev / MoistDev）。本地有未提交改动时切换会失败，可改用 #课表强制更新。"
+    },
+    {
         component: 'SOFT_GROUP_BEGIN',
         label: '课表模块设置'
     },
@@ -367,6 +381,35 @@ export const schemas = [
         defaultValue: false,
         bottomHelpMessage: "开启后，在群内且Bot有管理员权限时，将自动撤回用户发送的口令消息"
     },
+    // ===== 以下归入「课表模块设置」分组（原先错放在生日分组下）=====
+    {
+        component: 'Divider',
+        label: '全局群黑白名单'
+    },
+    {
+        field: "groupWhitelist",
+        label: "白名单群",
+        helpMessage: "填写后仅这些群可用课表插件",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择允许使用课表插件的群（留空则不限群）",
+            mode: "multiple"
+        },
+        defaultValue: [],
+        bottomHelpMessage: "白名单为空表示所有群都可用。白名单非空时，名单外的群将完全静默（不回复任何内容，也不影响其他插件）。"
+    },
+    {
+        field: "groupBlacklist",
+        label: "黑名单群",
+        helpMessage: "这些群内课表插件完全静默",
+        component: "GSelectGroup",
+        componentProps: {
+            placeholder: "选择禁止使用课表插件的群",
+            mode: "multiple"
+        },
+        defaultValue: [],
+        bottomHelpMessage: "名单内的群不会收到课表插件的任何回复（包括 #课表帮助），也不会发送生日祝福；其他插件不受影响。白名单优先。"
+    },
     // 分组
     {
         component: "SOFT_GROUP_BEGIN",
@@ -443,33 +486,5 @@ export const schemas = [
         },
         defaultValue: [],
         bottomHelpMessage: "这些群将不会收到生日祝福。白名单优先：如果白名单非空，黑名单无效。"
-    },
-    {
-        component: 'Divider',
-        label: '全局群黑白名单'
-    },
-    {
-        field: "groupWhitelist",
-        label: "白名单群",
-        helpMessage: "填写后仅这些群可用课表插件",
-        component: "GSelectGroup",
-        componentProps: {
-            placeholder: "选择允许使用课表插件的群（留空则不限群）",
-            mode: "multiple"
-        },
-        defaultValue: [],
-        bottomHelpMessage: "白名单为空表示所有群都可用。白名单非空时，名单外的群将完全静默（不回复任何内容，也不影响其他插件）。"
-    },
-    {
-        field: "groupBlacklist",
-        label: "黑名单群",
-        helpMessage: "这些群内课表插件完全静默",
-        component: "GSelectGroup",
-        componentProps: {
-            placeholder: "选择禁止使用课表插件的群",
-            mode: "multiple"
-        },
-        defaultValue: [],
-        bottomHelpMessage: "名单内的群不会收到课表插件的任何回复（包括 #课表帮助），也不会发送生日祝福；其他插件不受影响。白名单优先。"
     }
 ];
