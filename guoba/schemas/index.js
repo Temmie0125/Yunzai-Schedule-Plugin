@@ -471,5 +471,55 @@ export const schemas = [
         },
         defaultValue: [],
         bottomHelpMessage: "名单内的群不会收到课表插件的任何回复（包括 #课表帮助），也不会发送生日祝福；其他插件不受影响。白名单优先。"
+    },
+    {
+        component: 'Divider',
+        label: '日历同步'
+    },
+    {
+        field: "calendarSyncEnabled",
+        label: "定时同步日历",
+        component: "Switch",
+        defaultValue: false,
+        bottomHelpMessage: "开启后按下面的间隔把所有已绑定日历的用户拉一遍；关闭时用户仍可用 #日历同步 手动同步。用户在自己手机日历里改完日程，同步后课表里的活动会随之更新。"
+    },
+    {
+        field: "calendarSyncInterval",
+        label: "同步间隔（分钟）",
+        component: "InputNumber",
+        defaultValue: 30,
+        componentProps: { min: 5, max: 1440 },
+        bottomHelpMessage: "建议 30~60 分钟。绑定人数多时不要太短，避免频繁请求日历服务器被限流。"
+    },
+    {
+        field: "calendarSyncDaysBefore",
+        label: "同步窗口·向前（天）",
+        component: "InputNumber",
+        defaultValue: 7,
+        componentProps: { min: 0, max: 60 },
+        bottomHelpMessage: "只同步这段时间内的事件；窗口外的历史活动会保留，不会被清掉。"
+    },
+    {
+        field: "calendarSyncDaysAfter",
+        label: "同步窗口·向后（天）",
+        component: "InputNumber",
+        defaultValue: 60,
+        componentProps: { min: 1, max: 365 },
+        bottomHelpMessage: "往后看多少天的日程。窗口越大，请求日历服务器拿到的数据越多。"
+    },
+    {
+        field: "calendarMaxEvents",
+        label: "单次最多事件数",
+        component: "InputNumber",
+        defaultValue: 150,
+        componentProps: { min: 1, max: 1000 },
+        bottomHelpMessage: "单次拉取的事件条数上限（活动总数上限为 200 条）。"
+    },
+    {
+        field: "calendarAllowPrivateHost",
+        label: "允许绑定内网地址",
+        component: "Switch",
+        defaultValue: false,
+        bottomHelpMessage: "默认禁止绑定内网/本机日历地址，避免把 Bot 当成内网探测器。只有用户自建 CalDAV 在内网时才需要打开。"
     }
 ];

@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { startSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { reloadSkipExpireScheduler } from './components/SkipExpireScheduler.js';
 import { startClassReminderScheduler, reloadClassReminderScheduler } from './components/ClassReminderScheduler.js';
+import { startCalendarSyncScheduler, reloadCalendarSyncScheduler } from './components/CalendarScheduler.js';
 import { startupCheckHolidayUpdate } from './services/holidayUpdater.js';
 import { debugLog } from './components/common.js';
 import { CONFIG_PATH, CONFIG_FILE } from './components/ConfigManager.js';
@@ -45,6 +46,8 @@ const loadPlugins = async () => {
     startSkipExpireScheduler();
     // 启动上课提醒扫描定时器（内部自动防止重复启动）
     startClassReminderScheduler();
+    // 启动日历定时同步（内部自动防止重复启动；总开关未开启时不启动）
+    startCalendarSyncScheduler();
     // 补检节假日数据更新（每日一次守卫，与课表推送节点共用配额；异步执行不阻塞启动）
     startupCheckHolidayUpdate();
     return apps;
@@ -101,7 +104,7 @@ function startConfigWatcher() {
                 try {
                     const oldConfig = YAML.parse(lastConfigContent || '{}');
                     const newConfig = YAML.parse(newContent);
-                    const keysToCompare = ['pushHour', 'birthdayPushHour', 'autoCancelCheckEnabled', 'autoCancelCheckInterval', 'classReminderEnabled', 'classReminderScanInterval'];
+                    const keysToCompare = ['pushHour', 'birthdayPushHour', 'autoCancelCheckEnabled', 'autoCancelCheckInterval', 'classReminderEnabled', 'classReminderScanInterval', 'calendarSyncEnabled', 'calendarSyncInterval'];
                     let hasRealChange = false;
                     for (const key of keysToCompare) {
                         if (oldConfig[key] !== newConfig[key]) {
@@ -122,6 +125,7 @@ function startConfigWatcher() {
                 lastConfigContent = newContent;
                 reloadSkipExpireScheduler();
                 reloadClassReminderScheduler();
+                reloadCalendarSyncScheduler();
                 global.scheduleEvents.emit({ type: 'config-changed', file: configFile });
                 reloadTimer = null;
             }, 500);

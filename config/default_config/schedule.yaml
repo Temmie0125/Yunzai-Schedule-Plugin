@@ -82,3 +82,13 @@ birthdayCustomName: true
 # 群号按字符串填写；官方Bot的复合群ID（形如 botUin:OpenID）同样支持
 groupWhitelist: []
 groupBlacklist: []
+# ===== 日历同步（把用户自己的手机日历拉进课表，事件表现为「活动」）=====
+# 方向是「拉取」：用户在手机/电脑日历里增删改 → 定时拉取 → 课表里的活动随之更新
+# 支持 CalDAV 账号（Nextcloud / Radicale / Zimbra / 腾讯企业邮 等）与 ICS 订阅链接
+# （Exchange/Outlook 的「发布日历」链接、iCloud 共享链接、学校导出的 .ics）
+calendarSyncEnabled: false      # 定时同步总开关（关闭时仍可用 #日历同步 手动同步）
+calendarSyncInterval: 30        # 定时同步间隔（分钟）
+calendarSyncDaysBefore: 7       # 同步窗口：向前 N 天
+calendarSyncDaysAfter: 60       # 同步窗口：向后 N 天
+calendarMaxEvents: 150          # 单次最多拉取事件数（活动总数上限 200）
+calendarAllowPrivateHost: false # 允许绑定内网/本机日历地址（自建 CalDAV 时才需要打开）

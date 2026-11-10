@@ -99,7 +99,14 @@ export class ConfigManager {
             // 全局群黑白名单：命中的群聊本插件完全不响应（不回复任何提示，也不影响其他插件）
             // 白名单为空表示不限制；白名单非空时只有白名单内的群可用（与生日黑白名单口径一致）
             groupWhitelist: [],   // 只在这些群工作
-            groupBlacklist: []    // 这些群完全不响应（白名单优先）
+            groupBlacklist: [],    // 这些群完全不响应（白名单优先）
+            // ===== 日历同步（把用户自己的手机日历拉进课表，事件表现为「活动」）=====
+            calendarSyncEnabled: false,     // 定时同步总开关（关闭时仍可用 #日历同步 手动同步）
+            calendarSyncInterval: 30,       // 定时同步间隔（分钟）
+            calendarSyncDaysBefore: 7,      // 同步窗口：向前 N 天
+            calendarSyncDaysAfter: 60,      // 同步窗口：向后 N 天
+            calendarMaxEvents: 150,         // 单次最多拉取的事件数（活动总数上限 200）
+            calendarAllowPrivateHost: false // 允许绑定内网/本机日历地址（自建 CalDAV 时需要）
         };
         // 合并默认值（确保所有字段都有值）
         config = { ...defaultConfig, ...config };
@@ -280,7 +287,10 @@ export class ConfigManager {
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             allSchedulePermission, allSchedulePrivacy,
             watchFiles, urlImportEnabled, birthdayCustomName,
-            groupWhitelist, groupBlacklist
+            groupWhitelist, groupBlacklist,
+            calendarSyncEnabled, calendarSyncInterval,
+            calendarSyncDaysBefore, calendarSyncDaysAfter,
+            calendarMaxEvents, calendarAllowPrivateHost
         } = data;
         const configToSave = {
             pushHour,
@@ -300,7 +310,10 @@ export class ConfigManager {
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
             allSchedulePermission, allSchedulePrivacy,
             watchFiles, urlImportEnabled, birthdayCustomName,
-            groupWhitelist, groupBlacklist
+            groupWhitelist, groupBlacklist,
+            calendarSyncEnabled, calendarSyncInterval,
+            calendarSyncDaysBefore, calendarSyncDaysAfter,
+            calendarMaxEvents, calendarAllowPrivateHost
         };
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {

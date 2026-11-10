@@ -17,6 +17,8 @@ const REMINDER_STATUS_PATH = path.join(DATA_PATH, 'reminder-status.json');
 const CLASS_REMINDER_PATH = path.join(DATA_PATH, 'class-reminder.json'); // 上课提醒配置
 const BIRTHDAY_DATA_PATH = path.join(DATA_PATH, 'birthdayData.json');
 const BIRTHDAY_PENDING_PUSH_PATH = path.join(DATA_PATH, 'birthdayPendingPushes.json'); // 生日祝福待送达队列（主动推送失败时暂存，借后续消息被动回复送达）
+// 用户日历绑定（拉取手机日历 / Exchange 发布日历）：账号密码加密后存在这里
+const CALENDAR_BINDING_PATH = path.join(DATA_PATH, 'calendar-bindings.json');
 const HOLIDAY_DATA_PATH = path.join(DATA_PATH, 'holiday/'); // 节假日自动更新数据目录（优先，gitignored）
 const HOLIDAY_RESOURCE_PATH = path.join(process.cwd(), 'plugins/schedule/resources/holiday/'); // 节假日打包资源目录（兜底）
 // 节假日数据缓存（Map<年份, 节假日对象>）
@@ -48,7 +50,7 @@ export class DataManager {
         // 真实用户ID以文件内记录的 userId 字段为准；旧数据（纯数字文件名、无 userId 字段）兼容取文件名
         const files = fs.readdirSync(DATA_PATH).filter(f =>
             f.endsWith('.json') &&
-            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json', 'birthdayPendingPushes.json', 'user-profiles.json'].includes(f)
+            !['skip-status.json', 'reminder-status.json', 'birthdayData.json', 'class-reminder.json', 'birthdayPendingPushes.json', 'user-profiles.json', 'calendar-bindings.json'].includes(f)
         );
         const result = [];
         for (const file of files) {
@@ -422,7 +424,10 @@ export class DataManager {
                 date,
                 startTime,
                 endTime,
-                createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : new Date().toISOString()
+                createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : new Date().toISOString(),
+                // 来源：local=用户在 bot 侧添加；calendar=从用户日历同步拉取（每次同步会被替换）
+                source: raw.source === 'calendar' ? 'calendar' : 'local',
+                externalUid: typeof raw.externalUid === 'string' ? raw.externalUid.slice(0, 200) : ''
             });
         }
         result.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
@@ -529,6 +534,83 @@ export class DataManager {
             list.push(this.activityToDayEntry(activity));
         }
         return list;
+    }
+
+    // ---------- 用户日历绑定（拉取手机日历 / Exchange 发布日历） ----------
+    /**
+     * 加载全部日历绑定
+     * 结构：{ [userId]: { provider, url, username, secret, enabled, lastSyncAt, lastResult, lastError, eventCount } }
+     * @returns {Object}
+     */
+    static loadCalendarBindings() {
+        if (!fs.existsSync(CALENDAR_BINDING_PATH)) return {};
+        try {
+            const data = JSON.parse(fs.readFileSync(CALENDAR_BINDING_PATH, 'utf8'));
+            return data && typeof data === 'object' ? data : {};
+        } catch (err) {
+            logger.error(`[日历绑定] 加载失败: ${err}`);
+            return {};
+        }
+    }
+
+    /** 保存全部日历绑定 */
+    static saveCalendarBindings(data) {
+        try {
+            const dir = path.dirname(CALENDAR_BINDING_PATH);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(CALENDAR_BINDING_PATH, JSON.stringify(data || {}, null, 2), 'utf8');
+            return true;
+        } catch (err) {
+            logger.error(`[日历绑定] 保存失败: ${err}`);
+            return false;
+        }
+    }
+
+    /**
+     * 读取单个用户的日历绑定
+     * @param {string|number} userId
+     * @returns {object|null}
+     */
+    static getCalendarBinding(userId) {
+        return this.loadCalendarBindings()[String(userId)] || null;
+    }
+
+    /**
+     * 更新（或新建）单个用户的日历绑定
+     * @param {string|number} userId
+     * @param {object} patch
+     * @returns {object|null} 更新后的绑定
+     */
+    static setCalendarBinding(userId, patch = {}) {
+        const all = this.loadCalendarBindings();
+        const key = String(userId);
+        const next = { ...(all[key] || {}), ...patch, updatedAt: new Date().toISOString() };
+        all[key] = next;
+        return this.saveCalendarBindings(all) ? next : null;
+    }
+
+    /**
+     * 移除单个用户的日历绑定
+     * @param {string|number} userId
+     * @returns {boolean} 是否确实删除了记录
+     */
+    static removeCalendarBinding(userId) {
+        const all = this.loadCalendarBindings();
+        const key = String(userId);
+        if (!all[key]) return false;
+        delete all[key];
+        return this.saveCalendarBindings(all);
+    }
+
+    /**
+     * 列出已启用同步的绑定
+     * @returns {Array<{userId: string, binding: object}>}
+     */
+    static getEnabledCalendarBindings() {
+        const all = this.loadCalendarBindings();
+        return Object.entries(all)
+            .filter(([, binding]) => binding && binding.enabled !== false && binding.url)
+            .map(([userId, binding]) => ({ userId, binding }));
     }
 
     // ---------- 翘课状态 ----------
