@@ -88,6 +88,9 @@ export class ConfigManager {
             scheduleColumns: 2,    // 群课表每行成员列数：'auto' 按人数自动加列，或固定 2/3/4
             avatarBorderMode: "progress",  // 群课表头像边框：progress 进度环 / solid 实色 / off 关闭
             hideEndedDays: 30,    // 群课表图片中隐藏学期已结束超过该天数的成员，0 表示不过滤
+            // 头像缓存时长（分钟）：qlogo 头像响应带 30 天 max-age，配合常驻 Puppeteer 会一直显示旧头像。
+            // 60 = 每 60 分钟重新取一次；0 = 每次都取最新（同时禁用浏览器缓存）
+            avatarCacheMinutes: 60,
             // 「所有人课表」使用权限：owner 仅Bot主人 / ownerAdmin Bot主人+群管理（默认）/ everyone 所有人
             allSchedulePermission: "ownerAdmin",
             // 「所有人课表」隐藏策略：everyone 所有人看到脱敏版 / nonMaster 非Bot主人脱敏（默认）/ off 不脱敏
@@ -173,6 +176,18 @@ export class ConfigManager {
     static normalizeAvatarBorderMode(value) {
         const mode = typeof value === 'string' ? value.trim().toLowerCase() : '';
         return AVATAR_BORDER_MODES.includes(mode) ? mode : DEFAULT_AVATAR_BORDER_MODE;
+    }
+    /**
+     * 归一化「头像缓存时长（分钟）」
+     * - 0 = 每次渲染都取最新头像（渲染层会禁用浏览器缓存）
+     * - 其它值 = 按该分钟数做时间片，同一时间片内复用浏览器缓存
+     * @param {*} value
+     * @returns {number} 0~10080（7 天）
+     */
+    static normalizeAvatarCacheMinutes(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) return 60;
+        return Math.min(Math.floor(num), 10080);
     }
     /**
      * 解析单张卡片的头像边框展示方式
@@ -281,6 +296,7 @@ export class ConfigManager {
             defaultSemesterStart,
             botName, font,
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
+            avatarCacheMinutes,
             allSchedulePermission, allSchedulePrivacy,
             watchFiles, urlImportEnabled, birthdayCustomName,
             groupWhitelist, groupBlacklist,
@@ -302,11 +318,16 @@ export class ConfigManager {
             defaultSemesterStart,
             botName, font,
             sortMode, scheduleColumns, avatarBorderMode, hideEndedDays, showQQ,
+            avatarCacheMinutes,
             allSchedulePermission, allSchedulePrivacy,
             watchFiles, urlImportEnabled, birthdayCustomName,
             groupWhitelist, groupBlacklist,
             updateBranch
         };
+        // 头像缓存时长落库前标准化：非数字/负数回落到 60，0 合法（每次都刷新）
+        if (configToSave.avatarCacheMinutes !== undefined) {
+            configToSave.avatarCacheMinutes = ConfigManager.normalizeAvatarCacheMinutes(configToSave.avatarCacheMinutes)
+        }
         // 列数落库前同样标准化：'auto' 原样保存，数字则写成 number（YAML 更干净、可读）
         if (configToSave.scheduleColumns !== undefined) {
             const setting = ConfigManager.normalizeColumnsSetting(configToSave.scheduleColumns);

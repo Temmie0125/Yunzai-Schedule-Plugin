@@ -52,6 +52,12 @@ scheduleColumns: 2
 #   off       关闭（白色细边框）
 # 也可用管理员命令 #课表头像边框 进度|实色|关闭 切换（会写入本文件）
 avatarBorderMode: "progress"
+# 头像缓存时长（分钟）：qlogo 头像接口返回 cache-control: max-age=2592000（30 天），
+# 而渲染用的 Puppeteer 是常驻浏览器、页面之间共享 HTTP 缓存，头像 URL 不变就一直显示旧图。
+#   60   每 60 分钟换一次缓存键（默认；换头像后最迟 1 小时生效）
+#   0    每次都取最新头像（同时禁用浏览器缓存，渲染会稍慢一点）
+#   其它正整数   按该分钟数做时间片
+avatarCacheMinutes: 60
 # 「所有人课表」（#所有人在上什么课 / #全局课表）的使用权限：
 #   owner       仅 Bot 主人
 #   ownerAdmin  Bot 主人 + 群主/群管理员（默认，与旧版一致）

@@ -19,6 +19,8 @@
 
 ### 修复
 
+- 修复**群友换了 QQ 头像后，课表卡片仍长期显示旧头像**的问题：qlogo 头像接口返回 `cache-control: max-age=2592000`（30 天），而渲染用的 Puppeteer 是常驻单例浏览器、页面之间共享 HTTP 缓存，头像 URL 又固定不变，于是一直命中旧缓存（要等浏览器按 `renderRestartCount` 重启才刷新）。现在新增配置项 **`avatarCacheMinutes`（头像缓存时长，分钟，默认 60）**：真实 QQ 号的头像 URL 会拼上按配置换算的缓存时间片参数（qlogo 忽略未知参数，不影响取图），同一时间片内复用缓存、跨时间片自动失效，换头像后最迟 1 小时生效；填 `0` 表示每次都取最新头像，此时渲染层会对该页面调用 `page.setCacheEnabled(false)` 关闭浏览器缓存（官方 Bot 走适配器 `Bot.getAvatarUrl`，其 URL 保持原样不追加参数，刷新由这一层兜底）。新增测试 `test/test-avatar-cache.js`
+- 修复 `#设置学期开始` 在**该用户还没有课表文件**时创建的数据骨架**缺 `userId`** 的问题（官方 Bot 复合 ID 场景下会导致该成员被群课表漏掉；普通 QQ 号因文件名兜底不受影响）。补上 `userId: String(userId)`，并新增回归测试 `test/test-user-id-persist.js`：覆盖昵称/签名/时间表/学期开始/对齐课表/调课/撤销/保存课表/清除课表全部写盘路径，确保 `userId` 不会被写丢
 - 修复 `#清除课表` 后**群课表里仍留着一张「今日暂无课程」空卡片**的问题：旧实现只清空 `courses`、课表文件留着，而群课表/所有人课表的成员来源就是 `data/<id>.json` 文件本身。现在 `DataManager.removeUserSchedule()` 直接删除课表数据文件，清除后立即从群课表消失；昵称与个性签名在删除前转入新增的 `data/user-profiles.json` 保留，重新导入课表时自动恢复（不再有“彻底删除会丢签名”的顾虑）。`saveUserNickname`/`saveUserSignature` 在没有课表时只写用户资料，不再生成空课表文件（避免清除后改昵称让空卡片复活）；群课表对没有课程记录的成员统一按“未设置课表”处理，历史遗留的空课表文件同样不再显示。新增测试 `test/test-clear-schedule.js`
 
 ## [1.2.0] - 2026-10-19

@@ -182,6 +182,13 @@ async function renderTemplate(templateName, data, options = {}) {
         const browser = await getBrowser()
         const page = await browser.newPage()
         try {
+            // 头像刷新策略（对应配置 avatarCacheMinutes）：
+            // qlogo 头像响应带 30 天 max-age，而 Puppeteer 是常驻单例浏览器，页面间共享 HTTP 缓存，
+            // 配置为 0（每次都取最新）时必须关掉浏览器缓存，否则换头像后仍会显示旧图
+            const avatarCacheMinutes = Number(config.avatarCacheMinutes)
+            if (Number.isFinite(avatarCacheMinutes) && avatarCacheMinutes <= 0) {
+                await page.setCacheEnabled(false)
+            }
             await page.setViewport({
                 width: canvasWidth,
                 height: 100,

@@ -1281,6 +1281,8 @@ export class DataManager {
         } else {
             // 如果文件不存在，创建基础结构
             data = {
+                // 记录真实用户ID：官方机器人场景文件名是 safeId 后的键，缺了它会被群课表漏掉
+                userId: String(userId),
                 tableName: '未设置',
                 nickname: userId.toString(),
                 signature: '',

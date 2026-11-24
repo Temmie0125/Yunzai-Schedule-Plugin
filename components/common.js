@@ -396,16 +396,48 @@ export async function getGroupMemberMap(groupId) {
     }
 }
 /**
+ * 归一化「头像缓存时长（分钟）」
+ * - 0 = 每次渲染都取最新头像（配合渲染层禁用浏览器缓存）
+ * - 其它值 = 按该分钟数做时间片，同一时间片内复用缓存
+ * @param {*} value
+ * @returns {number} 0~10080（7 天）
+ */
+export function normalizeAvatarCacheMinutes(value) {
+    return ConfigManager.normalizeAvatarCacheMinutes(value)
+}
+
+/**
+ * 计算头像 URL 的缓存时间片键
+ * qlogo 头像接口会返回 cache-control: max-age=2592000（30 天），
+ * 而模板里的 <img src> 若一直不变，Puppeteer 常驻浏览器会一直命中旧缓存 → 头像不刷新。
+ * 因此按配置把时间片拼进 URL：
+ * - minutes <= 0：每次调用都不同（始终取最新头像）
+ * - minutes > 0：同一时间片内稳定（可正常命中缓存），跨时间片自动失效
+ * @param {number} minutes 缓存时长（分钟），0 表示每次都刷新
+ * @param {number} [now] 当前时间戳（便于测试）
+ * @returns {string}
+ */
+export function buildAvatarCacheKey(minutes, now = Date.now()) {
+    const m = normalizeAvatarCacheMinutes(minutes)
+    if (m <= 0) return String(now)
+    const span = m * 60 * 1000
+    return String(Math.floor(now / span))
+}
+
+/**
  * 获取用户头像URL
  * 兼容官方Bot平台（用户只有OpenID没有QQ号）：QQBot适配器提供 Bot.getAvatarUrl 标准化接口，
  * OpenID 走 qqapp 头像接口，真实QQ号走 qlogo。userId 支持 "self_id:ID" 复合格式
+ * 真实QQ号场景会按 avatarCacheMinutes 追加缓存时间片参数，避免换头像后长期显示旧图
  */
 export function getAvatarUrl(userId, size = 640) {
     userId = String(userId)
     const selfId = userId.includes(":") ? userId.split(":")[0] : undefined
     if (globalThis.Bot?.getAvatarUrl)
         return Bot.getAvatarUrl(selfId, userId, size)
-    return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=${size}`
+    // qlogo 忽略未知参数，因此追加 t= 不会影响取图，只用于让浏览器缓存失效
+    const cacheKey = buildAvatarCacheKey(ConfigManager.getConfig().avatarCacheMinutes)
+    return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=${size}&t=${cacheKey}`
 }
 /**
  * 获取Bot自定义名称

@@ -320,6 +320,21 @@ export const schemas = [
         bottomHelpMessage: "进度环：上课中的成员用头像边框显示这节课的完成进度，其他状态用淡化的状态色边框。实色边框：所有状态都用淡化的状态色边框，不显示进度。关闭：白色细边框。也可用管理员命令 #课表头像边框 进度|实色|关闭 随时切换。"
     },
     {
+        field: "avatarCacheMinutes",
+        label: "头像缓存时长（分钟）",
+        helpMessage: "群友换了QQ头像后，课表卡片多久刷新一次",
+        component: "InputNumber",
+        componentProps: {
+            min: 0,
+            max: 10080,
+            step: 1,
+            placeholder: '默认 60，填 0 表示每次都刷新',
+            addonAfter: '分钟'
+        },
+        defaultValue: 60,
+        bottomHelpMessage: "qlogo 头像接口允许缓存 30 天，而渲染用的浏览器是常驻的，头像不刷新时会一直显示旧图。填 60 表示每小时换一次缓存键（换头像后最迟 1 小时生效）；填 0 表示每次都取最新头像（同时关闭浏览器缓存，渲染会稍慢一点）。"
+    },
+    {
         field: "allSchedulePermission",
         label: "所有人课表权限",
         helpMessage: "谁可以使用「所有人在上什么课」（跨群聚合课表）",
